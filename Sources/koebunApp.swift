@@ -14,10 +14,13 @@ struct KoebunApp: App {
         MenuBarExtra {
             MenuContent(state: state)
         } label: {
-            // 録音状態でアイコンが変わる
             Image(systemName: state.isRecording ? "mic.fill" : "mic")
         }
         .menuBarExtraStyle(.menu)
+
+        Settings {
+            SettingsView()
+        }
     }
 }
 

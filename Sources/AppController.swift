@@ -27,7 +27,7 @@ final class AppController {
         do {
             try await transcriber.load()
             state.modelLoaded = true
-            state.status = "待機中（右⌥で録音開始）"
+            state.status = "待機中（\(SettingsStore.keyName(for: SettingsStore.shared.hotKeyCode))で録音開始）"
         } catch {
             state.status = "モデル読込失敗: \(error.localizedDescription)"
         }
@@ -51,8 +51,9 @@ final class AppController {
         do {
             try recorder.start()
             state.isRecording = true
-            state.status = "録音中…（右⌥で停止）"
-            NSSound(named: .init("Tink"))?.play()
+            state.status = "録音中…（\(SettingsStore.keyName(for: SettingsStore.shared.hotKeyCode))で停止）"
+            let start = SettingsStore.shared.startSound
+            if start != "なし" { NSSound(named: .init(start))?.play() }
         } catch {
             state.status = "録音開始失敗: \(error.localizedDescription)"
         }
@@ -62,17 +63,18 @@ final class AppController {
         guard state.isRecording else { return }
         state.isRecording = false
         state.status = "文字起こし中…"
-        NSSound(named: .init("Pop"))?.play()
+        let stop = SettingsStore.shared.stopSound
+        if stop != "なし" { NSSound(named: .init(stop))?.play() }
 
         let samples = recorder.stop()
         Task { @MainActor in
             do {
                 let text = try await transcriber.transcribe(samples)
                 if text.isEmpty {
-                    state.status = "（無音）待機中（右⌥で録音開始）"
+                    state.status = "（無音）待機中（\(SettingsStore.keyName(for: SettingsStore.shared.hotKeyCode))で録音開始）"
                 } else {
                     TextInjector.insert(text)
-                    state.status = "挿入しました ✓ 待機中（右⌥で録音開始）"
+                    state.status = "挿入しました ✓ 待機中（\(SettingsStore.keyName(for: SettingsStore.shared.hotKeyCode))で録音開始）"
                 }
             } catch {
                 state.status = "文字起こし失敗: \(error.localizedDescription)"
