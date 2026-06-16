@@ -4,6 +4,8 @@
 # Xcode
 build/
 DerivedData/
+# XcodeGen で project.yml から生成するためコミットしない
+*.xcodeproj/
 *.xcuserstate
 *.xcscmblueprint
 xcuserdata/

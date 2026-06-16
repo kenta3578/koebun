@@ -1,0 +1,38 @@
+name: koebun
+options:
+  bundleIdPrefix: com.kenta3578
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+packages:
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit
+    # サプライチェーン: 初回 resolve 後に Package.resolved をコミットして revision を固定すること
+    from: "0.9.0"
+
+targets:
+  koebun:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+    dependencies:
+      - package: WhisperKit
+    settings:
+      base:
+        PRODUCT_NAME: koebun
+        PRODUCT_BUNDLE_IDENTIFIER: com.kenta3578.koebun
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Sources/Info.plist
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        # ローカル実行前提: sandbox OFF（Accessibility / CGEvent / グローバル監視のため必須）
+        # ⚠️ 他者へ配布する段階では ENABLE_HARDENED_RUNTIME: YES + entitlements 最小化
+        #    + Developer ID 署名 + Notarization に切り替えること（配布用 configuration を分離）
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: NO
+        # 署名は Xcode で開いた時に各自の Personal Team を割り当てる
+        CODE_SIGN_STYLE: Automatic
