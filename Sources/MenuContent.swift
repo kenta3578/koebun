@@ -11,6 +11,13 @@ struct MenuContent: View {
 
         Divider()
 
+        Button("設定…") {
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+
+        Divider()
+
         Button("アクセシビリティ設定を開く") {
             openPrivacyPane("Privacy_Accessibility")
         }

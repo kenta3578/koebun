@@ -1,21 +1,21 @@
 import AppKit
 
 /// トグル録音ホットキー。
-/// 右⌥(Right Option, keyCode 61) を押すたびに onToggle を呼ぶ。
+/// SettingsStore.hotKeyCode のキーを押すたびに onToggle を呼ぶ。
 /// キーリリースは無視する。
+@MainActor
 final class HotKeyManager {
     var onToggle: (() -> Void)?
 
     private var monitor: Any?
     private var isDown = false
-    private let triggerKeyCode: UInt16 = 61
 
     func start() {
         monitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged]) { [weak self] event in
             let keyCode = event.keyCode
-            let optionPressed = event.modifierFlags.contains(.option)
-            DispatchQueue.main.async {
-                self?.handle(keyCode: keyCode, optionPressed: optionPressed)
+            let flags = event.modifierFlags
+            Task { @MainActor [weak self] in
+                self?.handle(keyCode: keyCode, flags: flags)
             }
         }
     }
@@ -26,13 +26,14 @@ final class HotKeyManager {
         isDown = false
     }
 
-    private func handle(keyCode: UInt16, optionPressed: Bool) {
-        guard keyCode == triggerKeyCode else { return }
+    private func handle(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
+        guard keyCode == SettingsStore.shared.hotKeyCode else { return }
+        let pressed = SettingsStore.isKeyDown(keyCode: keyCode, flags: flags)
 
-        if optionPressed && !isDown {
+        if pressed && !isDown {
             isDown = true
             onToggle?()
-        } else if !optionPressed {
+        } else if !pressed {
             isDown = false
         }
     }
