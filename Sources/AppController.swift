@@ -143,43 +143,53 @@ final class AppController {
                 let replaceEnd = Date()
 
                 // 整形はここ。失敗しても replaced を挿入するので、発話は落ちない。
-                let outcome = await format(replaced)
+                let formatting = await format(replaced)
                 let formatEnd = Date()
-                let text = outcome.result?.text ?? replaced
+                let text = formatting.result?.text ?? replaced
 
-                var inserted = false
+                // 挿入は成否を判定して返る。成功と確認できなければ結果を捨てない（Issue #13）。
+                var outcome: InsertionOutcome = .succeeded
                 if text.isEmpty {
                     state.update(.done(message: "（無音）"))
                 } else {
-                    TextInjector.insert(text)
-                    inserted = true
-                    // 整形を外したことは必ず見せる（無言で生テキストに落ちない）。
-                    if let failure = outcome.failure {
-                        state.update(.done(message: "整形なしで挿入 ✓（\(failure)）"))
+                    outcome = await TextInjector.insert(text)
+                    if outcome.isSucceeded {
+                        // 整形を外したことは必ず見せる（無言で生テキストに落ちない）。
+                        if let failure = formatting.failure {
+                            state.update(.done(message: "整形なしで挿入 ✓（\(failure)）"))
+                        } else {
+                            state.update(.done(message: "挿入しました ✓"))
+                        }
                     } else {
-                        state.update(.done(message: "挿入しました ✓"))
+                        state.update(.failed(reason: outcome.statusMessage))
                     }
                 }
+                let inserted = !text.isEmpty && outcome.isSucceeded
 
                 // 履歴は挿入のあとにバックグラウンドで書き出す（保存が挿入を遅らせない）。
                 HistoryStore.shared.record(
                     samples: samples,
                     rawText: raw,
                     replacedText: replaced,
-                    formattedText: outcome.result?.text,
-                    modeName: outcome.modeName,
-                    prompt: outcome.result?.prompt,
+                    formattedText: formatting.result?.text,
+                    modeName: formatting.modeName,
+                    prompt: formatting.result?.prompt,
                     durations: .init(
                         transcribeMs: Self.milliseconds(from: transcribeStart, to: replaceStart),
                         replaceMs: Self.milliseconds(from: replaceStart, to: replaceEnd),
-                        formatMs: outcome.attempted
+                        formatMs: formatting.attempted
                             ? Self.milliseconds(from: replaceEnd, to: formatEnd) : nil
                     ),
                     inserted: inserted
                 )
 
-                // 挿入まで終えてから HUD を閉じる（完了表示を一瞬見せる）。
-                hud.finish()
+                if outcome.isSucceeded {
+                    // 挿入まで終えてから HUD を閉じる（完了表示を一瞬見せる）。
+                    hud.finish()
+                } else {
+                    // 挿入できなかった結果は HUD に残し、コピー・再挿入できるようにする。
+                    hud.presentResult(text, reason: outcome.reason)
+                }
             } catch {
                 // 失敗は自動で閉じない。HUD に原因を残す。
                 state.update(.failed(reason: "文字起こし失敗: \(error.localizedDescription)"))

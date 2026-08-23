@@ -21,6 +21,16 @@ final class SettingsStore: ObservableObject {
     @Published var showRecordingHUD: Bool {
         didSet { UserDefaults.standard.set(showRecordingHUD, forKey: "showRecordingHUD") }
     }
+    /// ⌘V の代わりに1文字ずつキーを送出する。ペーストを受け付けないアプリ向けのフォールバック。
+    /// この方式はクリップボードを一切触らない。
+    @Published var simulateKeypresses: Bool {
+        didSet { UserDefaults.standard.set(simulateKeypresses, forKey: "simulateKeypresses") }
+    }
+    /// 挿入できたと確認できなかったとき、結果をクリップボードに残す（＝元の内容へ復元しない）。
+    /// OFF にすると常に復元する（結果は HUD 側にだけ残る）。
+    @Published var keepResultOnClipboardWhenUnsure: Bool {
+        didSet { UserDefaults.standard.set(keepResultOnClipboardWhenUnsure, forKey: "keepResultOnClipboardWhenUnsure") }
+    }
     @Published var hotKeyCode: UInt16 {
         didSet { UserDefaults.standard.set(Int(hotKeyCode), forKey: "hotKeyCode") }
     }
@@ -62,6 +72,11 @@ final class SettingsStore: ObservableObject {
         startSound = UserDefaults.standard.string(forKey: "startSound") ?? "Glass"
         stopSound  = UserDefaults.standard.string(forKey: "stopSound")  ?? "Basso"
         showRecordingHUD = UserDefaults.standard.object(forKey: "showRecordingHUD") as? Bool ?? true
+        simulateKeypresses = UserDefaults.standard.bool(forKey: "simulateKeypresses")
+        // 既定は「結果を残す」。挿入結果を失う事故（Issue #13）の方が、
+        // クリップボードが戻らないことより痛い。
+        keepResultOnClipboardWhenUnsure =
+            UserDefaults.standard.object(forKey: "keepResultOnClipboardWhenUnsure") as? Bool ?? true
         let stored = UserDefaults.standard.integer(forKey: "hotKeyCode")
         hotKeyCode = stored > 0 ? UInt16(stored) : 61
         // 0（無期限）と未設定を区別するため object で取り出す。
