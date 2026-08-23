@@ -10,6 +10,7 @@ final class AppController {
     private let recorder = AudioRecorder()
     private let transcriber = Transcriber()
     private let hotkeys = HotKeyManager()
+    private let hud = RecordingHUDController()
     private let state = AppState.shared
 
     private init() {}
@@ -36,6 +37,13 @@ final class AppController {
             Task { @MainActor in self?.toggleRecording() }
         }
         hotkeys.start()
+
+        // 録音レベルは HUD の波形にだけ流す（AppState を毎フレーム更新しない）。
+        recorder.onLevel = { [hud] level in
+            Task { @MainActor in hud.push(level: level) }
+        }
+        hud.onStop = { [weak self] in self?.stopRecording() }
+        hud.onCancel = { [weak self] in self?.cancelRecording() }
     }
 
     private func toggleRecording() {
@@ -51,6 +59,7 @@ final class AppController {
         do {
             try recorder.start()
             state.update(.recording)
+            if SettingsStore.shared.showRecordingHUD { hud.show() }
             let start = SettingsStore.shared.startSound
             if start != "なし" { NSSound(named: .init(start))?.play() }
         } catch {
@@ -76,9 +85,20 @@ final class AppController {
                     TextInjector.insert(text)
                     state.update(.done(message: "挿入しました ✓"))
                 }
+                // 挿入まで終えてから HUD を閉じる（完了表示を一瞬見せる）。
+                hud.finish()
             } catch {
+                // 失敗は自動で閉じない。HUD に原因を残す。
                 state.update(.failed(reason: "文字起こし失敗: \(error.localizedDescription)"))
             }
         }
+    }
+
+    /// 録音を破棄する。文字起こしも挿入も行わない。
+    private func cancelRecording() {
+        guard state.isRecording else { return }
+        _ = recorder.stop()
+        hud.hide()
+        state.update(.idle)
     }
 }
