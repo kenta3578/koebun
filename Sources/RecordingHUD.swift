@@ -21,6 +21,17 @@ final class RecordingHUDModel: ObservableObject {
     @Published private(set) var elapsed: TimeInterval = 0
     /// キャンセル確認を表示中か。
     @Published var isConfirmingCancel = false
+    /// 挿入できなかった（または確認できなかった）結果。ここに残っている間は HUD を閉じない。
+    @Published var pendingResult: PendingResult?
+
+    /// HUD に残す挿入結果。
+    struct PendingResult: Equatable {
+        var text: String
+        /// なぜ残っているか（「入力先がテキストを受け付けませんでした」など）。
+        var reason: String
+        /// コピー・再挿入の結果を伝える一時メッセージ。
+        var note: String?
+    }
 
     /// 無音判定を「起動直後の空バッファ」で誤発火させないためのカウンタ。
     private var pushCount = 0
@@ -40,6 +51,11 @@ final class RecordingHUDModel: ObservableObject {
         elapsed = 0
         pushCount = 0
         isConfirmingCancel = false
+        pendingResult = nil
+    }
+
+    func setResultNote(_ note: String?) {
+        pendingResult?.note = note
     }
 
     /// 直近およそ2秒が無音。マイクの権限・入力デバイス異常を疑う手がかりとして出す。
@@ -70,6 +86,9 @@ struct RecordingHUDView: View {
     let onRequestCancel: () -> Void
     let onConfirmCancel: () -> Void
     let onDismiss: () -> Void
+    let onCopyResult: () -> Void
+    let onRetryInsert: () -> Void
+    let onDismissResult: () -> Void
 
     var body: some View {
         ZStack {
@@ -82,13 +101,18 @@ struct RecordingHUDView: View {
             content
                 .padding(.horizontal, 14)
         }
-        .frame(width: RecordingHUDController.panelSize.width,
-               height: RecordingHUDController.panelSize.height)
+        .frame(width: size.width, height: size.height)
+    }
+
+    private var size: CGSize {
+        model.pendingResult == nil ? RecordingHUDController.panelSize : RecordingHUDController.resultPanelSize
     }
 
     @ViewBuilder
     private var content: some View {
-        if model.isConfirmingCancel {
+        if let result = model.pendingResult {
+            resultContent(result)
+        } else if model.isConfirmingCancel {
             cancelConfirmation
         } else {
             switch state.status {
@@ -180,6 +204,52 @@ struct RecordingHUDView: View {
         }
     }
 
+    // 挿入できなかった結果。**自動で閉じない**。ここからコピー・再挿入できる
+    // （`ai_docs/competitor-superwhisper.md` §8-3: 相手はペースト失敗時に結果をミニウィンドウに残す）。
+    private func resultContent(_ result: RecordingHUDModel.PendingResult) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.orange)
+                Text(result.reason)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                Spacer()
+                Button("閉じる", action: onDismissResult)
+                    .controlSize(.small)
+            }
+
+            ScrollView {
+                Text(result.text)
+                    .font(.system(size: 12))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 68)
+            .padding(6)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+            )
+
+            HStack(spacing: 8) {
+                Button("コピー", action: onCopyResult)
+                    .controlSize(.small)
+                Button("もう一度挿入", action: onRetryInsert)
+                    .controlSize(.small)
+                Spacer()
+                if let note = result.note {
+                    Text(note)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.vertical, 10)
+    }
+
     private var statusIcon: some View {
         Image(systemName: state.status.symbolName)
             .font(.system(size: 13, weight: .semibold))
@@ -249,6 +319,8 @@ private final class HUDPanel: NSPanel {
 @MainActor
 final class RecordingHUDController {
     static let panelSize = CGSize(width: 340, height: 64)
+    /// 挿入結果を残しているときのサイズ（本文＋操作ボタンぶん高くする）。
+    static let resultPanelSize = CGSize(width: 380, height: 160)
 
     /// 停止ボタン（ホットキーと等価）。
     var onStop: (() -> Void)?
@@ -273,6 +345,7 @@ final class RecordingHUDController {
 
         let panel = self.panel ?? makePanel()
         self.panel = panel
+        applyPanelSize()
         // makeKeyAndOrderFront は使わない。最前面アプリのフォーカスを奪うと挿入先が変わる。
         panel.orderFrontRegardless()
 
@@ -289,10 +362,16 @@ final class RecordingHUDController {
         model.reset()
         startedAt = nil
         panel?.orderOut(nil)
+        applyPanelSize()
     }
 
     /// 完了表示を一瞬だけ見せてから自動的に閉じる（挿入できたことを HUD 側でも確認できる）。
     func finish() {
+        // 前回の挿入結果を残したままなら、今回の成功で役目を終える。
+        if model.pendingResult != nil {
+            model.pendingResult = nil
+            applyPanelSize()
+        }
         guard isVisible else { return }
         stopTicking()
         removeEscapeMonitors()
@@ -310,6 +389,74 @@ final class RecordingHUDController {
         model.push(level: level)
     }
 
+    // MARK: 挿入できなかった結果
+
+    /// 挿入できなかった（または成否を確認できなかった）結果を HUD に残す。
+    ///
+    /// **HUD 表示が OFF でもここでは出す**。結果を失わせないことが優先で、
+    /// 出さなければユーザーは結果がどこにあるか分からない。
+    func presentResult(_ text: String, reason: String) {
+        autoHideTask?.cancel()
+        autoHideTask = nil
+        stopTicking()
+        // Esc で消えると結果を失う。結果を残している間は Esc 監視を張らない。
+        removeEscapeMonitors()
+        startedAt = nil
+
+        model.pendingResult = .init(text: text, reason: reason, note: nil)
+
+        let panel = self.panel ?? makePanel()
+        self.panel = panel
+        applyPanelSize()
+        panel.orderFrontRegardless()
+    }
+
+    private func copyResult() {
+        guard let result = model.pendingResult else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(result.text, forType: .string)
+        model.setResultNote("コピーしました")
+    }
+
+    /// もう一度挿入を試す。HUD は `.nonactivatingPanel` なので、
+    /// ボタンを押しても最前面アプリは変わらない＝同じ入力先へ送れる。
+    private func retryInsert() {
+        guard let result = model.pendingResult else { return }
+        model.setResultNote("挿入中…")
+        Task { @MainActor in
+            let outcome = await TextInjector.insert(result.text)
+            guard model.pendingResult?.text == result.text else { return }
+            if outcome.isSucceeded {
+                model.pendingResult = nil
+                applyPanelSize()
+                AppState.shared.update(.done(message: "挿入しました ✓"))
+                finish()
+            } else {
+                model.setResultNote(outcome.reason)
+            }
+        }
+    }
+
+    private func dismissResult() {
+        // ユーザーが結果を見た上で閉じたので、エラー表示のまま残さず待機へ戻す。
+        AppState.shared.update(.idle)
+        hide()
+    }
+
+    /// 挿入結果を残しているかどうかでパネルの大きさを切り替える。
+    private func applyPanelSize() {
+        guard let panel else { return }
+        let size = model.pendingResult == nil ? Self.panelSize : Self.resultPanelSize
+        let previous = panel.frame
+        guard previous.size != size else { return }
+        // borderless パネルは原点が左下。高さは上へ伸ばし、幅は中心を保ったまま広げる
+        // （ユーザーがドラッグで動かした位置を尊重するため、再センタリングはしない）。
+        panel.setContentSize(size)
+        panel.setFrameOrigin(CGPoint(x: previous.minX + (previous.width - size.width) / 2,
+                                     y: previous.minY))
+    }
+
     // MARK: パネル生成
 
     private func makePanel() -> NSPanel {
@@ -319,7 +466,10 @@ final class RecordingHUDController {
             onStop: { [weak self] in self?.onStop?() },
             onRequestCancel: { [weak self] in self?.requestCancel() },
             onConfirmCancel: { [weak self] in self?.onCancel?() },
-            onDismiss: { [weak self] in self?.hide() }
+            onDismiss: { [weak self] in self?.hide() },
+            onCopyResult: { [weak self] in self?.copyResult() },
+            onRetryInsert: { [weak self] in self?.retryInsert() },
+            onDismissResult: { [weak self] in self?.dismissResult() }
         )
 
         let panel = HUDPanel(
