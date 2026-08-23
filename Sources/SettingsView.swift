@@ -11,7 +11,7 @@ struct SettingsView: View {
             FormatterSettingsView()
                 .tabItem { Label("整形", systemImage: "wand.and.stars") }
         }
-        .frame(width: 440, height: 420)
+        .frame(minWidth: 460, minHeight: 520)
     }
 }
 
