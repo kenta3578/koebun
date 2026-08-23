@@ -39,6 +39,17 @@ final class SettingsStore: ObservableObject {
         didSet { UserDefaults.standard.set(historyRetentionDays, forKey: "historyRetentionDays") }
     }
 
+    // MARK: - エンジン選択（Issue #27）
+
+    /// 音声認識エンジン。**既定は現状維持の WhisperKit**——切り替えは明示操作でだけ起きる。
+    @Published var speechEngine: SpeechEngineKind {
+        didSet { UserDefaults.standard.set(speechEngine.rawValue, forKey: "speechEngine") }
+    }
+    /// 整形エンジン。音声認識とは**独立に**選べる（片方だけ Apple にした比較ができるように）。
+    @Published var formattingEngine: FormattingEngineKind {
+        didSet { UserDefaults.standard.set(formattingEngine.rawValue, forKey: "formattingEngine") }
+    }
+
     // MARK: - 整形 LLM
 
     /// 現在の整形モード名（`~/koebun/modes/*.json` の `name`）。
@@ -118,6 +129,15 @@ final class SettingsStore: ObservableObject {
         // 0（無期限）と未設定を区別するため object で取り出す。
         historyRetentionDays = UserDefaults.standard.object(forKey: "historyRetentionDays") as? Int ?? 30
 
+        // エンジンは既定で現状維持（WhisperKit + mlx）。保存値が今の環境で使えない
+        // （macOS 26 未満で apple が保存されている）ときも既定へ落とす。
+        speechEngine = Self.storedEngine(
+            forKey: "speechEngine", default: .whisperKit, isSupported: \.isSupported
+        )
+        formattingEngine = Self.storedEngine(
+            forKey: "formattingEngine", default: .mlx, isSupported: \.isSupported
+        )
+
         // 既定を「メッセージ」にして、初回から整形が効いている状態を見せる。
         // 整形を通したくないときは「そのまま」を選ぶか、formatterEnabled を OFF にする。
         modeName = UserDefaults.standard.string(forKey: "modeName") ?? "メッセージ"
@@ -135,6 +155,19 @@ final class SettingsStore: ObservableObject {
         diffGuardEnabled = UserDefaults.standard.object(forKey: "diffGuardEnabled") as? Bool ?? true
         // 誤検知の多い警告は無視されるようになるので、名詞まで見るのは明示的な選択にする。
         diffGuardIncludesNames = UserDefaults.standard.bool(forKey: "diffGuardIncludesNames")
+    }
+
+    /// 保存されているエンジン選択を読む。未設定・不正値・この環境で使えない値は既定に落とす。
+    private static func storedEngine<Kind: RawRepresentable>(
+        forKey key: String,
+        default fallback: Kind,
+        isSupported: (Kind) -> Bool
+    ) -> Kind where Kind.RawValue == String {
+        guard let raw = UserDefaults.standard.string(forKey: key),
+              let kind = Kind(rawValue: raw),
+              isSupported(kind)
+        else { return fallback }
+        return kind
     }
 
     static func keyName(for code: UInt16) -> String {

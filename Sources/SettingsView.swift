@@ -35,6 +35,33 @@ struct GeneralSettingsView: View {
                 .onChange(of: settings.stopSound) { _, new in preview(new) }
             }
 
+            Section("音声認識") {
+                Picker("エンジン", selection: $settings.speechEngine) {
+                    ForEach(SpeechEngineKind.allCases) { kind in
+                        Text(kind.label).tag(kind)
+                            .disabled(!kind.isSupported)
+                    }
+                }
+                .onChange(of: settings.speechEngine) { _, _ in
+                    AppController.shared.loadSpeechEngine()
+                }
+
+                Text("WhisperKit は初回に約2.9GB をダウンロードして常駐させます。"
+                     + "Apple 音声認識は OS 内蔵なのでダウンロードも常駐メモリもありません"
+                     + "（\(EngineSupport.requiresMacOS26)）。"
+                     + "切り替えると使わない方をメモリから降ろします。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !SpeechEngineKind.apple.isSupported {
+                    Text("この Mac では Apple 音声認識を選べません（\(EngineSupport.requiresMacOS26)）。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             Section("録音HUD") {
                 Toggle("録音中に HUD を表示", isOn: $settings.showRecordingHUD)
                 Text("波形でマイクが拾えているかを確認でき、停止・キャンセルもできます。"
@@ -160,6 +187,18 @@ struct FormatterSettingsView: View {
             }
 
             Section("モデル") {
+                Picker("整形エンジン", selection: $settings.formattingEngine) {
+                    ForEach(FormattingEngineKind.allCases) { kind in
+                        Text(kind.label).tag(kind)
+                            .disabled(!kind.isSupported)
+                    }
+                }
+                .onChange(of: settings.formattingEngine) { _, _ in
+                    AppController.shared.loadFormatter()
+                }
+
+                // モデルを選べるのは自前でモデルを持つ mlx 側だけ。
+                // Apple 実装は OS 内蔵の 3B 固定なので、選択肢を出すと嘘になる。
                 Picker("整形モデル", selection: $settings.formatterModelId) {
                     ForEach(Formatter.modelOptions, id: \.id) { option in
                         Text(option.label).tag(option.id)
@@ -168,6 +207,7 @@ struct FormatterSettingsView: View {
                 .onChange(of: settings.formatterModelId) { _, _ in
                     AppController.shared.loadFormatter()
                 }
+                .disabled(settings.formattingEngine != .mlx)
 
                 Picker("整形の制限時間", selection: $settings.formatTimeoutSeconds) {
                     ForEach(SettingsStore.formatTimeoutOptions, id: \.seconds) { option in
@@ -175,8 +215,18 @@ struct FormatterSettingsView: View {
                     }
                 }
 
-                Text("初回選択時にモデルを HuggingFace からダウンロードします（14B で約9GB）。"
-                     + "大きいモデルほど整形は丁寧になりますが、その分だけ挿入までの待ち時間が伸びます。")
+                if settings.formattingEngine == .apple {
+                    appleIntelligenceStatus
+                } else {
+                    Text("初回選択時にモデルを HuggingFace からダウンロードします（14B で約9GB）。"
+                         + "大きいモデルほど整形は丁寧になりますが、その分だけ挿入までの待ち時間が伸びます。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Text("音声認識のエンジンは「一般」タブで別に選べます。"
+                     + "どちらのエンジンで処理したかは履歴に残るので、同じ発話を通して比べられます。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -250,6 +300,26 @@ struct FormatterSettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Apple 整形が今この Mac で使えるか。**使えないなら理由をここに出す**——
+    /// 整形が黙って外れるのがいちばん困る（挿入時にも `AppStatus` へ同じ理由が出る）。
+    @ViewBuilder
+    private var appleIntelligenceStatus: some View {
+        if let reason = AppleIntelligence.unavailableReason() {
+            Label(reason + "。整形は行わず、辞書置換までのテキストをそのまま挿入します。",
+                  systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Label("Apple Intelligence が利用できます。ダウンロードも常駐メモリもありません"
+                  + "（オンデバイス約3B）。",
+                  systemImage: "checkmark.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

@@ -9,6 +9,9 @@ enum FormatterError: LocalizedError {
     case timedOut(seconds: Double)
     /// 整形結果が空だった（そのまま挿入すると発話が消えるので失敗として扱う）。
     case emptyOutput
+    /// 整形エンジン自体が使えない（Apple Intelligence が無効・非対応など）。
+    /// **無言で生テキストに落ちない**よう、理由をそのまま `AppStatus` に出す（Issue #27）。
+    case unavailable(reason: String)
 
     var errorDescription: String? {
         switch self {
@@ -18,6 +21,8 @@ enum FormatterError: LocalizedError {
             return "整形が \(Int(seconds)) 秒で終わりませんでした"
         case .emptyOutput:
             return "整形結果が空でした"
+        case .unavailable(let reason):
+            return reason
         }
     }
 }
@@ -31,7 +36,8 @@ enum FormatterError: LocalizedError {
 ///
 /// 呼び出し側の契約: **このクラスが失敗しても発話は失われない**。
 /// `AppController` は例外を握って置換後テキストを挿入する。
-actor Formatter {
+/// `FormattingEngine` の実装の1つ（Issue #27）。**挙動は差し替え前と同じ**。
+actor Formatter: FormattingEngine {
     /// 既定モデル。M5 Pro / 48GB の実機で WhisperKit large-v3（約3GB）と同時常駐させる前提。
     ///
     /// 14B/4bit ≒ 9GB。32B/4bit ≒ 18GB でも 48GB なら常駐自体は成立するが、
@@ -47,14 +53,9 @@ actor Formatter {
         ("mlx-community/Qwen3-32B-4bit", "Qwen3 32B（約18GB・重整形）"),
     ]
 
-    /// 読み込み状態。UI にはこれを文字列化して出す。
-    enum LoadState: Equatable {
-        case notLoaded
-        /// ダウンロード／読み込み中。`fraction` は 0...1、不明なら nil。
-        case loading(modelId: String, fraction: Double?)
-        case ready(modelId: String)
-        case failed(reason: String)
-    }
+    /// 読み込み状態。型はエンジン共通（`EngineLoadState`）だが、
+    /// 既存の呼び出し側が `Formatter.LoadState` で書かれているので別名を残す。
+    typealias LoadState = EngineLoadState
 
     private(set) var loadState: LoadState = .notLoaded
     private var container: ModelContainer?
@@ -150,12 +151,8 @@ actor Formatter {
 
     // MARK: - 整形
 
-    struct Result: Sendable {
-        var text: String
-        /// 実際に送ったシステムプロンプト全文。履歴に残して整形を検証できるようにする。
-        var prompt: String
-        var modelId: String
-    }
+    /// 整形の結果。型はエンジン共通（`FormattedText`）。
+    typealias Result = FormattedText
 
     /// `text` を `mode` のプロンプトで整形する。
     ///

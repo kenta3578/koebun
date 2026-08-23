@@ -8,8 +8,6 @@ final class AppController {
     static let shared = AppController()
 
     private let recorder = AudioRecorder()
-    private let transcriber = Transcriber()
-    private let formatter = Formatter()
     private let hotkeys = HotKeyManager()
     private let hud = RecordingHUDController()
     private let state = AppState.shared
@@ -24,7 +22,47 @@ final class AppController {
     }
     private var pending: PendingRecording?
 
+    // MARK: - エンジン（Issue #27）
+
+    /// 実装は差し替え可能で、**いったん作ったものは使い回す**。
+    /// 切り替えのたびに作り直すと WhisperKit の約2.9GB を毎回ダウンロード判定からやり直すことになる。
+    ///
+    /// Apple 実装は `@available(macOS 26.0, *)` なので型を直接書けない。
+    /// プロトコル型で持ち、生成だけを `#available` の中で行う。
+    private let whisperTranscriber = Transcriber()
+    private let mlxFormatter = Formatter()
+    private var appleTranscriber: (any SpeechEngine)?
+    private var appleFormatter: (any FormattingEngine)?
+
     private init() {}
+
+    /// 設定で選ばれている音声認識エンジン。この環境で使えないときは nil。
+    private func resolveSpeechEngine() -> (kind: SpeechEngineKind, engine: any SpeechEngine)? {
+        let kind = SettingsStore.shared.speechEngine
+        switch kind {
+        case .whisperKit:
+            return (kind, whisperTranscriber)
+        case .apple:
+            guard #available(macOS 26.0, *) else { return nil }
+            let engine = appleTranscriber ?? AppleTranscriber()
+            appleTranscriber = engine
+            return (kind, engine)
+        }
+    }
+
+    /// 設定で選ばれている整形エンジン。この環境で使えないときは nil。
+    private func resolveFormattingEngine() -> (kind: FormattingEngineKind, engine: any FormattingEngine)? {
+        let kind = SettingsStore.shared.formattingEngine
+        switch kind {
+        case .mlx:
+            return (kind, mlxFormatter)
+        case .apple:
+            guard #available(macOS 26.0, *) else { return nil }
+            let engine = appleFormatter ?? AppleFormatter()
+            appleFormatter = engine
+            return (kind, engine)
+        }
+    }
 
     func start() {
         Task { await bootstrap() }
@@ -35,14 +73,7 @@ final class AppController {
         await PermissionsManager.ensureMicrophone()
         PermissionsManager.ensureAccessibility(prompt: true)
 
-        state.update(.loadingModel(step: "モデルを読み込み中…"))
-        do {
-            try await transcriber.load()
-            state.modelLoaded = true
-            state.update(.idle)
-        } catch {
-            state.update(.failed(reason: "モデル読込失敗: \(error.localizedDescription)"))
-        }
+        await reloadSpeechEngine()
 
         hotkeys.onToggle = { [weak self] in
             Task { @MainActor in self?.toggleRecording() }
@@ -67,27 +98,73 @@ final class AppController {
         loadFormatter()
     }
 
+    // MARK: - 音声認識エンジン
+
+    /// 設定で選ばれている音声認識エンジンを読み込み直す（起動時とエンジン切り替え時）。
+    ///
+    /// 切り替え時は**使わない方を必ず降ろす**。両方載せたままだと、この Issue で測りたい
+    /// 常駐メモリが比較できなくなる。
+    func loadSpeechEngine() {
+        Task { await reloadSpeechEngine() }
+    }
+
+    private func reloadSpeechEngine() async {
+        state.modelLoaded = false
+        state.update(.loadingModel(step: "音声認識モデルを読み込み中…"))
+
+        guard let (kind, engine) = resolveSpeechEngine() else {
+            state.update(.failed(reason: "Apple 音声認識には \(EngineSupport.requiresMacOS26)"))
+            return
+        }
+
+        // 選ばれなかった方を降ろす（WhisperKit なら約2.9GB が返る）。
+        if kind != .whisperKit { await whisperTranscriber.unload() }
+        if kind != .apple, let appleTranscriber { await appleTranscriber.unload() }
+
+        do {
+            try await engine.load()
+            state.modelLoaded = true
+            state.update(.idle)
+        } catch {
+            state.update(.failed(reason: "モデル読込失敗: \(error.localizedDescription)"))
+        }
+    }
+
     // MARK: - 整形モデル
 
     /// 整形 LLM を常駐させる。録音はロードの完了を待たない（間に合わなければ整形を飛ばす）。
     func loadFormatter() {
         guard SettingsStore.shared.formatterEnabled else {
-            Task { await formatter.unload() }
+            Task { [mlxFormatter, appleFormatter] in
+                await mlxFormatter.unload()
+                await appleFormatter?.unload()
+            }
+            return
+        }
+        guard let (kind, engine) = resolveFormattingEngine() else {
+            NSLog("koebun: Apple 整形には \(EngineSupport.requiresMacOS26)")
             return
         }
         let modelId = SettingsStore.shared.formatterModelId
 
-        Task { [formatter] in
+        // 選ばれなかった方を降ろす（mlx の 14B なら約9GB が返る）。
+        if kind != .mlx { Task { [mlxFormatter] in await mlxFormatter.unload() } }
+        if kind != .apple, let appleFormatter {
+            Task { await appleFormatter.unload() }
+        }
+
+        Task {
             do {
                 // 進捗コールバックは actor の外から呼ばれるので、AppState は
                 // ここで captureせず MainActor 側で shared を引く。
-                try await formatter.load(modelId: modelId) { loadState in
+                try await engine.load(modelId: modelId) { loadState in
                     Task { @MainActor in Self.showFormatterLoad(loadState) }
                 }
             } catch is CancellationError {
                 // モデルを切り替えたときの中断。新しいロード側が状態を出す。
             } catch {
                 // 整形が載らなくても文字起こしは使えるので、待機状態には戻す。
+                // Apple Intelligence が無効なときはここに来る。理由は挿入時にも必ず出る。
                 NSLog("koebun: 整形モデルの読み込みに失敗しました: \(error)")
                 if case .loadingModel = state.status { state.update(.idle) }
             }
@@ -96,7 +173,7 @@ final class AppController {
 
     /// ロード進捗を状態表示に流す。**録音・処理中の表示は上書きしない**
     /// （バックグラウンドのダウンロードが、目の前の録音表示を消してはいけない）。
-    private static func showFormatterLoad(_ loadState: Formatter.LoadState) {
+    private static func showFormatterLoad(_ loadState: EngineLoadState) {
         let state = AppState.shared
         switch state.status {
         case .loadingModel, .idle: break
@@ -160,8 +237,12 @@ final class AppController {
         let samples = recorder.stop()
         Task { @MainActor in
             do {
+                guard let (speechKind, speechEngine) = resolveSpeechEngine() else {
+                    state.update(.failed(reason: "Apple 音声認識には \(EngineSupport.requiresMacOS26)"))
+                    return
+                }
                 let transcribeStart = Date()
-                let raw = try await transcriber.transcribe(samples)
+                let raw = try await speechEngine.transcribe(samples)
                 let replaceStart = Date()
                 // 整形 LLM の前段で辞書置換を適用する（決定的な文字列処理）
                 let replaced = ReplacementStore.shared.apply(raw)
@@ -208,6 +289,10 @@ final class AppController {
                     formattedText: formatting.result?.text,
                     modeName: formatting.modeName,
                     prompt: formatting.result?.prompt,
+                    // どのエンジンで処理したかを残す。これがエンジン比較（Issue #27）の一次データ。
+                    speechEngine: speechKind.rawValue,
+                    formattingEngine: formatting.engineKind?.rawValue,
+                    formattingModelId: formatting.modelId,
                     durations: .init(
                         transcribeMs: Self.milliseconds(from: transcribeStart, to: replaceStart),
                         replaceMs: Self.milliseconds(from: replaceStart, to: replaceEnd),
@@ -252,6 +337,11 @@ final class AppController {
         var attempted: Bool
         /// 整形を諦めた理由。ユーザーに見せる短い文言。
         var failure: String?
+        /// 整形を試みたエンジン。**失敗しても残す**——どのエンジンで何回外したかが
+        /// 比較（Issue #27）でいちばん効く数字なので、成功した分だけ数えては意味が無い。
+        var engineKind: FormattingEngineKind? = nil
+        /// 整形を試みたモデルの識別子。
+        var modelId: String? = nil
     }
 
     /// 置換後テキストを現在のモードで整形する。**例外を外に出さない**。
@@ -267,17 +357,33 @@ final class AppController {
         // コンテキストが1つも取れなくてもここは nil になるだけで、整形は普通に走る。
         let contextBlock = mode.context.isEnabled ? pending.context?.promptBlock(for: mode.context) : nil
 
+        guard let (engineKind, engine) = resolveFormattingEngine() else {
+            return FormatOutcome(
+                modeName: mode.name, result: nil, attempted: false,
+                failure: "Apple 整形には \(EngineSupport.requiresMacOS26)"
+            )
+        }
+        // モード指定のモデルがあればそれを、無ければ設定の既定を記録する
+        // （Apple 実装はモデルを選べないので、成功した結果の modelId で上書きされる）。
+        let modelId = mode.modelId ?? SettingsStore.shared.formatterModelId
+
         let timeout = Duration.seconds(SettingsStore.shared.formatTimeoutSeconds)
         do {
-            let result = try await formatter.format(
+            let result = try await engine.format(
                 text, mode: mode, contextBlock: contextBlock, timeout: timeout
             )
-            return FormatOutcome(modeName: mode.name, result: result, attempted: true, failure: nil)
+            return FormatOutcome(
+                modeName: mode.name, result: result, attempted: true, failure: nil,
+                engineKind: engineKind, modelId: result.modelId
+            )
         } catch {
+            // Apple Intelligence が無効・非対応のときもここ。理由は `AppStatus` に出る
+            // （`stopRecording` の "整形なしで挿入 ✓（理由）"）ので、無言では落ちない。
             let reason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             NSLog("koebun: 整形を諦めて置換後テキストを挿入します: \(reason)")
             return FormatOutcome(
-                modeName: mode.name, result: nil, attempted: true, failure: reason
+                modeName: mode.name, result: nil, attempted: true, failure: reason,
+                engineKind: engineKind, modelId: modelId
             )
         }
     }
