@@ -67,7 +67,9 @@ final class AppController {
         let samples = recorder.stop()
         Task { @MainActor in
             do {
-                let text = try await transcriber.transcribe(samples)
+                let raw = try await transcriber.transcribe(samples)
+                // 整形 LLM の前段で辞書置換を適用する（決定的な文字列処理）
+                let text = ReplacementStore.shared.apply(raw)
                 if text.isEmpty {
                     state.update(.done(message: "（無音）"))
                 } else {

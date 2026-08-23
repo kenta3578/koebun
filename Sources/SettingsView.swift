@@ -2,6 +2,19 @@ import SwiftUI
 import AppKit
 
 struct SettingsView: View {
+    var body: some View {
+        TabView {
+            GeneralSettingsView()
+                .tabItem { Label("一般", systemImage: "gearshape") }
+            ReplacementsSettingsView()
+                .tabItem { Label("辞書置換", systemImage: "character.book.closed") }
+        }
+        .frame(width: 440, height: 360)
+    }
+}
+
+/// サウンド・ホットキーなど基本設定。
+struct GeneralSettingsView: View {
     @ObservedObject private var settings = SettingsStore.shared
     @State private var isRecording = false
     @State private var recordingMonitor: Any?
@@ -35,8 +48,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 380)
-        .fixedSize()
         .onDisappear { cancelRecording() }
     }
 
@@ -62,5 +73,71 @@ struct SettingsView: View {
         isRecording = false
         if let m = recordingMonitor { NSEvent.removeMonitor(m) }
         recordingMonitor = nil
+    }
+}
+
+/// 辞書置換ルールの編集。編集内容は即座に `~/koebun/replacements.json` に保存される。
+struct ReplacementsSettingsView: View {
+    @ObservedObject private var store = ReplacementStore.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("文字起こし直後に機械的に置換します（大文字・小文字は区別しません）。"
+                 + "同じ位置に複数該当したら長いルールが優先されます。")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Text("読み（発話される語）").frame(maxWidth: .infinity, alignment: .leading)
+                Text("置換後").frame(maxWidth: .infinity, alignment: .leading)
+                // 削除ボタンぶんの余白
+                Color.clear.frame(width: 22)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            List {
+                ForEach($store.rules) { $rule in
+                    HStack(spacing: 8) {
+                        TextField("カーズ桜", text: $rule.from)
+                        TextField("河津桜", text: $rule.to)
+                        Button {
+                            store.rules.removeAll { $0.id == rule.id }
+                        } label: {
+                            Image(systemName: "minus.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("このルールを削除")
+                    }
+                    .textFieldStyle(.roundedBorder)
+                }
+            }
+            .listStyle(.bordered)
+            .alternatingRowBackgrounds()
+
+            HStack {
+                Button("ルールを追加") {
+                    store.rules.append(ReplacementRule(from: "", to: ""))
+                }
+                Spacer()
+                Button("記号の初期ルールを追加") { addMissingDefaults() }
+                    .help("削除した記号ルールだけを戻します（既存のルールは変更しません）")
+            }
+
+            Text(ReplacementStore.fileURL.path)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .textSelection(.enabled)
+        }
+        .padding()
+    }
+
+    /// 既定の記号ルールのうち、`from` が未登録のものだけを追加する。
+    private func addMissingDefaults() {
+        let existing = Set(store.rules.map { $0.from.lowercased() })
+        let missing = ReplacementStore.defaultRules.filter { !existing.contains($0.from.lowercased()) }
+        guard !missing.isEmpty else { return }
+        store.rules.append(contentsOf: missing)
     }
 }
