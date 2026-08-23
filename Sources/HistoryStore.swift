@@ -248,13 +248,13 @@ enum HistoryFiles {
 }
 
 enum HistoryError: LocalizedError {
-    /// 整形 LLM（Issue #10）が未実装のため再処理できない。
+    /// 再処理の UI 導線（モード選択）が未実装のため呼べない。
     case reprocessUnavailable
 
     var errorDescription: String? {
         switch self {
         case .reprocessUnavailable:
-            return "別モードでの再処理は整形 LLM（Issue #10）の実装後に有効になります。"
+            return "別モードでの再処理は履歴 UI 側の導線が入るまで無効です。"
         }
     }
 }
@@ -276,10 +276,17 @@ final class HistoryStore: ObservableObject {
     /// **挿入をブロックしない**: 一覧には即座に反映し、ディスクへの書き出しは
     /// バックグラウンドで行う。書き出しに失敗しても挿入は成功しているので、
     /// ログに残すだけでユーザーの操作は止めない。
+    /// - Parameters:
+    ///   - formattedText: 整形 LLM の出力。整形しなかった／失敗したときは nil。
+    ///   - modeName: 使用した整形モード名。
+    ///   - prompt: 整形 LLM に送ったシステムプロンプト全文（整形が通ったときのみ）。
     func record(
         samples: [Float],
         rawText: String,
         replacedText: String,
+        formattedText: String? = nil,
+        modeName: String? = nil,
+        prompt: String? = nil,
         durations: HistoryEntry.Durations,
         inserted: Bool
     ) {
@@ -288,9 +295,9 @@ final class HistoryStore: ObservableObject {
             createdAt: createdAt,
             rawText: rawText,
             replacedText: replacedText,
-            formattedText: nil,
-            modeName: nil,
-            prompt: nil,
+            formattedText: formattedText,
+            modeName: modeName,
+            prompt: prompt,
             durations: durations,
             audio: nil,
             inserted: inserted
@@ -345,10 +352,9 @@ final class HistoryStore: ObservableObject {
 
     /// 別モードでの再処理（Superwhisper の Process Again 相当）。
     ///
-    /// **未実装**: 整形 LLM（Issue #10）がまだ無いので処理の実体を書けない。
-    /// 保存済みの `audio.wav` と `rawText` から再実行できるようデータは揃えてあるので、
-    /// Issue #10 の完了後にここを埋める:
-    ///   1. `entry.rawText`（または audio.wav の再文字起こし結果）を指定モードで整形
+    /// **未実装**: 整形の実体（`Formatter` / `Mode`）は Issue #10 で入ったが、
+    /// 履歴 UI に「どのモードで処理し直すか」を選ばせる導線がまだ無い。残りは:
+    ///   1. `entry.replacedText`（または audio.wav の再文字起こし結果）を指定モードで整形
     ///   2. `formattedText` / `modeName` / `prompt` / `durations.formatMs` を埋めて meta.json を上書き
     ///   3. 一覧を更新して整形後テキストを表示する
     func reprocess(_ entry: HistoryEntry, modeName: String) async throws {

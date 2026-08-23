@@ -8,8 +8,10 @@ struct SettingsView: View {
                 .tabItem { Label("一般", systemImage: "gearshape") }
             ReplacementsSettingsView()
                 .tabItem { Label("辞書置換", systemImage: "character.book.closed") }
+            FormatterSettingsView()
+                .tabItem { Label("整形", systemImage: "wand.and.stars") }
         }
-        .frame(width: 440, height: 360)
+        .frame(width: 440, height: 420)
     }
 }
 
@@ -127,6 +129,88 @@ struct GeneralSettingsView: View {
         isRecording = false
         if let m = recordingMonitor { NSEvent.removeMonitor(m) }
         recordingMonitor = nil
+    }
+}
+
+/// 整形 LLM の設定。モード定義そのものは `~/koebun/modes/*.json` を直接編集する
+/// （プロンプトを Git で育てられるようにするため、ここには編集 UI を置かない）。
+struct FormatterSettingsView: View {
+    @ObservedObject private var settings = SettingsStore.shared
+    @ObservedObject private var modes = ModeStore.shared
+
+    var body: some View {
+        Form {
+            Section("整形") {
+                Toggle("整形 LLM を常駐させる", isOn: $settings.formatterEnabled)
+                    .onChange(of: settings.formatterEnabled) { _, _ in
+                        AppController.shared.loadFormatter()
+                    }
+
+                Picker("既定のモード", selection: $settings.modeName) {
+                    ForEach(modes.modes) { mode in
+                        Text(mode.name).tag(mode.name)
+                    }
+                }
+
+                Text("「そのまま」は LLM を一切通さない最速パスです。"
+                     + "整形は辞書置換のあとに走り、失敗しても置換後テキストが必ず挿入されます。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("モデル") {
+                Picker("整形モデル", selection: $settings.formatterModelId) {
+                    ForEach(Formatter.modelOptions, id: \.id) { option in
+                        Text(option.label).tag(option.id)
+                    }
+                }
+                .onChange(of: settings.formatterModelId) { _, _ in
+                    AppController.shared.loadFormatter()
+                }
+
+                Picker("整形の制限時間", selection: $settings.formatTimeoutSeconds) {
+                    ForEach(SettingsStore.formatTimeoutOptions, id: \.seconds) { option in
+                        Text(option.label).tag(option.seconds)
+                    }
+                }
+
+                Text("初回選択時にモデルを HuggingFace からダウンロードします（14B で約9GB）。"
+                     + "大きいモデルほど整形は丁寧になりますが、その分だけ挿入までの待ち時間が伸びます。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("モード定義") {
+                HStack {
+                    Text("保存先")
+                    Spacer()
+                    Button("フォルダを開く") {
+                        try? FileManager.default.createDirectory(
+                            at: ModeFiles.directoryURL, withIntermediateDirectories: true
+                        )
+                        NSWorkspace.shared.open(ModeFiles.directoryURL)
+                    }
+                    .buttonStyle(.link)
+                    Button("再読み込み") { modes.reload() }
+                        .buttonStyle(.link)
+                }
+
+                Text(ModeFiles.directoryURL.path)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .textSelection(.enabled)
+
+                Text("JSON の systemPrompt を編集すると整形方針を変えられます。"
+                     + "数値・URL・メールアドレスを書き換えない等の禁止事項はアプリ側で必ず前置されるので、"
+                     + "JSON から消すことはできません。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 
