@@ -17,6 +17,10 @@ final class SettingsStore: ObservableObject {
     @Published var stopSound: String {
         didSet { UserDefaults.standard.set(stopSound, forKey: "stopSound") }
     }
+    /// 録音 HUD を表示するか。OFF でも開始音・完了音で状態は分かる。
+    @Published var showRecordingHUD: Bool {
+        didSet { UserDefaults.standard.set(showRecordingHUD, forKey: "showRecordingHUD") }
+    }
     @Published var hotKeyCode: UInt16 {
         didSet { UserDefaults.standard.set(Int(hotKeyCode), forKey: "hotKeyCode") }
     }
@@ -33,6 +37,7 @@ final class SettingsStore: ObservableObject {
     private init() {
         startSound = UserDefaults.standard.string(forKey: "startSound") ?? "Glass"
         stopSound  = UserDefaults.standard.string(forKey: "stopSound")  ?? "Basso"
+        showRecordingHUD = UserDefaults.standard.object(forKey: "showRecordingHUD") as? Bool ?? true
         let stored = UserDefaults.standard.integer(forKey: "hotKeyCode")
         hotKeyCode = stored > 0 ? UInt16(stored) : 61
         // 0（無期限）と未設定を区別するため object で取り出す。

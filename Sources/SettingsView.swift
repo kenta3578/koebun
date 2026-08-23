@@ -33,6 +33,15 @@ struct GeneralSettingsView: View {
                 .onChange(of: settings.stopSound) { _, new in preview(new) }
             }
 
+            Section("録音HUD") {
+                Toggle("録音中に HUD を表示", isOn: $settings.showRecordingHUD)
+                Text("波形でマイクが拾えているかを確認でき、停止・キャンセルもできます。"
+                     + "OFF にすると開始音・完了音だけで状態を知らせます（キャンセルは HUD からのみ）。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Section("ホットキー") {
                 HStack {
                     Text("録音トリガー")

@@ -5,7 +5,16 @@
 build/
 DerivedData/
 # XcodeGen で project.yml から生成するためコミットしない
-*.xcodeproj/
+*.xcodeproj/*
+# ただし Package.resolved だけは依存 revision 固定のため追跡する。
+# 親ディレクトリを段階的に再包含しないと Git が中まで降りないので、この順序が必要。
+!*.xcodeproj/project.xcworkspace/
+*.xcodeproj/project.xcworkspace/*
+!*.xcodeproj/project.xcworkspace/xcshareddata/
+*.xcodeproj/project.xcworkspace/xcshareddata/*
+!*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+!*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 *.xcuserstate
 *.xcscmblueprint
 xcuserdata/
