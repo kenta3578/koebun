@@ -11,6 +11,10 @@ struct MenuContent: View {
 
         Divider()
 
+        Button("履歴…") {
+            HistoryWindowController.shared.show()
+        }
+
         Button("設定…") {
             NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
             NSApp.activate(ignoringOtherApps: true)
