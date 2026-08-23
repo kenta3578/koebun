@@ -20,10 +20,8 @@ struct KoebunApp: App {
                 .accessibilityLabel(state.status.accessibilityLabel)
         }
         .menuBarExtraStyle(.menu)
-
-        Settings {
-            SettingsView()
-        }
+        // 設定は SwiftUI の Settings シーンではなく SettingsWindowController で開く
+        // （非公開セレクタに依存すると LSUIElement アプリで無反応になるため）。
     }
 }
 

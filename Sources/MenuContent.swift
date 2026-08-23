@@ -27,8 +27,7 @@ struct MenuContent: View {
         }
 
         Button("設定…") {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            NSApp.activate(ignoringOtherApps: true)
+            SettingsWindowController.shared.show()
         }
 
         Divider()
