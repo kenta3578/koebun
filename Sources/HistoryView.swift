@@ -84,6 +84,10 @@ struct HistoryView: View {
                         if entry.formattedText == nil {
                             Text("整形なし")
                         }
+                        if entry.diff?.hasChanges == true {
+                            Label("差分", systemImage: "exclamationmark.circle.fill")
+                                .foregroundStyle(.yellow)
+                        }
                     }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -129,6 +133,8 @@ struct HistoryView: View {
                 .labelsHidden()
 
                 textBox(entry)
+
+                diffSection(entry)
 
                 actions(entry)
 
@@ -178,12 +184,12 @@ struct HistoryView: View {
         let text = variant.text(of: entry)
         Group {
             if let text, !text.isEmpty {
-                Text(text)
+                Text(highlighted(text, of: entry))
                     .font(.system(size: 13))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if variant == .formatted {
-                Text("整形 LLM（Issue #10）が未実装のため、この発話には整形後テキストがありません。")
+                Text("この発話は整形を通していません（「そのまま」モード、または整形に失敗）。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -237,7 +243,7 @@ struct HistoryView: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    Text("整形 LLM（Issue #10）が未実装のため、送信プロンプトはまだ記録されていません。")
+                    Text("この発話は整形を通していないため、送信プロンプトはありません。")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -260,6 +266,86 @@ struct HistoryView: View {
             }
             .buttonStyle(.link)
             .font(.caption)
+        }
+    }
+
+    // MARK: - 整形ガード（Issue #14）
+
+    /// 整形が数値・URL 等を書き換えた疑いの一覧。
+    ///
+    /// **ここが競合に無い部分**（`ai_docs/competitor-superwhisper.md` §4-2,3, §5）。
+    /// 整形 AI は請求額を 4,217 から 4,270 に静かに書き換える。見た目が自然なので、
+    /// 突き合わせる場所が無ければ誰も気づけない。
+    @ViewBuilder
+    private func diffSection(_ entry: HistoryEntry) -> some View {
+        if let diff = entry.diff, diff.hasChanges {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("整形で\(diff.shortSummary)があります", systemImage: "exclamationmark.circle.fill")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.yellow)
+
+                ForEach(Array(diff.changes.enumerated()), id: \.offset) { _, change in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(change.kind.label)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 76, alignment: .leading)
+                        Text(change.text)
+                            .font(.system(size: 12, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                }
+                if diff.omittedCount > 0 {
+                    Text("ほか \(diff.omittedCount) 件（多すぎるため省略）")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("「置換後」が整形 LLM に渡した実際の入力です。"
+                     + "上のタブを切り替えると、消えた値・増えた値が黄色で反転します。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.yellow.opacity(0.10)))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.yellow.opacity(0.35)))
+        } else if entry.diff != nil {
+            Label("数値・URL・メールアドレスは整形前後で一致しています", systemImage: "checkmark.seal")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 表示中のテキストのうち、**もう一方の側に無い**トークンを反転表示する。
+    ///
+    /// 生／置換後は整形後と、整形後は置換後と突き合わせる。差分検出と同じ多重集合の考え方なので、
+    /// 「4,217 が消えた」側と「4,270 が増えた」側が、それぞれのタブで光る。
+    private func highlighted(_ text: String, of entry: HistoryEntry) -> AttributedString {
+        var attributed = AttributedString(text)
+        guard let diff = entry.diff, diff.hasChanges,
+              let counterpart = counterpartText(of: entry) else { return attributed }
+
+        let kinds = Set(diff.checkedKinds)
+        let ns = text as NSString
+        for token in FormatGuard.surplusTokens(in: text, comparedTo: counterpart, kinds: kinds) {
+            guard let range = Range(token.range, in: text),
+                  let lower = AttributedString.Index(range.lowerBound, within: attributed),
+                  let upper = AttributedString.Index(range.upperBound, within: attributed),
+                  token.range.location + token.range.length <= ns.length else { continue }
+            attributed[lower..<upper].backgroundColor = Color.yellow.opacity(0.45)
+            attributed[lower..<upper].inlinePresentationIntent = .stronglyEmphasized
+        }
+        return attributed
+    }
+
+    /// ハイライトの比較相手。整形を通していなければ比較しない。
+    private func counterpartText(of entry: HistoryEntry) -> String? {
+        guard let formatted = entry.formattedText else { return nil }
+        switch variant {
+        case .raw, .replaced: return formatted
+        case .formatted:      return entry.replacedText
         }
     }
 

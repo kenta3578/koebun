@@ -31,6 +31,7 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     }
 
     /// meta.json のスキーマ版。整形 LLM を足したあとも古い履歴を読み分けられるようにする。
+    /// 2 = 整形ガードの検出結果（`diff`）を追加（Issue #14）。
     var version: Int = HistoryFiles.schemaVersion
     var createdAt: Date
     /// 文字起こしの生出力。**上書きしない**。
@@ -45,6 +46,10 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     /// プロンプト改善のループを回すために**全文**を残す（要約・省略しない）。
     var prompt: String?
     var durations: Durations
+    /// 整形ガード（Issue #14）の検出結果。点検しなかった発話（整形なし・ガード OFF）は nil。
+    /// **あとから傾向を見るために残す**——どのモードでどの種類が何件書き換わるかが分かれば、
+    /// 直すべきはプロンプトなのかモデルなのかを判断できる。
+    var diff: FormatDiff?
     var audio: Audio?
     /// 挿入まで到達したか（無音・挿入失敗と区別する）。
     var inserted: Bool
@@ -53,7 +58,7 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     var id: String = ""
 
     private enum CodingKeys: String, CodingKey {
-        case version, createdAt, rawText, replacedText, formattedText, modeName, prompt, durations, audio, inserted
+        case version, createdAt, rawText, replacedText, formattedText, modeName, prompt, durations, diff, audio, inserted
     }
 
     /// 一覧に出す1行サマリー。整形後があればそちらを優先する。
@@ -69,7 +74,7 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
 /// 保存は挿入をブロックしてはいけない（挿入の体感速度がこのアプリの価値）ので、
 /// ここの関数はバックグラウンドの `Task.detached` から呼ばれる。
 enum HistoryFiles {
-    static let schemaVersion = 1
+    static let schemaVersion = 2
     static let metaFileName = "meta.json"
     static let audioFileName = "audio.wav"
     /// AudioRecorder が出力する形式（16kHz / mono / Float32）。
@@ -280,6 +285,7 @@ final class HistoryStore: ObservableObject {
     ///   - formattedText: 整形 LLM の出力。整形しなかった／失敗したときは nil。
     ///   - modeName: 使用した整形モード名。
     ///   - prompt: 整形 LLM に送ったシステムプロンプト全文（整形が通ったときのみ）。
+    ///   - diff: 整形ガードの検出結果。点検しなかったときは nil。
     func record(
         samples: [Float],
         rawText: String,
@@ -288,6 +294,7 @@ final class HistoryStore: ObservableObject {
         modeName: String? = nil,
         prompt: String? = nil,
         durations: HistoryEntry.Durations,
+        diff: FormatDiff? = nil,
         inserted: Bool
     ) {
         let createdAt = Date()
@@ -299,6 +306,7 @@ final class HistoryStore: ObservableObject {
             modeName: modeName,
             prompt: prompt,
             durations: durations,
+            diff: diff,
             audio: nil,
             inserted: inserted
         )

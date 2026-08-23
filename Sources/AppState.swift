@@ -14,11 +14,17 @@ enum AppStatus: Equatable {
     case processing
     /// 完了。`message` は「挿入しました ✓」など。一定時間後に `.idle` へ自動復帰する。
     case done(message: String)
+    /// 挿入は済んだが、整形が数値・URL 等を書き換えた疑いがある（Issue #14）。
+    /// **挿入をブロックしない**方針なので失敗ではない。`.done` とは形も色も変えて、
+    /// 気づかないまま流れないようにする。
+    case warned(message: String)
     /// 失敗。原因が読めるよう、自動復帰させずに残す。
     case failed(reason: String)
 
     /// 完了表示を待機へ戻すまでの時間。
     static let doneDisplayDuration: Duration = .seconds(1.5)
+    /// 警告表示を待機へ戻すまでの時間。読んで判断する必要があるので完了より長く出す。
+    static let warnedDisplayDuration: Duration = .seconds(5)
 
     /// SF Symbols 名。色だけに頼らず**形状でも**状態が区別できるようにする。
     var symbolName: String {
@@ -28,6 +34,7 @@ enum AppStatus: Equatable {
         case .recording:    return "mic.fill"
         case .processing:   return "waveform"
         case .done:         return "checkmark.circle.fill"
+        case .warned:       return "exclamationmark.circle.fill"
         case .failed:       return "exclamationmark.triangle.fill"
         }
     }
@@ -40,6 +47,7 @@ enum AppStatus: Equatable {
         case .recording:    return .systemRed
         case .processing:   return .systemBlue
         case .done:         return .systemGreen
+        case .warned:       return .systemYellow
         case .failed:       return .systemOrange
         }
     }
@@ -52,6 +60,7 @@ enum AppStatus: Equatable {
         case .recording:    return "koebun: 録音中"
         case .processing:   return "koebun: 文字起こし中"
         case .done:         return "koebun: 完了"
+        case .warned:       return "koebun: 完了（整形の差分に注意）"
         case .failed:       return "koebun: エラー"
         }
     }
@@ -65,6 +74,7 @@ enum AppStatus: Equatable {
         case .recording:               return "録音中…（\(Self.hotKeyName)で停止）"
         case .processing:              return "文字起こし・整形中…"
         case .done(let message):       return "\(message) 待機中（\(Self.hotKeyName)で録音開始）"
+        case .warned(let message):     return message
         case .failed(let reason):      return reason
         }
     }
@@ -107,15 +117,20 @@ final class AppState: ObservableObject {
 
     private init() {}
 
-    /// 状態を更新する。`.done` は一定時間後に `.idle` へ自動復帰する。
+    /// 状態を更新する。`.done` / `.warned` は一定時間後に `.idle` へ自動復帰する。
     func update(_ newStatus: AppStatus) {
         doneResetTask?.cancel()
         doneResetTask = nil
         status = newStatus
 
-        guard case .done = newStatus else { return }
+        let duration: Duration
+        switch newStatus {
+        case .done:   duration = AppStatus.doneDisplayDuration
+        case .warned: duration = AppStatus.warnedDisplayDuration
+        default:      return
+        }
         doneResetTask = Task { [weak self] in
-            try? await Task.sleep(for: AppStatus.doneDisplayDuration)
+            try? await Task.sleep(for: duration)
             guard !Task.isCancelled else { return }
             self?.status = .idle
         }

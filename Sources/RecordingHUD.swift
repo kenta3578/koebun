@@ -23,6 +23,8 @@ final class RecordingHUDModel: ObservableObject {
     @Published var isConfirmingCancel = false
     /// 挿入できなかった（または確認できなかった）結果。ここに残っている間は HUD を閉じない。
     @Published var pendingResult: PendingResult?
+    /// 整形が数値・URL 等を書き換えた疑い（Issue #14）。挿入は済んでいるので**閉じてよい**警告。
+    @Published var warning: FormatDiff?
 
     /// HUD に残す挿入結果。
     struct PendingResult: Equatable {
@@ -52,6 +54,7 @@ final class RecordingHUDModel: ObservableObject {
         pushCount = 0
         isConfirmingCancel = false
         pendingResult = nil
+        warning = nil
     }
 
     func setResultNote(_ note: String?) {
@@ -89,6 +92,8 @@ struct RecordingHUDView: View {
     let onCopyResult: () -> Void
     let onRetryInsert: () -> Void
     let onDismissResult: () -> Void
+    let onOpenHistory: () -> Void
+    let onDismissWarning: () -> Void
 
     var body: some View {
         ZStack {
@@ -105,7 +110,9 @@ struct RecordingHUDView: View {
     }
 
     private var size: CGSize {
-        model.pendingResult == nil ? RecordingHUDController.panelSize : RecordingHUDController.resultPanelSize
+        if model.pendingResult != nil { return RecordingHUDController.resultPanelSize }
+        if model.warning?.hasChanges == true { return RecordingHUDController.warningPanelSize }
+        return RecordingHUDController.panelSize
     }
 
     @ViewBuilder
@@ -114,11 +121,14 @@ struct RecordingHUDView: View {
             resultContent(result)
         } else if model.isConfirmingCancel {
             cancelConfirmation
+        } else if let warning = model.warning, warning.hasChanges {
+            warningContent(warning)
         } else {
             switch state.status {
             case .recording:            recordingContent
             case .processing:           processingContent
             case .done(let message):    simpleRow(message)
+            case .warned(let message):  simpleRow(message)
             case .failed(let reason):   failedContent(reason)
             default:                    simpleRow(state.status.accessibilityLabel)
             }
@@ -250,6 +260,48 @@ struct RecordingHUDView: View {
         .padding(.vertical, 10)
     }
 
+    // 整形が事実を書き換えた疑い。**挿入はすでに済んでいる**ので止めるための UI ではなく、
+    // 「今の1発話を疑う理由がある」と気づかせて履歴へ送り込むための UI
+    // （`ai_docs/competitor-superwhisper.md` §4-2,3: 相手はこの警告を一切出さない）。
+    private func warningContent(_ diff: FormatDiff) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.yellow)
+                Text("整形で\(diff.shortSummary)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                Spacer()
+                Button("履歴で確認", action: onOpenHistory)
+                    .controlSize(.small)
+                Button("閉じる", action: onDismissWarning)
+                    .controlSize(.small)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(diff.changes.prefix(3).enumerated()), id: \.offset) { _, change in
+                    HStack(spacing: 6) {
+                        Text(change.kind.label)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Text(change.text)
+                            .font(.system(size: 11, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                if diff.changes.count > 3 {
+                    Text("ほか \(diff.changes.count - 3 + diff.omittedCount) 件")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 8)
+    }
+
     private var statusIcon: some View {
         Image(systemName: state.status.symbolName)
             .font(.system(size: 13, weight: .semibold))
@@ -321,6 +373,8 @@ final class RecordingHUDController {
     static let panelSize = CGSize(width: 340, height: 64)
     /// 挿入結果を残しているときのサイズ（本文＋操作ボタンぶん高くする）。
     static let resultPanelSize = CGSize(width: 380, height: 160)
+    /// 整形の書き換え警告を出しているときのサイズ。
+    static let warningPanelSize = CGSize(width: 400, height: 108)
 
     /// 停止ボタン（ホットキーと等価）。
     var onStop: (() -> Void)?
@@ -366,7 +420,11 @@ final class RecordingHUDController {
     }
 
     /// 完了表示を一瞬だけ見せてから自動的に閉じる（挿入できたことを HUD 側でも確認できる）。
-    func finish() {
+    ///
+    /// `warning` に変化があれば、閉じる前に何が書き換わったかを見せて表示時間を延ばす。
+    /// **HUD が非表示なら警告も出さない**——挿入結果と違って失われるものは無く
+    /// （履歴に残る）、メニューバーの状態でも警告は読める。設定を尊重する。
+    func finish(warning: FormatDiff? = nil) {
         // 前回の挿入結果を残したままなら、今回の成功で役目を終える。
         if model.pendingResult != nil {
             model.pendingResult = nil
@@ -375,12 +433,34 @@ final class RecordingHUDController {
         guard isVisible else { return }
         stopTicking()
         removeEscapeMonitors()
+
+        let hasWarning = warning?.hasChanges == true
+        model.warning = hasWarning ? warning : nil
+        applyPanelSize()
+
         autoHideTask?.cancel()
         autoHideTask = Task { [weak self] in
-            try? await Task.sleep(for: AppStatus.doneDisplayDuration)
+            try? await Task.sleep(for: hasWarning
+                                  ? AppStatus.warnedDisplayDuration
+                                  : AppStatus.doneDisplayDuration)
             guard !Task.isCancelled else { return }
             self?.hide()
         }
+    }
+
+    /// 警告から履歴を開く。読んでいる途中に HUD が消えないよう自動クローズを止める。
+    private func openHistory() {
+        autoHideTask?.cancel()
+        autoHideTask = nil
+        HistoryWindowController.shared.show()
+        hide()
+    }
+
+    private func dismissWarning() {
+        model.warning = nil
+        applyPanelSize()
+        AppState.shared.update(.idle)
+        hide()
     }
 
     /// 録音レベル（0…1）を波形へ流す。
@@ -444,10 +524,17 @@ final class RecordingHUDController {
         hide()
     }
 
-    /// 挿入結果を残しているかどうかでパネルの大きさを切り替える。
+    /// 表示中の内容に合わせてパネルの大きさを切り替える。
     private func applyPanelSize() {
         guard let panel else { return }
-        let size = model.pendingResult == nil ? Self.panelSize : Self.resultPanelSize
+        let size: CGSize
+        if model.pendingResult != nil {
+            size = Self.resultPanelSize
+        } else if model.warning?.hasChanges == true {
+            size = Self.warningPanelSize
+        } else {
+            size = Self.panelSize
+        }
         let previous = panel.frame
         guard previous.size != size else { return }
         // borderless パネルは原点が左下。高さは上へ伸ばし、幅は中心を保ったまま広げる
@@ -469,7 +556,9 @@ final class RecordingHUDController {
             onDismiss: { [weak self] in self?.hide() },
             onCopyResult: { [weak self] in self?.copyResult() },
             onRetryInsert: { [weak self] in self?.retryInsert() },
-            onDismissResult: { [weak self] in self?.dismissResult() }
+            onDismissResult: { [weak self] in self?.dismissResult() },
+            onOpenHistory: { [weak self] in self?.openHistory() },
+            onDismissWarning: { [weak self] in self?.dismissWarning() }
         )
 
         let panel = HUDPanel(
