@@ -266,17 +266,20 @@ final class AppController {
                     // 「録音直前のコピー」と誤認しないよう、この間の変化は採用しない。
                     ClipboardWatcher.shared.suppressChanges(for: 2)
                     outcome = await TextInjector.insert(text)
-                    if outcome.isSucceeded {
-                        // 整形を外したことは必ず見せる（無言で生テキストに落ちない）。
-                        if let failure = formatting.failure {
-                            state.update(.done(message: "整形なしで挿入 ✓（\(failure)）"))
-                        } else if let diff, diff.hasChanges {
-                            state.update(.warned(message: "挿入しました ✓ \(diff.shortSummary)"))
-                        } else {
-                            state.update(.done(message: "挿入しました ✓"))
-                        }
-                    } else {
+                    // 「確認できなかっただけ」を失敗として見せない（Issue #34）。
+                    // AX でテキストを読めないアプリ（ターミナル等）では毎回起きるので、
+                    // 警告にすると本当の失敗が埋もれる。
+                    if outcome.isFailure {
                         state.update(.failed(reason: outcome.statusMessage))
+                    } else if let failure = formatting.failure {
+                        // 整形を外したことは必ず見せる（無言で生テキストに落ちない）。
+                        state.update(.done(message: "整形なしで挿入 ✓（\(failure)）"))
+                    } else if let diff, diff.hasChanges {
+                        state.update(.warned(message: "挿入しました ✓ \(diff.shortSummary)"))
+                    } else {
+                        state.update(.done(message: outcome.isSucceeded
+                                           ? "挿入しました ✓"
+                                           : outcome.summary))
                     }
                 }
                 let inserted = !text.isEmpty && outcome.isSucceeded
@@ -308,8 +311,9 @@ final class AppController {
                     // 書き換えの疑いがあるときは、閉じる前に何が変わったかを見せる。
                     hud.finish(warning: diff)
                 } else {
-                    // 挿入できなかった結果は HUD に残し、コピー・再挿入できるようにする。
-                    hud.presentResult(text, reason: outcome.reason)
+                    // 挿入できなかった／確認できなかった結果は HUD に残し、
+                    // コピー・再挿入できるようにする（確認できないだけなら数秒で閉じる）。
+                    hud.presentResult(text, outcome: outcome)
                 }
             } catch {
                 // 失敗は自動で閉じない。HUD に原因を残す。

@@ -29,8 +29,12 @@ final class RecordingHUDModel: ObservableObject {
     /// HUD に残す挿入結果。
     struct PendingResult: Equatable {
         var text: String
-        /// なぜ残っているか（「入力先がテキストを受け付けませんでした」など）。
-        var reason: String
+        /// 何が起きたか（「挿入しました」「入力先がテキストを受け付けませんでした」）。
+        var title: String
+        /// 補足（「このアプリでは結果を確認できません」）。無いこともある。
+        var detail: String?
+        /// **本当に失敗したか**。true のときだけ警告色・警告アイコンで描く（Issue #34）。
+        var isFailure: Bool
         /// コピー・再挿入の結果を伝える一時メッセージ。
         var note: String?
     }
@@ -214,17 +218,27 @@ struct RecordingHUDView: View {
         }
     }
 
-    // 挿入できなかった結果。**自動で閉じない**。ここからコピー・再挿入できる
+    // 挿入できなかった／確認できなかった結果。ここからコピー・再挿入できる
     // （`ai_docs/competitor-superwhisper.md` §8-3: 相手はペースト失敗時に結果をミニウィンドウに残す）。
+    //
+    // **失敗と「確認できないだけ」で見せ方を変える**（Issue #34）。
+    // 確認できないだけの状態は情報色で描き、数秒で自動的に閉じる。失敗は警告色のまま残す。
     private func resultContent(_ result: RecordingHUDModel.PendingResult) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
+                Image(systemName: result.isFailure ? "exclamationmark.triangle.fill" : "info.circle")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.orange)
-                Text(result.reason)
+                    .foregroundStyle(result.isFailure ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                Text(result.title)
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
+                if let detail = result.detail {
+                    Text(detail)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
                 Spacer()
                 Button("閉じる", action: onDismissResult)
                     .controlSize(.small)
@@ -375,6 +389,9 @@ final class RecordingHUDController {
     static let resultPanelSize = CGSize(width: 380, height: 160)
     /// 整形の書き換え警告を出しているときのサイズ。
     static let warningPanelSize = CGSize(width: 400, height: 108)
+    /// 「挿入は済んだが確認できなかった」結果を出しておく時間（Issue #34）。
+    /// 本文を読んでコピーに手を伸ばせる長さにする。失敗はこれで閉じない。
+    static let uncertainResultDuration: Duration = .seconds(6)
 
     /// 停止ボタン（ホットキーと等価）。
     var onStop: (() -> Void)?
@@ -388,6 +405,8 @@ final class RecordingHUDController {
     private var localMonitor: Any?
     private var globalMonitor: Any?
     private var autoHideTask: Task<Void, Never>?
+    /// 表示中の結果を自動的に閉じてよいか（`.uncertain` だけ true）。
+    private var resultAutoHides = false
 
     var isVisible: Bool { panel?.isVisible == true }
 
@@ -411,6 +430,7 @@ final class RecordingHUDController {
     func hide() {
         autoHideTask?.cancel()
         autoHideTask = nil
+        resultAutoHides = false
         stopTicking()
         removeEscapeMonitors()
         model.reset()
@@ -428,6 +448,7 @@ final class RecordingHUDController {
         // 前回の挿入結果を残したままなら、今回の成功で役目を終える。
         if model.pendingResult != nil {
             model.pendingResult = nil
+            resultAutoHides = false
             applyPanelSize()
         }
         guard isVisible else { return }
@@ -475,7 +496,10 @@ final class RecordingHUDController {
     ///
     /// **HUD 表示が OFF でもここでは出す**。結果を失わせないことが優先で、
     /// 出さなければユーザーは結果がどこにあるか分からない。
-    func presentResult(_ text: String, reason: String) {
+    ///
+    /// 失敗は原因を読ませる必要があるので残す。**確認できなかっただけなら数秒で閉じる**
+    /// （Issue #34: 毎回出る警告は読まれなくなる）。閉じても結果はクリップボードと履歴に残る。
+    func presentResult(_ text: String, outcome: InsertionOutcome) {
         autoHideTask?.cancel()
         autoHideTask = nil
         stopTicking()
@@ -483,16 +507,42 @@ final class RecordingHUDController {
         removeEscapeMonitors()
         startedAt = nil
 
-        model.pendingResult = .init(text: text, reason: reason, note: nil)
+        model.pendingResult = .init(text: text,
+                                    title: outcome.headline,
+                                    detail: outcome.detail,
+                                    isFailure: outcome.isFailure,
+                                    note: nil)
+        resultAutoHides = !outcome.isFailure
 
         let panel = self.panel ?? makePanel()
         self.panel = panel
         applyPanelSize()
         panel.orderFrontRegardless()
+        scheduleResultAutoHide()
+    }
+
+    /// 「確認できなかっただけ」の結果を自動的に閉じる。失敗のときは何もしない。
+    private func scheduleResultAutoHide() {
+        guard resultAutoHides, model.pendingResult != nil else { return }
+        autoHideTask?.cancel()
+        autoHideTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.uncertainResultDuration)
+            guard !Task.isCancelled else { return }
+            guard let self, self.model.pendingResult != nil else { return }
+            self.dismissResult()
+        }
+    }
+
+    /// ユーザーが結果に触れたら自動クローズをやめる（読んでいる途中で消さない）。
+    private func keepResultOpen() {
+        resultAutoHides = false
+        autoHideTask?.cancel()
+        autoHideTask = nil
     }
 
     private func copyResult() {
         guard let result = model.pendingResult else { return }
+        keepResultOpen()
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(result.text, forType: .string)
@@ -503,6 +553,7 @@ final class RecordingHUDController {
     /// ボタンを押しても最前面アプリは変わらない＝同じ入力先へ送れる。
     private func retryInsert() {
         guard let result = model.pendingResult else { return }
+        keepResultOpen()
         model.setResultNote("挿入中…")
         Task { @MainActor in
             let outcome = await TextInjector.insert(result.text)
@@ -513,7 +564,7 @@ final class RecordingHUDController {
                 AppState.shared.update(.done(message: "挿入しました ✓"))
                 finish()
             } else {
-                model.setResultNote(outcome.reason)
+                model.setResultNote(outcome.summary)
             }
         }
     }
