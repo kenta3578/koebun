@@ -172,6 +172,10 @@ final class AppController {
                 let formatEnd = Date()
                 let text = formatting.result?.text ?? replaced
 
+                // 整形が数値・URL・メールを書き換えていないか点検する（Issue #14）。
+                // 正規表現数本ぶんなので挿入の前に済ませられる。**挿入はブロックしない**。
+                let diff = inspectFormatting(before: replaced, after: formatting.result?.text)
+
                 // 挿入は成否を判定して返る。成功と確認できなければ結果を捨てない（Issue #13）。
                 var outcome: InsertionOutcome = .succeeded
                 if text.isEmpty {
@@ -185,6 +189,8 @@ final class AppController {
                         // 整形を外したことは必ず見せる（無言で生テキストに落ちない）。
                         if let failure = formatting.failure {
                             state.update(.done(message: "整形なしで挿入 ✓（\(failure)）"))
+                        } else if let diff, diff.hasChanges {
+                            state.update(.warned(message: "挿入しました ✓ \(diff.shortSummary)"))
                         } else {
                             state.update(.done(message: "挿入しました ✓"))
                         }
@@ -208,12 +214,14 @@ final class AppController {
                         formatMs: formatting.attempted
                             ? Self.milliseconds(from: replaceEnd, to: formatEnd) : nil
                     ),
+                    diff: diff,
                     inserted: inserted
                 )
 
                 if outcome.isSucceeded {
                     // 挿入まで終えてから HUD を閉じる（完了表示を一瞬見せる）。
-                    hud.finish()
+                    // 書き換えの疑いがあるときは、閉じる前に何が変わったかを見せる。
+                    hud.finish(warning: diff)
                 } else {
                     // 挿入できなかった結果は HUD に残し、コピー・再挿入できるようにする。
                     hud.presentResult(text, reason: outcome.reason)
@@ -223,6 +231,16 @@ final class AppController {
                 state.update(.failed(reason: "文字起こし失敗: \(error.localizedDescription)"))
             }
         }
+    }
+
+    /// 整形前後で数値・URL・メールアドレス等が変わっていないか点検する（Issue #14）。
+    ///
+    /// 整形を通していない発話（`そのまま` モード・整形失敗）は比べる相手が無いので nil。
+    /// 検出しても**挿入は止めない**。止めると作業が止まり、結局ガードごと切られる。
+    private func inspectFormatting(before: String, after: String?) -> FormatDiff? {
+        let kinds = SettingsStore.shared.diffGuardKinds
+        guard !kinds.isEmpty, let after, after != before else { return nil }
+        return FormatGuard.check(before: before, after: after, kinds: kinds)
     }
 
     /// 整形の結果。**整形は落ちても発話を落とさない**ので、成否は `result` の有無で表す。
