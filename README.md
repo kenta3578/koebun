@@ -4,6 +4,8 @@
 
 メニューバーに常駐し、右 ⌥ を押すと録音を開始。もう一度押すと文字起こしして、そのとき最前面にあるアプリのカーソル位置へテキストを挿入します。音声もテキストも端末の外に出ません。サブスクもアカウント登録もありません。
 
+**既定の構成ではモデルのダウンロードが要りません。** 起動して権限を許可すれば、そのまま喋って挿入まで通ります（macOS 26 以降）。数GB のモデルが要るのは、認識を WhisperKit に替えるか、LLM 整形を自分で ON にしたときだけです。
+
 <!-- TODO(#16): デモ GIF を docs/demo.gif に置いてここに貼る（右⌥で録音 → 挿入されるまで）-->
 <!-- TODO(#16): メニューバー UI のスクショを docs/menubar.png に置いてここに貼る -->
 
@@ -11,15 +13,17 @@
 
 ## いまできること / まだできないこと
 
-正直に書きます。現在のバージョン（v0.1.0）は **「ローカルで動く Whisper + カーソル挿入」** までです。
-
 ### できること
 
 - メニューバー常駐（Dock には出ません）
 - 右 ⌥（Option）でトグル録音 — 押している間ではなく、押すたびに開始／停止
-- WhisperKit（Whisper large-v3）による日本語の文字起こし。Neural Engine で動作
+- 日本語の文字起こし。**既定は Apple の音声認識**（macOS 26 以降。OS 内蔵でダウンロード不要）で、設定から WhisperKit（Whisper large-v3）へ切り替えられます
 - **辞書置換** — 文字起こし結果を機械的に置換（`アットマーク` → `@` など）。LLM を通さないので、同じ入力からは必ず同じ出力になります
-- 最前面アプリのカーソル位置へ自動挿入（クリップボード経由。元のクリップボードは復元されます）
+- **LLM 整形（既定は OFF）** — 用途別モード（メッセージ／メール／コード／メモ）で句読点やフィラーを整えます。ON にした時だけモデルを取得・常駐させます
+- **整形の書き換え検出** — 整形が数値・URL・メールアドレスを書き換えていないかを点検し、変化があれば挿入時に知らせます
+- **履歴** — 生テキスト・整形後・送信プロンプト・所要時間・使用エンジンを残し、後から読み返せます（保存期間は設定可能）
+- 録音 HUD（波形表示・停止・キャンセル）
+- 最前面アプリのカーソル位置へ自動挿入（クリップボード経由。元のクリップボードは復元されます）。挿入できたと確認できなかったときは結果を捨てずに HUD に残します
 - **メニューバーアイコンで状態が分かる** — 読込中（黄・砂時計）／待機（マイク）／録音中（赤・塗りつぶし）／処理中（青・波形）／完了（緑・チェック）／エラー（橙・警告）。色と形状の両方で区別でき、VoiceOver にも読ませています
 - 録音の開始音／停止音をシステムサウンドから選択
 - 録音トリガーキーの変更（右⌥／左⌥／右⌘／左⌘／右⌃／左⌃／fn）
@@ -28,31 +32,55 @@
 
 | 機能 | 状態 |
 |---|---|
-| LLM による整形（句読点・フィラー除去・用途別モード） | 未実装 — [#10](https://github.com/kenta3578/koebun/issues/10) |
-| 履歴の保存と再処理 | 未実装 — [#12](https://github.com/kenta3578/koebun/issues/12) |
-| 録音 HUD（波形・キャンセル） | 未実装 — [#9](https://github.com/kenta3578/koebun/issues/9) |
-| 挿入に失敗したときに結果を失わない | 未実装 — [#13](https://github.com/kenta3578/koebun/issues/13) |
 | 署名済みバイナリの配布（Releases / Homebrew） | 未配布 — [#16](https://github.com/kenta3578/koebun/issues/16) |
 
-**他ツールとの速度・精度の比較は、実測値を取るまで書きません。** 「Superwhisper より速い／正確」といった主張は現時点で一切していません。
+**他ツールとの速度・精度の比較は書きません。** 「Superwhisper より速い／正確」といった主張は現時点で一切していません。
+
+---
+
+## ダウンロードは「必要になったときだけ」
+
+koebun は**何も落とさない状態を出発点**にして、機能を足したぶんだけ容量を払う設計です。
+
+| 構成 | 追加ダウンロード | いつ発生するか |
+|---|---|---|
+| **既定**（Apple 音声認識 ＋ 整形なし） | **0** | — |
+| 音声認識を WhisperKit に切り替え | 約 2.9GB | 設定「一般 > 音声認識」で選んだとき |
+| 整形を ON ＋ Qwen3 14B（推奨） | 約 7.8GB | 設定「整形」で ON にしたとき |
+| 整形を ON ＋ Qwen3 32B | 約 18GB | 同上（モデルを 32B にしたとき） |
+| 整形を ON ＋ Apple Foundation Models | **0** | OS 内蔵（macOS 26 ＋ Apple Intelligence 有効） |
+
+いずれも初回だけで、2 回目以降はキャッシュを読むためオフラインでも動きます。整形を OFF に戻せばモデルはメモリから降ります（ダウンロード済みのファイルは残ります）。
+
+### 既定をこの構成にした理由
+
+開発者の Mac 1 台で、同じ発話を 4 つの組み合わせに通して 1 回ずつ計測した結果です。**1 台 1 回の計測なので、あなたの環境で同じ数字が出るとは限りません。** 性能の主張ではなく、既定を決めた根拠として書いています。
+
+- 音声認識は Apple が **292ms**、WhisperKit が **3,906ms** でした。しかも Apple 側は**句読点を自前で付けてくる**ので、整形の仕事の相当部分が認識の時点で済みます
+- 整形（Qwen3 14B）は **約 2.8 秒**かかりました。整形を挟むと挿入までの待ち時間はその分だけ伸びます
+- Apple Foundation Models（オンデバイス 3B）での整形は、3 回とも禁止事項を破りました（数値の表記変更・語の脱落・壊れたアドレスの推測での修復）。ダウンロードは 0 ですが、**既定にはしていません**
+- Apple の音声認識にも弱点があります。英数字・URL・メールアドレスは 3 回とも別々の壊れ方をしました。ここが重要な用途では、辞書置換を足すか WhisperKit に切り替えてください
 
 ---
 
 ## 完全ローカルであることの根拠
 
 - **アプリのコードにネットワーク送信処理は存在しません。** `URLSession` / `URLRequest` / ソケット API のいずれも `Sources/` の Swift コードに含まれていません（`grep -rniE "URLSession|URLRequest|https?://|socket|dataTask" Sources/*.swift` で確認できます。ヒットは 0 件です）。
-- **唯一の通信は、初回起動時の音声認識モデルのダウンロードです。** WhisperKit が Hugging Face（`argmaxinc/whisperkit-coreml`）から CoreML モデルを取得します。ダウンロード先は `~/Library/Caches/argmaxinc/whisperkit-coreml/openai_whisper-large-v3`（約 2.9GB）で、2 回目以降はこのキャッシュを読むだけなのでオフラインでも動作します。
-- 録音した音声と文字起こし結果はメモリ内で完結し、ファイルにもログにも書き出していません。ディスクに書くのは、自分で登録した置換ルール（`~/koebun/replacements.json`）と設定値（`UserDefaults`）だけです。
+- **既定の構成では、アプリはモデルを 1 バイトも取得しません。** Apple の音声認識は OS のアセットを借りるだけです（日本語のアセットが Mac にまだ無い場合に限り、OS 自身がそれを取りに行くことがあります。アプリが持つモデルではありません）。
+- **通信が発生するのは、自分で重いエンジンを選んだときだけです。** WhisperKit を選ぶと Hugging Face（`argmaxinc/whisperkit-coreml`）から CoreML モデルを取得します（`~/Library/Caches/argmaxinc/whisperkit-coreml/openai_whisper-large-v3`、約 2.9GB）。整形を ON にして Qwen3 を選ぶと、同じく Hugging Face から重みを取得します。いずれも初回だけで、2 回目以降はキャッシュを読むのでオフラインで動作します。
+- **どちらの場合も、音声とテキストは送信されません。** 落ちてくるのはモデルの重みだけで、通信は一方向です。
+- 録音した音声・文字起こし結果・整形結果は、履歴を有効にしている間だけ `~/koebun/history/` に残ります（保存期間は設定で変更でき、期限切れは自動で削除されます）。ほかにディスクに書くのは、自分で登録した置換ルール（`~/koebun/replacements.json`）、モード定義（`~/koebun/modes/*.json`）、設定値（`UserDefaults`）だけです。
 - アプリのサンドボックスは OFF です。グローバルなキー監視（ホットキー）と ⌘V の合成送出に必要なためで、この判断は `project.yml` にコメントとして残しています。
 
 ---
 
 ## 必要環境
 
-- **Apple Silicon の Mac**（Whisper large-v3 を Neural Engine で回すため。Intel Mac は未検証）
-- **macOS 14.0 以降**
-- **空きディスク 3GB 程度**（音声認識モデル用）
-- メモリ: large-v3 の推論で数 GB を消費します。**動作確認は Apple Silicon / 48GB の 1 台のみ**で、最低メモリ要件は未検証です
+- **Apple Silicon の Mac**（Intel Mac は未検証）
+- **macOS 26 以降**を推奨 — 既定の Apple 音声認識が動くのはこのバージョンからです
+- **macOS 26 未満（14.0 以降）** でも動きます。この場合、既定は自動的に WhisperKit になるため、**初回に約 2.9GB のダウンロードと空きディスクが必要**です（設定画面の Apple 音声認識は選べない状態で表示されます）
+- 空きディスク: 既定（macOS 26 以降）なら**追加で要りません**。WhisperKit なら約 3GB、LLM 整形を ON にするならさらに 2〜18GB（選ぶモデル次第。上の表を参照）
+- メモリ: 既定の構成ではアプリはモデルを常駐させません。WhisperKit や Qwen3 を使うと数 GB を消費します。**動作確認は Apple Silicon / 48GB の 1 台のみ**で、最低メモリ要件は未検証です
 
 ---
 
@@ -94,7 +122,7 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 ## 使い方
 
 1. アプリを起動すると、メニューバーにアイコンが出ます
-2. 初回はモデルのダウンロードとロードが走ります（アイコンが黄色の砂時計）。マイクのアイコンに変わるまで待ちます
+2. 既定の構成なら、ほぼ待たずに待機（マイクのアイコン）になります。WhisperKit や LLM 整形を有効にしている場合は、初回だけモデルのダウンロードとロードが走ります（黄色の砂時計）
 3. テキストを入力したい場所にカーソルを置きます
 4. **右 ⌥ を押す** → 録音開始（開始音が鳴り、アイコンが赤いマイクに変わります）
 5. 話し終えたら **もう一度右 ⌥ を押す** → 停止音が鳴り、文字起こしが走ります（青い波形）
@@ -106,18 +134,29 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 
 ## 設定
 
-メニューバーアイコン > 「設定…」から変更できます。タブは「一般」と「辞書置換」の 2 つ。
+メニューバーアイコン > 「設定…」から変更できます。タブは「一般」「辞書置換」「整形」の 3 つ。
 
 ### 一般
 
+- **音声認識エンジン** — 既定は Apple 音声認識（ダウンロード不要）。WhisperKit に切り替えると初回に約 2.9GB を取得します。切り替えると使わない方はメモリから降ります
 - **録音開始音 / 録音停止音** — macOS のシステムサウンド（Glass, Basso, Ping など 14 種）または「なし」。選ぶとその場で試聴されます
+- **録音 HUD** — 録音中の波形表示。OFF にすると開始音・停止音だけで状態を知らせます
 - **録音トリガー** — 「変更」を押してから使いたい修飾キーを押すと、そのキーが登録されます
 
-設定は `UserDefaults`（`startSound` / `stopSound` / `hotKeyCode`）に保存されます。
+設定は `UserDefaults` に保存されます。**既定値を変えても、すでに保存されている選択は上書きされません**（このバージョンで既定が変わったのは、まだ一度も触っていない項目だけです）。
+
+### 整形
+
+- **整形 LLM を常駐させる** — 既定は OFF。OFF の間はモデルのロードもダウンロードも走りません。ON にしたときだけ、選んだエンジンに応じたダウンロードが初回に走ります
+- **整形エンジン / 整形モデル** — Qwen3（mlx-swift・要ダウンロード）か Apple Foundation Models（OS 内蔵・ダウンロード 0）。必要な容量は設定画面にも表示されます
+- **既定のモード** — 「そのまま」が既定で、LLM を一切通しません。モード定義は `~/koebun/modes/*.json` を直接編集して育てられます
+- **コンテキスト** — 整形プロンプトに最前面アプリ名などを渡すか、アプリ別にモードを自動で切り替えるか
+
+整形が OFF のときは、モードが何であっても LLM は呼ばれません。
 
 ### 辞書置換
 
-音声では入力しづらい記号や、Whisper が繰り返し間違える固有名詞を、置換ルールで直します。文字起こしの直後（将来入る整形 LLM の前段）に適用されます。
+音声では入力しづらい記号や、音声認識が繰り返し間違える固有名詞を、置換ルールで直します。文字起こしの直後、整形 LLM に渡すより前に適用されます。
 
 初期ルールとして `アットマーク`→`@`、`ドットコム`→`.com`、`スラッシュ`→`/`、`シャープ`→`#`、`アンダースコア`→`_` が入っています。設定画面から追加・編集・削除でき、内容は **`~/koebun/replacements.json`** に保存されるので、エディタで直接編集したり Git で管理したりもできます。
 
@@ -136,7 +175,9 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 
 | 変えたいもの | 場所 |
 |---|---|
+| 各設定の既定値（音声認識エンジン・整形の ON/OFF・既定モードなど） | `Sources/SettingsStore.swift` の `init()` |
 | 使用する Whisper モデル（例: `large-v3-turbo` にして高速化） | `Sources/Transcriber.swift` の `WhisperKitConfig(model:)` |
+| 整形モデルの選択肢と既定 | `Sources/Formatter.swift` の `modelOptions` / `defaultModelId` |
 | 文字起こしの言語（現在は `ja` 固定） | `Sources/Transcriber.swift` の `DecodingOptions(language:)` |
 | 選択できる修飾キーの一覧 | `Sources/SettingsStore.swift` の `keyName(for:)` / `isKeyDown(keyCode:flags:)` |
 | 辞書置換の初期ルール | `Sources/Replacements.swift` の `defaultRules`（既存ユーザーのルールは `~/koebun/replacements.json` が優先） |
@@ -151,14 +192,7 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 
 Superwhisper との比較調査は [`ai_docs/competitor-superwhisper.md`](ai_docs/competitor-superwhisper.md)、設計の経緯は [`ai_docs/research-log.md`](ai_docs/research-log.md) にあります。
 
-優先順位の高い順:
-
-1. **整形 LLM（[#10](https://github.com/kenta3578/koebun/issues/10)）** — mlx-swift 常駐 + 用途別モード。体感品質の大半はここで決まります
-2. **履歴と再処理（[#12](https://github.com/kenta3578/koebun/issues/12)）** — 生テキストを残し、別モードでやり直せるように
-3. **録音 HUD（[#9](https://github.com/kenta3578/koebun/issues/9)）** — 波形で「マイクが拾えているか」を録音中に確認でき、キャンセルもできるように
-4. **挿入失敗時に結果を捨てない（[#13](https://github.com/kenta3578/koebun/issues/13)）**
-5. **整形差分の可視化（[#14](https://github.com/kenta3578/koebun/issues/14)）** — 整形 LLM が数字や固有名詞を書き換えていないかを見えるようにする
-6. **コンテキスト注入（[#15](https://github.com/kenta3578/koebun/issues/15)）** — 最前面アプリ名・選択テキストを整形の手がかりに渡す
+残っている大きなものは **署名済みバイナリの配布（[#16](https://github.com/kenta3578/koebun/issues/16)）** です。ダウンロード不要で試せる既定にしたので、`.dmg` を配れば「落として起動して喋る」まで一直線になります。
 
 明確に作らないもの: 会議録音・話者分離・iOS/Windows 版・多言語対応・クラウドモデル。
 
@@ -176,4 +210,4 @@ Superwhisper との比較調査は [`ai_docs/competitor-superwhisper.md`](ai_doc
 
 MIT License. 詳細は [LICENSE](LICENSE) を参照してください。
 
-音声認識には [WhisperKit](https://github.com/argmaxinc/WhisperKit)（MIT License, Argmax Inc.）を使用しています。
+音声認識には Apple の Speech フレームワーク（SpeechAnalyzer）と [WhisperKit](https://github.com/argmaxinc/WhisperKit)（MIT License, Argmax Inc.）を、整形には [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm)（MIT License）と Apple Foundation Models を使用しています。

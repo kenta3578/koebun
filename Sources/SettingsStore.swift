@@ -41,7 +41,8 @@ final class SettingsStore: ObservableObject {
 
     // MARK: - エンジン選択（Issue #27）
 
-    /// 音声認識エンジン。**既定は現状維持の WhisperKit**——切り替えは明示操作でだけ起きる。
+    /// 音声認識エンジン。**既定は Apple 音声認識**（Issue #31）——ダウンロードが 0 で、
+    /// 句読点も認識側が付けてくる。macOS 26 未満では WhisperKit に落ちる。
     @Published var speechEngine: SpeechEngineKind {
         didSet { UserDefaults.standard.set(speechEngine.rawValue, forKey: "speechEngine") }
     }
@@ -72,7 +73,8 @@ final class SettingsStore: ObservableObject {
     @Published var autoModeSwitchEnabled: Bool {
         didSet { UserDefaults.standard.set(autoModeSwitchEnabled, forKey: "autoModeSwitchEnabled") }
     }
-    /// 整形 LLM を常駐させるか。OFF なら数GB のモデルを一切読まない。
+    /// 整形 LLM を常駐させるか。**既定は OFF**（Issue #31）。OFF なら数GB のモデルを一切読まない
+    /// ——ロードもダウンロードも走らせず、整形そのものを飛ばして置換後テキストを挿入する。
     @Published var formatterEnabled: Bool {
         didSet { UserDefaults.standard.set(formatterEnabled, forKey: "formatterEnabled") }
     }
@@ -129,19 +131,24 @@ final class SettingsStore: ObservableObject {
         // 0（無期限）と未設定を区別するため object で取り出す。
         historyRetentionDays = UserDefaults.standard.object(forKey: "historyRetentionDays") as? Int ?? 30
 
-        // エンジンは既定で現状維持（WhisperKit + mlx）。保存値が今の環境で使えない
-        // （macOS 26 未満で apple が保存されている）ときも既定へ落とす。
+        // 音声認識の既定は Apple（Issue #31）。ダウンロードが 0 で、実測でも WhisperKit より速く、
+        // 句読点まで認識側が付けてくる。**macOS 26 未満ではこの既定が使えない**ので、
+        // storedEngine が候補列の次（WhisperKit）へ落とす。
+        // 保存値が今の環境で使えない（macOS 26 未満で apple が保存されている）ときも同じ経路を通る。
         speechEngine = Self.storedEngine(
-            forKey: "speechEngine", default: .whisperKit, isSupported: \.isSupported
+            forKey: "speechEngine", defaults: [.apple, .whisperKit], isSupported: \.isSupported
         )
+        // 整形エンジンの既定は mlx のまま。Apple の 3B は実測で禁止事項（数値の表記変更・
+        // 語の脱落・推測での修復）を破ったので、既定にはしない。
         formattingEngine = Self.storedEngine(
-            forKey: "formattingEngine", default: .mlx, isSupported: \.isSupported
+            forKey: "formattingEngine", defaults: [.mlx], isSupported: \.isSupported
         )
 
-        // 既定を「メッセージ」にして、初回から整形が効いている状態を見せる。
-        // 整形を通したくないときは「そのまま」を選ぶか、formatterEnabled を OFF にする。
-        modeName = UserDefaults.standard.string(forKey: "modeName") ?? "メッセージ"
-        formatterEnabled = UserDefaults.standard.object(forKey: "formatterEnabled") as? Bool ?? true
+        // 既定は「そのまま」＋整形 OFF（Issue #31）。**新規インストール直後に
+        // ダウンロードが 1 バイトも走らない**状態を出発点にする。
+        // 整形は使いたい人が設定で ON にする（そのとき初めてモデルの取得が走る）。
+        modeName = UserDefaults.standard.string(forKey: "modeName") ?? Mode.plainName
+        formatterEnabled = UserDefaults.standard.object(forKey: "formatterEnabled") as? Bool ?? false
         contextInjectionEnabled =
             UserDefaults.standard.object(forKey: "contextInjectionEnabled") as? Bool ?? true
         autoModeSwitchEnabled =
@@ -157,17 +164,24 @@ final class SettingsStore: ObservableObject {
         diffGuardIncludesNames = UserDefaults.standard.bool(forKey: "diffGuardIncludesNames")
     }
 
-    /// 保存されているエンジン選択を読む。未設定・不正値・この環境で使えない値は既定に落とす。
+    /// 保存されているエンジン選択を読む。**保存値があればそれを優先する**ので、
+    /// 既定値を変えても既存ユーザーの選択は動かない。
+    ///
+    /// 未設定・不正値・この環境で使えない値のときは `defaults` の**先頭から順に**
+    /// 使える方へ落とす。既定そのものが OS 要件を満たさないことがある
+    /// （macOS 26 未満での Apple 音声認識）ので、単一のフォールバックでは足りない。
     private static func storedEngine<Kind: RawRepresentable>(
         forKey key: String,
-        default fallback: Kind,
+        defaults: [Kind],
         isSupported: (Kind) -> Bool
     ) -> Kind where Kind.RawValue == String {
-        guard let raw = UserDefaults.standard.string(forKey: key),
-              let kind = Kind(rawValue: raw),
-              isSupported(kind)
-        else { return fallback }
-        return kind
+        if let raw = UserDefaults.standard.string(forKey: key),
+           let kind = Kind(rawValue: raw),
+           isSupported(kind) {
+            return kind
+        }
+        // 候補列の末尾には必ずどの環境でも動く実装を置く（＝ここで nil にはならない）。
+        return defaults.first(where: isSupported) ?? defaults[defaults.count - 1]
     }
 
     static func keyName(for code: UInt16) -> String {

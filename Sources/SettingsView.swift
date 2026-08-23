@@ -46,9 +46,10 @@ struct GeneralSettingsView: View {
                     AppController.shared.loadSpeechEngine()
                 }
 
-                Text("WhisperKit は初回に約2.9GB をダウンロードして常駐させます。"
-                     + "Apple 音声認識は OS 内蔵なのでダウンロードも常駐メモリもありません"
-                     + "（\(EngineSupport.requiresMacOS26)）。"
+                Text("既定は Apple 音声認識です。OS 内蔵なのでアプリ側のダウンロードも"
+                     + "常駐メモリもなく、句読点も認識側が付けます（\(EngineSupport.requiresMacOS26)。"
+                     + "満たさない Mac では自動的に WhisperKit になります）。"
+                     + "WhisperKit に切り替えると初回に約2.9GB をダウンロードして常駐させます。"
                      + "切り替えると使わない方をメモリから降ろします。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -179,6 +180,13 @@ struct FormatterSettingsView: View {
                     }
                 }
 
+                Text("整形は既定で OFF です。OFF の間はモデルのロードもダウンロードも一切走らず、"
+                     + "認識結果に辞書置換だけを適用して挿入します。"
+                     + "ON にすると、下で選んだエンジンに応じたダウンロードが初回だけ走ります。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 Text("「そのまま」は LLM を一切通さない最速パスです。"
                      + "整形は辞書置換のあとに走り、失敗しても置換後テキストが必ず挿入されます。")
                     .font(.caption)
@@ -196,6 +204,19 @@ struct FormatterSettingsView: View {
                 .onChange(of: settings.formattingEngine) { _, _ in
                     AppController.shared.loadFormatter()
                 }
+
+                // 「何GB 落ちてくるのか」は整形を ON にするかどうかの判断そのものなので、
+                // エンジンの選択に関係なく常に出す（Issue #31）。
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("整形を ON にしたとき、初回に必要なダウンロード:")
+                    Text("・Qwen3 14B（推奨）… 約7.8GB")
+                    Text("・Qwen3 32B … 約18GB")
+                    Text("・Apple Foundation Models … 0（OS 内蔵）")
+                    Text("2 回目以降はキャッシュを読むだけで、オフラインでも動きます。")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
                 // モデルを選べるのは自前でモデルを持つ mlx 側だけ。
                 // Apple 実装は OS 内蔵の 3B 固定なので、選択肢を出すと嘘になる。
@@ -218,8 +239,10 @@ struct FormatterSettingsView: View {
                 if settings.formattingEngine == .apple {
                     appleIntelligenceStatus
                 } else {
-                    Text("初回選択時にモデルを HuggingFace からダウンロードします（14B で約9GB）。"
-                         + "大きいモデルほど整形は丁寧になりますが、その分だけ挿入までの待ち時間が伸びます。")
+                    Text("初回選択時にモデルを HuggingFace からダウンロードします。"
+                         + "大きいモデルほど整形は丁寧になりますが、その分だけ挿入までの待ち時間が伸びます。"
+                         + "Apple Foundation Models はダウンロードが要らない代わりに、"
+                         + "実測（1台1回）では数値の表記変更や語の脱落が起きたため既定にはしていません。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
