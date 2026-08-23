@@ -46,6 +46,33 @@ struct GeneralSettingsView: View {
                     }
                 }
             }
+
+            Section("履歴") {
+                Picker("保存期間", selection: $settings.historyRetentionDays) {
+                    ForEach(SettingsStore.historyRetentionOptions, id: \.days) { option in
+                        Text(option.label).tag(option.days)
+                    }
+                }
+                .onChange(of: settings.historyRetentionDays) { _, _ in
+                    // 期間を短くしたらその場で古い履歴を消す（起動を待たせない）。
+                    HistoryStore.shared.purgeExpired()
+                }
+
+                HStack {
+                    Text("保存先")
+                    Spacer()
+                    Button("フォルダを開く") {
+                        HistoryFiles.revealRoot()
+                    }
+                    .buttonStyle(.link)
+                }
+
+                Text("1発話ごとに録音・生テキスト・置換後テキスト・送信プロンプトを保存します。"
+                     + "整形 AI が事実を書き換えていないか、生テキストと突き合わせて確認できます。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .formStyle(.grouped)
         .onDisappear { cancelRecording() }

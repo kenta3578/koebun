@@ -20,12 +20,23 @@ final class SettingsStore: ObservableObject {
     @Published var hotKeyCode: UInt16 {
         didSet { UserDefaults.standard.set(Int(hotKeyCode), forKey: "hotKeyCode") }
     }
+    /// 履歴の保存日数。0 = 無期限。
+    @Published var historyRetentionDays: Int {
+        didSet { UserDefaults.standard.set(historyRetentionDays, forKey: "historyRetentionDays") }
+    }
+
+    /// 履歴の保存期間の選択肢（日数 → 表示名）。0 = 無期限。
+    static let historyRetentionOptions: [(days: Int, label: String)] = [
+        (7, "7日"), (30, "30日"), (90, "90日"), (365, "1年"), (0, "無期限")
+    ]
 
     private init() {
         startSound = UserDefaults.standard.string(forKey: "startSound") ?? "Glass"
         stopSound  = UserDefaults.standard.string(forKey: "stopSound")  ?? "Basso"
         let stored = UserDefaults.standard.integer(forKey: "hotKeyCode")
         hotKeyCode = stored > 0 ? UInt16(stored) : 61
+        // 0（無期限）と未設定を区別するため object で取り出す。
+        historyRetentionDays = UserDefaults.standard.object(forKey: "historyRetentionDays") as? Int ?? 30
     }
 
     static func keyName(for code: UInt16) -> String {

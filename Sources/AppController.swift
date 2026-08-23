@@ -36,6 +36,9 @@ final class AppController {
             Task { @MainActor in self?.toggleRecording() }
         }
         hotkeys.start()
+
+        // 保存期間を過ぎた履歴を掃除する（ディスクを食い続けないように）。
+        HistoryStore.shared.purgeExpired()
     }
 
     private func toggleRecording() {
@@ -67,18 +70,40 @@ final class AppController {
         let samples = recorder.stop()
         Task { @MainActor in
             do {
+                let transcribeStart = Date()
                 let raw = try await transcriber.transcribe(samples)
+                let replaceStart = Date()
                 // 整形 LLM の前段で辞書置換を適用する（決定的な文字列処理）
                 let text = ReplacementStore.shared.apply(raw)
+                let replaceEnd = Date()
+
+                var inserted = false
                 if text.isEmpty {
                     state.update(.done(message: "（無音）"))
                 } else {
                     TextInjector.insert(text)
+                    inserted = true
                     state.update(.done(message: "挿入しました ✓"))
                 }
+
+                // 履歴は挿入のあとにバックグラウンドで書き出す（保存が挿入を遅らせない）。
+                HistoryStore.shared.record(
+                    samples: samples,
+                    rawText: raw,
+                    replacedText: text,
+                    durations: .init(
+                        transcribeMs: Self.milliseconds(from: transcribeStart, to: replaceStart),
+                        replaceMs: Self.milliseconds(from: replaceStart, to: replaceEnd)
+                    ),
+                    inserted: inserted
+                )
             } catch {
                 state.update(.failed(reason: "文字起こし失敗: \(error.localizedDescription)"))
             }
         }
+    }
+
+    private static func milliseconds(from start: Date, to end: Date) -> Int {
+        Int((end.timeIntervalSince(start) * 1000).rounded())
     }
 }
