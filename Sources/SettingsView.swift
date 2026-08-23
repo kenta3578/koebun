@@ -182,6 +182,26 @@ struct FormatterSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            Section("整形ガード") {
+                Toggle("整形が事実を書き換えていないか点検する", isOn: $settings.diffGuardEnabled)
+
+                Toggle("固有名詞・識別子まで点検する", isOn: $settings.diffGuardIncludesNames)
+                    .disabled(!settings.diffGuardEnabled)
+
+                Text("整形前後を突き合わせて、数値・URL・メールアドレスが変わっていないかを見ます。"
+                     + "見つかっても挿入は止めません（HUD とメニューバーで知らせ、履歴に差分が残ります）。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("固有名詞・識別子はカタカナ・漢字・英数字の連続を機械的に見るため、"
+                     + "言い換えや表記ゆれでも警告が出ます。誤検知が増えると警告そのものを読まなくなるので、"
+                     + "既定では数値・URL・メールアドレスだけを見ます。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Section("モード定義") {
                 HStack {
                     Text("保存先")
