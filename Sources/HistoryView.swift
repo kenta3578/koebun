@@ -281,7 +281,12 @@ struct HistoryView: View {
         HistoryWindowController.shared.close()
         NSApp.hide(nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            TextInjector.insert(text)
+            Task { @MainActor in
+                let outcome = await TextInjector.insert(text)
+                guard !outcome.isSucceeded else { return }
+                // 挿入できなくても履歴には残っている。手動で貼る導線を案内する。
+                message = "\(outcome.reason)。「コピー」から手動で貼り付けてください。"
+            }
         }
     }
 

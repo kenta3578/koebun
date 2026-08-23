@@ -86,14 +86,19 @@ final class AppController {
                 let text = ReplacementStore.shared.apply(raw)
                 let replaceEnd = Date()
 
-                var inserted = false
+                // 挿入は成否を判定して返る。成功と確認できなければ結果を捨てない（Issue #13）。
+                var outcome: InsertionOutcome = .succeeded
                 if text.isEmpty {
                     state.update(.done(message: "（無音）"))
                 } else {
-                    TextInjector.insert(text)
-                    inserted = true
-                    state.update(.done(message: "挿入しました ✓"))
+                    outcome = await TextInjector.insert(text)
+                    if outcome.isSucceeded {
+                        state.update(.done(message: "挿入しました ✓"))
+                    } else {
+                        state.update(.failed(reason: outcome.statusMessage))
+                    }
                 }
+                let inserted = !text.isEmpty && outcome.isSucceeded
 
                 // 履歴は挿入のあとにバックグラウンドで書き出す（保存が挿入を遅らせない）。
                 HistoryStore.shared.record(
@@ -107,8 +112,13 @@ final class AppController {
                     inserted: inserted
                 )
 
-                // 挿入まで終えてから HUD を閉じる（完了表示を一瞬見せる）。
-                hud.finish()
+                if outcome.isSucceeded {
+                    // 挿入まで終えてから HUD を閉じる（完了表示を一瞬見せる）。
+                    hud.finish()
+                } else {
+                    // 挿入できなかった結果は HUD に残し、コピー・再挿入できるようにする。
+                    hud.presentResult(text, reason: outcome.reason)
+                }
             } catch {
                 // 失敗は自動で閉じない。HUD に原因を残す。
                 state.update(.failed(reason: "文字起こし失敗: \(error.localizedDescription)"))
