@@ -69,7 +69,9 @@ final class AppController {
         let samples = recorder.stop()
         Task { @MainActor in
             do {
-                let text = try await transcriber.transcribe(samples)
+                let raw = try await transcriber.transcribe(samples)
+                // 整形 LLM の前段で辞書置換を適用する（決定的な文字列処理）
+                let text = ReplacementStore.shared.apply(raw)
                 if text.isEmpty {
                     state.status = "（無音）待機中（\(SettingsStore.keyName(for: SettingsStore.shared.hotKeyCode))で録音開始）"
                 } else {
