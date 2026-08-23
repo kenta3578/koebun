@@ -42,8 +42,24 @@ final class SettingsStore: ObservableObject {
     // MARK: - 整形 LLM
 
     /// 現在の整形モード名（`~/koebun/modes/*.json` の `name`）。
+    ///
+    /// UI から選び直したことを `ModeStore` に伝える（`didSet` は `init` では走らないので、
+    /// 起動時の読み込みは手動選択として数えられない）。次の録音1回だけ自動切替に優先する。
     @Published var modeName: String {
-        didSet { UserDefaults.standard.set(modeName, forKey: "modeName") }
+        didSet {
+            UserDefaults.standard.set(modeName, forKey: "modeName")
+            guard modeName != oldValue else { return }
+            ModeStore.shared.noteManualSelection()
+        }
+    }
+    /// 整形プロンプトにコンテキスト（アプリ名・選択テキスト・クリップボード・日時）を載せるか。
+    /// OFF なら取得自体を行わない。
+    @Published var contextInjectionEnabled: Bool {
+        didSet { UserDefaults.standard.set(contextInjectionEnabled, forKey: "contextInjectionEnabled") }
+    }
+    /// 録音開始時の最前面アプリでモードを自動的に選ぶか（モードの `appMatch` を使う）。
+    @Published var autoModeSwitchEnabled: Bool {
+        didSet { UserDefaults.standard.set(autoModeSwitchEnabled, forKey: "autoModeSwitchEnabled") }
     }
     /// 整形 LLM を常駐させるか。OFF なら数GB のモデルを一切読まない。
     @Published var formatterEnabled: Bool {
@@ -86,6 +102,10 @@ final class SettingsStore: ObservableObject {
         // 整形を通したくないときは「そのまま」を選ぶか、formatterEnabled を OFF にする。
         modeName = UserDefaults.standard.string(forKey: "modeName") ?? "メッセージ"
         formatterEnabled = UserDefaults.standard.object(forKey: "formatterEnabled") as? Bool ?? true
+        contextInjectionEnabled =
+            UserDefaults.standard.object(forKey: "contextInjectionEnabled") as? Bool ?? true
+        autoModeSwitchEnabled =
+            UserDefaults.standard.object(forKey: "autoModeSwitchEnabled") as? Bool ?? true
         formatterModelId = UserDefaults.standard.string(forKey: "formatterModelId")
             ?? Formatter.defaultModelId
         let timeout = UserDefaults.standard.double(forKey: "formatTimeoutSeconds")

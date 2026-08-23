@@ -14,6 +14,16 @@ final class AppController {
     private let hud = RecordingHUDController()
     private let state = AppState.shared
 
+    /// 録音1回ぶんの、開始時に決まる情報（コンテキストとモード）。
+    ///
+    /// **モードもコンテキストも録音開始時に確定させる**。停止時に取り直すと、
+    /// 喋っている間にアプリを切り替えただけで別モードの整形になり、選択テキストも失われる。
+    private struct PendingRecording {
+        var context: CapturedContext?
+        var mode: Mode
+    }
+    private var pending: PendingRecording?
+
     private init() {}
 
     func start() {
@@ -41,6 +51,9 @@ final class AppController {
 
         // 保存期間を過ぎた履歴を掃除する（ディスクを食い続けないように）。
         HistoryStore.shared.purgeExpired()
+
+        // クリップボードは「録音開始の3秒前」まで遡って採用するので、常時見張る必要がある。
+        ClipboardWatcher.shared.start()
 
         // 録音レベルは HUD の波形にだけ流す（AppState を毎フレーム更新しない）。
         recorder.onLevel = { [hud] level in
@@ -116,6 +129,15 @@ final class AppController {
     private func startRecording() {
         guard state.modelLoaded else { return }
         do {
+            // コンテキストは録音開始の**前**に取る。HUD を出したあとだと、
+            // アプリによっては選択のハイライトが外れて選択テキストを読めなくなる。
+            let context = SettingsStore.shared.contextInjectionEnabled
+                ? ContextCapture.captureAtRecordingStart() : nil
+            pending = PendingRecording(
+                context: context,
+                mode: ModeStore.shared.modeForRecording(context: context)
+            )
+
             try recorder.start()
             state.update(.recording)
             if SettingsStore.shared.showRecordingHUD { hud.show() }
@@ -129,6 +151,9 @@ final class AppController {
     private func stopRecording() {
         guard state.isRecording else { return }
         state.update(.processing)
+
+        // クリップボードは「録音中にコピーしたもの」も拾うので、停止のこの時点で確定させる。
+        let pending = takePending()
         let stop = SettingsStore.shared.stopSound
         if stop != "なし" { NSSound(named: .init(stop))?.play() }
 
@@ -143,7 +168,7 @@ final class AppController {
                 let replaceEnd = Date()
 
                 // 整形はここ。失敗しても replaced を挿入するので、発話は落ちない。
-                let formatting = await format(replaced)
+                let formatting = await format(replaced, pending: pending)
                 let formatEnd = Date()
                 let text = formatting.result?.text ?? replaced
 
@@ -152,6 +177,9 @@ final class AppController {
                 if text.isEmpty {
                     state.update(.done(message: "（無音）"))
                 } else {
+                    // 挿入はクリップボードを踏む（⌘V 方式と復元）。その変化を
+                    // 「録音直前のコピー」と誤認しないよう、この間の変化は採用しない。
+                    ClipboardWatcher.shared.suppressChanges(for: 2)
                     outcome = await TextInjector.insert(text)
                     if outcome.isSucceeded {
                         // 整形を外したことは必ず見せる（無言で生テキストに落ちない）。
@@ -212,15 +240,20 @@ final class AppController {
     ///
     /// `そのまま` モードは LLM を一切呼ばない最速パス。モデル未ロード・タイムアウト・
     /// 空出力はすべて「整形なし」に落とし、理由を `failure` で持ち帰る。
-    private func format(_ text: String) async -> FormatOutcome {
-        let mode = ModeStore.shared.current
+    private func format(_ text: String, pending: PendingRecording) async -> FormatOutcome {
+        let mode = pending.mode
         guard mode.usesLLM, !text.isEmpty else {
             return FormatOutcome(modeName: mode.name, result: nil, attempted: false, failure: nil)
         }
 
+        // コンテキストが1つも取れなくてもここは nil になるだけで、整形は普通に走る。
+        let contextBlock = mode.context.isEnabled ? pending.context?.promptBlock(for: mode.context) : nil
+
         let timeout = Duration.seconds(SettingsStore.shared.formatTimeoutSeconds)
         do {
-            let result = try await formatter.format(text, mode: mode, timeout: timeout)
+            let result = try await formatter.format(
+                text, mode: mode, contextBlock: contextBlock, timeout: timeout
+            )
             return FormatOutcome(modeName: mode.name, result: result, attempted: true, failure: nil)
         } catch {
             let reason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -235,10 +268,23 @@ final class AppController {
         Int((end.timeIntervalSince(start) * 1000).rounded())
     }
 
+    /// 録音開始時に確定した情報を取り出し、クリップボードだけ停止時点で足す。
+    ///
+    /// 開始時の取得が丸ごと失敗していても、モードだけは必ず決まる（フォールバックは現在のモード）。
+    private func takePending() -> PendingRecording {
+        var pending = self.pending ?? PendingRecording(context: nil, mode: ModeStore.shared.current)
+        self.pending = nil
+        if let context = pending.context {
+            pending.context = ContextCapture.finalize(context)
+        }
+        return pending
+    }
+
     /// 録音を破棄する。文字起こしも挿入も行わない（履歴にも残さない）。
     private func cancelRecording() {
         guard state.isRecording else { return }
         _ = recorder.stop()
+        pending = nil
         hud.hide()
         state.update(.idle)
     }
