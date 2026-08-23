@@ -45,12 +45,16 @@ actor Formatter: FormattingEngine {
     /// 32B に上げたい場合は設定から切り替える。
     static let defaultModelId = "mlx-community/Qwen3-14B-4bit"
 
-    /// 設定画面に出す選択肢。おおよその常駐メモリを併記する（4bit 量子化の重みのみ、KV キャッシュ別）。
+    /// 設定画面に出す選択肢。**初回に必要なダウンロード量**を併記する（Issue #31）。
+    ///
+    /// 整形は既定で OFF なので、ここに書いた容量は「整形を ON にして、このモデルを選んだとき
+    /// 初回だけ落ちてくる量」。14B は実測値、他はモデルサイズからの概算。
+    /// 常駐メモリはこれとほぼ同じか少し多い（重みに加えて KV キャッシュを持つため）。
     static let modelOptions: [(id: String, label: String)] = [
-        ("mlx-community/Qwen3-4B-4bit", "Qwen3 4B（約2.5GB・最速）"),
-        ("mlx-community/Qwen3-8B-4bit", "Qwen3 8B（約5GB）"),
-        ("mlx-community/Qwen3-14B-4bit", "Qwen3 14B（約9GB・既定）"),
-        ("mlx-community/Qwen3-32B-4bit", "Qwen3 32B（約18GB・重整形）"),
+        ("mlx-community/Qwen3-4B-4bit", "Qwen3 4B（DL 約2.2GB・最速）"),
+        ("mlx-community/Qwen3-8B-4bit", "Qwen3 8B（DL 約4.5GB）"),
+        ("mlx-community/Qwen3-14B-4bit", "Qwen3 14B（DL 約7.8GB・推奨）"),
+        ("mlx-community/Qwen3-32B-4bit", "Qwen3 32B（DL 約18GB・重整形）"),
     ]
 
     /// 読み込み状態。型はエンジン共通（`EngineLoadState`）だが、

@@ -3,9 +3,13 @@ import Foundation
 /// 音声認識・整形の**実装を差し替えられるようにする**ための境界（Issue #27）。
 ///
 /// 目的は「Apple 標準に寄せる」ことではなく、**同じ発話を両方に通して実測で決める**こと。
-/// 現状は WhisperKit large-v3（約2.9GB）＋ Qwen3 14B/4bit（約9GB）で初回12GB を要求するが、
-/// macOS 26 は SpeechAnalyzer と Foundation Models を OS 内蔵で持っている。
 /// どちらが良いかは日本語・実利用で測るまで分からないので、**既存実装は消さずに並べる**。
+///
+/// 実測（1台1回・Issue #31）の結果、**既定は Apple 音声認識＋整形なし**に決めた。
+/// 認識は Apple 292ms / WhisperKit 3,906ms で、Apple は句読点まで自前で付けてくる。
+/// 整形は Apple の 3B が禁止事項（数値の表記変更・語の脱落・推測での修復）を破ったため既定にできず、
+/// 無改変だった Qwen3 14B は約7.8GB のダウンロードが要る。
+/// よって出発点は**ダウンロード 0・改変リスク 0** に置き、整形は使いたい人が設定で有効にする。
 ///
 /// 比較の一次データは履歴（`HistoryEntry`）に残る。どのエンジンで処理したかを保存しているので、
 /// 生テキスト・整形後・所要時間・`FormatDiff` の警告をエンジン別に突き合わせられる。
@@ -15,9 +19,10 @@ import Foundation
 /// 音声認識エンジンの選択肢。UserDefaults と履歴には `rawValue` が入る。
 enum SpeechEngineKind: String, CaseIterable, Identifiable, Sendable {
     /// WhisperKit large-v3。初回に HuggingFace から約2.9GB を取得してメモリに常駐させる。
+    /// macOS 26 未満での既定。
     case whisperKit
     /// Apple SpeechAnalyzer（macOS 26 以降）。認識モデルは OS 側のアセットで、
-    /// **アプリのダウンロードは発生しない**。
+    /// **アプリのダウンロードは発生しない**。macOS 26 以降での既定。
     case apple
 
     var id: String { rawValue }
@@ -25,8 +30,8 @@ enum SpeechEngineKind: String, CaseIterable, Identifiable, Sendable {
     /// 設定画面のピッカーに出す文言。
     var label: String {
         switch self {
-        case .whisperKit: return "WhisperKit large-v3（約2.9GB を DL・既定）"
-        case .apple:      return "Apple 音声認識（macOS 26・DL 無し）"
+        case .whisperKit: return "WhisperKit large-v3（約2.9GB を DL）"
+        case .apple:      return "Apple 音声認識（macOS 26・DL 無し・既定）"
         }
     }
 
@@ -52,7 +57,7 @@ enum SpeechEngineKind: String, CaseIterable, Identifiable, Sendable {
 
 /// 整形エンジンの選択肢。
 enum FormattingEngineKind: String, CaseIterable, Identifiable, Sendable {
-    /// mlx-swift（MLXLLM）で Qwen3 を常駐させる。14B/4bit で約9GB。
+    /// mlx-swift（MLXLLM）で Qwen3 を常駐させる。14B/4bit でダウンロード約7.8GB・常駐約9GB。
     case mlx
     /// Apple Foundation Models（macOS 26 以降のオンデバイス約3B）。常駐もダウンロードも無い。
     case apple
@@ -61,7 +66,7 @@ enum FormattingEngineKind: String, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
-        case .mlx:   return "Qwen3（mlx-swift 常駐・既定）"
+        case .mlx:   return "Qwen3（mlx-swift 常駐・要ダウンロード）"
         case .apple: return "Apple Foundation Models（macOS 26・DL 無し）"
         }
     }

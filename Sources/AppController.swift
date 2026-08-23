@@ -350,6 +350,12 @@ final class AppController {
     /// 空出力はすべて「整形なし」に落とし、理由を `failure` で持ち帰る。
     private func format(_ text: String, pending: PendingRecording) async -> FormatOutcome {
         let mode = pending.mode
+        // 整形が OFF なら**エンジンに触れない**（Issue #31）。ここを通さないと、
+        // アプリ別の自動切替が `usesLLM` のモードを選んだときに整形エンジンの生成・
+        // 呼び出しまで進んでしまい、「整形は OFF なのに準備できていません」と出る。
+        guard SettingsStore.shared.formatterEnabled else {
+            return FormatOutcome(modeName: mode.name, result: nil, attempted: false, failure: nil)
+        }
         guard mode.usesLLM, !text.isEmpty else {
             return FormatOutcome(modeName: mode.name, result: nil, attempted: false, failure: nil)
         }
