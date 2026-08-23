@@ -14,7 +14,10 @@ struct KoebunApp: App {
         MenuBarExtra {
             MenuContent(state: state)
         } label: {
-            Image(systemName: state.isRecording ? "mic.fill" : "mic")
+            // 状態はアイコンの形状（mic / mic.fill / waveform / ...）と色の両方で表す。
+            // 色が読めない環境でも形状だけで区別できる。
+            Image(nsImage: state.status.menuBarImage)
+                .accessibilityLabel(state.status.accessibilityLabel)
         }
         .menuBarExtraStyle(.menu)
 
