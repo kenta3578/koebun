@@ -8,6 +8,13 @@ final class AudioRecorder {
     private var samples: [Float] = []
     private let lock = NSLock()
 
+    /// 録音レベル（0…1）の通知先。**メインスレッドで呼ばれる**。
+    /// 波形表示のためだけに使うので、UI 側の負荷を抑えるよう間引いてから渡す。
+    var onLevel: (@Sendable (Float) -> Void)?
+    /// レベル通知の最小間隔（20fps）。タップは単一スレッドから呼ばれるので排他は不要。
+    private static let levelInterval: CFAbsoluteTime = 1.0 / 20.0
+    private var lastLevelSentAt: CFAbsoluteTime = 0
+
     private let targetFormat = AVAudioFormat(
         commonFormat: .pcmFormatFloat32,
         sampleRate: 16_000,
@@ -17,6 +24,7 @@ final class AudioRecorder {
 
     func start() throws {
         lock.lock(); samples.removeAll(); lock.unlock()
+        lastLevelSentAt = 0
 
         let input = engine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
@@ -62,5 +70,32 @@ final class AudioRecorder {
         let chunk = Array(UnsafeBufferPointer(start: channel[0], count: frames))
 
         lock.lock(); samples.append(contentsOf: chunk); lock.unlock()
+
+        emitLevel(chunk)
+    }
+
+    /// 直近チャンクの RMS を 0…1 に正規化して通知する。
+    private func emitLevel(_ chunk: [Float]) {
+        guard let onLevel, !chunk.isEmpty else { return }
+
+        let now = CFAbsoluteTimeGetCurrent()
+        guard now - lastLevelSentAt >= Self.levelInterval else { return }
+        lastLevelSentAt = now
+
+        var sumOfSquares: Float = 0
+        for sample in chunk { sumOfSquares += sample * sample }
+        let level = Self.normalizedLevel(rms: (sumOfSquares / Float(chunk.count)).squareRoot())
+
+        DispatchQueue.main.async { onLevel(level) }
+    }
+
+    /// RMS を -50dB…0dB で 0…1 に写す。
+    /// 線形のままだと通常の発話（RMS 0.02〜0.1 程度）がほぼ潰れて波形が動いて見えない。
+    private static func normalizedLevel(rms: Float) -> Float {
+        guard rms > 0 else { return 0 }
+        let floorDB: Float = -50
+        let db = 20 * log10(rms)
+        guard db > floorDB else { return 0 }
+        return min(1, (db - floorDB) / -floorDB)
     }
 }
