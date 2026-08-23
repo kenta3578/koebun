@@ -1,5 +1,42 @@
 import SwiftUI
 import AppKit
+import Combine
+
+// MARK: - 表示設定（Issue #35）
+
+/// HUD を出す位置。マルチディスプレイでは「キー入力を受けている画面」の中でこの位置に出す。
+enum HUDPosition: String, CaseIterable, Identifiable {
+    case bottomCenter
+    case topCenter
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .bottomCenter: return "画面下部中央"
+        case .topCenter:    return "画面上部中央"
+        }
+    }
+}
+
+/// HUD の大きさ。**既存の「録音中に HUD を表示」トグルはこの3択に統合してある**
+/// （設定を二重に持たない）。`.hidden` でも開始音・停止音は鳴り、
+/// 挿入できなかった／確認できなかった結果だけは出す（結果を失わせない）。
+enum HUDSize: String, CaseIterable, Identifiable {
+    case hidden
+    case minimal
+    case normal
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .hidden:  return "非表示"
+        case .minimal: return "最小"
+        case .normal:  return "通常"
+        }
+    }
+}
 
 // MARK: - モデル
 
@@ -25,6 +62,8 @@ final class RecordingHUDModel: ObservableObject {
     @Published var pendingResult: PendingResult?
     /// 整形が数値・URL 等を書き換えた疑い（Issue #14）。挿入は済んでいるので**閉じてよい**警告。
     @Published var warning: FormatDiff?
+    /// HUD にマウスが乗っているか。最小表示のとき、これで操作ボタンを出す（Issue #35）。
+    @Published var isHovering = false
 
     /// HUD に残す挿入結果。
     struct PendingResult: Equatable {
@@ -59,6 +98,7 @@ final class RecordingHUDModel: ObservableObject {
         isConfirmingCancel = false
         pendingResult = nil
         warning = nil
+        isHovering = false
     }
 
     func setResultNote(_ note: String?) {
@@ -79,6 +119,33 @@ final class RecordingHUDModel: ObservableObject {
     var needsCancelConfirmation: Bool {
         elapsed > Self.cancelConfirmThreshold
     }
+
+    // MARK: レイアウト（Issue #35）
+
+    /// 最小表示（状態アイコンと経過時間だけの細いバー）で描くか。
+    ///
+    /// 結果・整形警告・キャンセル確認は**読ませないと困る**内容なので、
+    /// 設定が「最小」でも通常の大きさで出す。
+    var usesMinimalBar: Bool {
+        guard SettingsStore.shared.hudSize == .minimal else { return false }
+        guard pendingResult == nil, warning?.hasChanges != true, !isConfirmingCancel else { return false }
+        // 失敗は原因を読ませて明示的に閉じさせる必要がある（細いバーには収まらない）。
+        if case .failed = AppState.shared.status { return false }
+        return true
+    }
+
+    /// いま出すべきパネルの大きさ。**ビューの frame とパネルの実サイズを1か所から導く**
+    /// （2つがズレると、見えていない領域がクリックを食って背面アプリに届かなくなる）。
+    var panelSize: CGSize {
+        if pendingResult != nil { return RecordingHUDController.resultPanelSize }
+        if warning?.hasChanges == true { return RecordingHUDController.warningPanelSize }
+        if usesMinimalBar {
+            return isHovering
+                ? RecordingHUDController.minimalHoverPanelSize
+                : RecordingHUDController.minimalPanelSize
+        }
+        return RecordingHUDController.panelSize
+    }
 }
 
 // MARK: - ビュー
@@ -88,9 +155,13 @@ final class RecordingHUDModel: ObservableObject {
 struct RecordingHUDView: View {
     @ObservedObject var model: RecordingHUDModel
     @ObservedObject var state: AppState
+    /// 表示サイズの変更で描き直すために観測する（Issue #35）。
+    @ObservedObject var settings: SettingsStore
 
     let onStop: () -> Void
     let onRequestCancel: () -> Void
+    /// キャンセル確認の「続ける」。パネルの大きさも戻す必要があるので、状態は直接いじらず委ねる。
+    let onKeepRecording: () -> Void
     let onConfirmCancel: () -> Void
     let onDismiss: () -> Void
     let onCopyResult: () -> Void
@@ -100,23 +171,23 @@ struct RecordingHUDView: View {
     let onDismissWarning: () -> Void
 
     var body: some View {
+        let size = model.panelSize
         ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(.regularMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .strokeBorder(Color.primary.opacity(0.12))
                 )
             content
-                .padding(.horizontal, 14)
+                .padding(.horizontal, model.usesMinimalBar ? 10 : 14)
         }
         .frame(width: size.width, height: size.height)
     }
 
-    private var size: CGSize {
-        if model.pendingResult != nil { return RecordingHUDController.resultPanelSize }
-        if model.warning?.hasChanges == true { return RecordingHUDController.warningPanelSize }
-        return RecordingHUDController.panelSize
+    /// 最小表示は高さぶんの角丸にして、細いバーが「ピル」に見えるようにする。
+    private var cornerRadius: CGFloat {
+        model.usesMinimalBar ? RecordingHUDController.minimalPanelSize.height / 2 : 14
     }
 
     @ViewBuilder
@@ -127,6 +198,8 @@ struct RecordingHUDView: View {
             cancelConfirmation
         } else if let warning = model.warning, warning.hasChanges {
             warningContent(warning)
+        } else if model.usesMinimalBar {
+            minimalContent
         } else {
             switch state.status {
             case .recording:            recordingContent
@@ -159,6 +232,28 @@ struct RecordingHUDView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(.orange)
                     .lineLimit(1)
+            }
+        }
+    }
+
+    // 最小表示: 状態と経過時間だけの細いバー（Issue #35）。
+    // 状態は**色と形の両方**で示す（メニューバーと同じシンボルを使うので、
+    // 録音中＝マイク・文字起こし中＝波形で色が読めなくても区別できる）。
+    // 停止・キャンセルはホバーで出す＝常時は場所を取らない。
+    private var minimalContent: some View {
+        HStack(spacing: 6) {
+            Image(systemName: state.status.symbolName)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(statusColor)
+                .frame(width: 12)
+                .accessibilityLabel(state.status.accessibilityLabel)
+            Text(model.elapsedText)
+                .font(.system(size: 11, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            if model.isHovering {
+                iconButton("stop.fill", help: "停止して文字起こし", action: onStop)
+                iconButton("xmark", help: "キャンセル（Esc）", action: onRequestCancel)
             }
         }
     }
@@ -211,7 +306,7 @@ struct RecordingHUDView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("続ける") { model.isConfirmingCancel = false }
+            Button("続ける", action: onKeepRecording)
                 .controlSize(.small)
             Button("破棄", action: onConfirmCancel)
                 .controlSize(.small)
@@ -385,6 +480,10 @@ private final class HUDPanel: NSPanel {
 @MainActor
 final class RecordingHUDController {
     static let panelSize = CGSize(width: 340, height: 64)
+    /// 最小表示（状態アイコン＋経過時間）の細いバー。
+    static let minimalPanelSize = CGSize(width: 96, height: 28)
+    /// 最小表示にマウスが乗って、停止・キャンセルが出ているときのサイズ。
+    static let minimalHoverPanelSize = CGSize(width: 156, height: 28)
     /// 挿入結果を残しているときのサイズ（本文＋操作ボタンぶん高くする）。
     static let resultPanelSize = CGSize(width: 380, height: 160)
     /// 整形の書き換え警告を出しているときのサイズ。
@@ -404,26 +503,125 @@ final class RecordingHUDController {
     private var startedAt: Date?
     private var localMonitor: Any?
     private var globalMonitor: Any?
+    /// マウス位置監視（ホバー判定）。パネルを出している間だけ張る。
+    private var hoverMonitors: [Any] = []
     private var autoHideTask: Task<Void, Never>?
     /// 表示中の結果を自動的に閉じてよいか（`.uncertain` だけ true）。
     private var resultAutoHides = false
+    private var statusObserver: AnyCancellable?
 
     var isVisible: Bool { panel?.isVisible == true }
+
+    init() {
+        // 状態が変わるとレイアウトも変わりうる（最小表示でも失敗だけは通常の大きさで出す）。
+        // 失敗は AppController が状態だけ更新して HUD を呼ばない経路があるので、ここで拾う。
+        // `@Published` は値が入る**前**に流れてくるので、次のターンで読み直す。
+        statusObserver = AppState.shared.$status.sink { [weak self] _ in
+            Task { @MainActor in self?.applyPanelSize() }
+        }
+    }
 
     func show() {
         autoHideTask?.cancel()
         autoHideTask = nil
         model.reset()
         startedAt = Date()
+        // 経過時間は**非表示でも数える**。録音の途中で「最小/通常」へ切り替えたときに
+        // 0 から数え直したように見えないようにする。
+        startTicking()
 
+        guard SettingsStore.shared.hudSize != .hidden else {
+            // 非表示。見えない Esc で録音を失わせないため、監視も張らない。
+            panel?.orderOut(nil)
+            removeEscapeMonitors()
+            removeHoverMonitors()
+            return
+        }
+
+        presentPanel()
+        installEscapeMonitors()
+    }
+
+    /// パネルを（無ければ作って）前面に出す。
+    /// makeKeyAndOrderFront は使わない。最前面アプリのフォーカスを奪うと挿入先が変わる。
+    private func presentPanel() {
+        let isNew = panel == nil
         let panel = self.panel ?? makePanel()
         self.panel = panel
         applyPanelSize()
-        // makeKeyAndOrderFront は使わない。最前面アプリのフォーカスを奪うと挿入先が変わる。
+        // 位置を決めるのは初回だけ。以降はユーザーがドラッグした位置を保つ
+        // （設定で位置を変えたときは `applyLayout` から明示的に置き直す）。
+        if isNew { applyPanelPosition() }
         panel.orderFrontRegardless()
+        installHoverMonitors()
+    }
 
-        startTicking()
-        installEscapeMonitors()
+    /// 設定（表示位置・表示サイズ）の変更を、表示中の HUD へ即座に反映する（Issue #35）。
+    func applyLayout() {
+        guard SettingsStore.shared.hudSize != .hidden else {
+            // 結果を残しているときは閉じない。結果を失わせないことが設定より優先。
+            guard model.pendingResult == nil else { return }
+            model.isHovering = false
+            panel?.orderOut(nil)
+            removeEscapeMonitors()
+            removeHoverMonitors()
+            return
+        }
+
+        // 録音中・結果表示中・（失敗表示などで）出しっぱなしのときだけ出し直す。
+        // それ以外は次に出すときの大きさだけ揃えておく。
+        guard startedAt != nil || model.pendingResult != nil || isVisible else {
+            applyPanelSize()
+            return
+        }
+        presentPanel()
+        applyPanelPosition()
+        // 非表示から戻したときは Esc 監視も張り直す（結果表示中は張らない）。
+        if startedAt != nil, model.pendingResult == nil { installEscapeMonitors() }
+    }
+
+    // MARK: ホバー監視
+
+    /// マウスがパネルに乗っているかを、**マウス位置とパネル枠の当たり判定**で自前に取る。
+    ///
+    /// HUD は `.nonactivatingPanel` で、アプリは非アクティブのまま。この状態では
+    /// SwiftUI の `.onHover`（トラッキングエリア）が発火する保証がないので使わない。
+    /// グローバル監視はイベントを消費しないため、前面アプリの操作は一切妨げない。
+    private func installHoverMonitors() {
+        guard hoverMonitors.isEmpty else { return }
+        let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
+        let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
+            Task { @MainActor in self?.updateHovering() }
+        })
+        let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
+            Task { @MainActor in self?.updateHovering() }
+            return event
+        })
+        hoverMonitors = [global, local].compactMap { $0 }
+    }
+
+    private func removeHoverMonitors() {
+        hoverMonitors.forEach(NSEvent.removeMonitor)
+        hoverMonitors.removeAll()
+    }
+
+    private func updateHovering() {
+        guard let panel, panel.isVisible else { return }
+        setHovering(panel.frame.contains(NSEvent.mouseLocation))
+    }
+
+    /// マウスの出入り。最小表示は乗っている間だけ操作ボタンを出すので、パネルの幅も変える。
+    private func setHovering(_ hovering: Bool) {
+        guard model.isHovering != hovering else { return }
+        model.isHovering = hovering
+        // 結果を読もうとして乗せたなら、自動クローズは止める。
+        if hovering, model.pendingResult != nil {
+            autoHideTask?.cancel()
+            autoHideTask = nil
+        } else if !hovering, model.pendingResult != nil {
+            scheduleResultAutoHide()
+        }
+        applyPanelSize()
     }
 
     /// 即座に閉じる（キャンセル時・失敗表示を閉じたとき）。
@@ -433,6 +631,7 @@ final class RecordingHUDController {
         resultAutoHides = false
         stopTicking()
         removeEscapeMonitors()
+        removeHoverMonitors()
         model.reset()
         startedAt = nil
         panel?.orderOut(nil)
@@ -442,7 +641,7 @@ final class RecordingHUDController {
     /// 完了表示を一瞬だけ見せてから自動的に閉じる（挿入できたことを HUD 側でも確認できる）。
     ///
     /// `warning` に変化があれば、閉じる前に何が書き換わったかを見せて表示時間を延ばす。
-    /// **HUD が非表示なら警告も出さない**——挿入結果と違って失われるものは無く
+    /// **HUD を出していなければ警告も出さない**——挿入結果と違って失われるものは無く
     /// （履歴に残る）、メニューバーの状態でも警告は読める。設定を尊重する。
     func finish(warning: FormatDiff? = nil) {
         // 前回の挿入結果を残したままなら、今回の成功で役目を終える。
@@ -451,9 +650,11 @@ final class RecordingHUDController {
             resultAutoHides = false
             applyPanelSize()
         }
-        guard isVisible else { return }
+        // 非表示でも動いている経過時間タイマーを必ず止める。
         stopTicking()
         removeEscapeMonitors()
+        startedAt = nil
+        guard isVisible else { return }
 
         let hasWarning = warning?.hasChanges == true
         model.warning = hasWarning ? warning : nil
@@ -494,7 +695,7 @@ final class RecordingHUDController {
 
     /// 挿入できなかった（または成否を確認できなかった）結果を HUD に残す。
     ///
-    /// **HUD 表示が OFF でもここでは出す**。結果を失わせないことが優先で、
+    /// **表示サイズが「非表示」でもここでは出す**。結果を失わせないことが優先で、
     /// 出さなければユーザーは結果がどこにあるか分からない。
     ///
     /// 失敗は原因を読ませる必要があるので残す。**確認できなかっただけなら数秒で閉じる**
@@ -514,10 +715,7 @@ final class RecordingHUDController {
                                     note: nil)
         resultAutoHides = !outcome.isFailure
 
-        let panel = self.panel ?? makePanel()
-        self.panel = panel
-        applyPanelSize()
-        panel.orderFrontRegardless()
+        presentPanel()
         scheduleResultAutoHide()
     }
 
@@ -575,24 +773,20 @@ final class RecordingHUDController {
         hide()
     }
 
-    /// 表示中の内容に合わせてパネルの大きさを切り替える。
+    /// 表示中の内容と設定に合わせてパネルの大きさを切り替える。
     private func applyPanelSize() {
         guard let panel else { return }
-        let size: CGSize
-        if model.pendingResult != nil {
-            size = Self.resultPanelSize
-        } else if model.warning?.hasChanges == true {
-            size = Self.warningPanelSize
-        } else {
-            size = Self.panelSize
-        }
+        let size = model.panelSize
         let previous = panel.frame
         guard previous.size != size else { return }
-        // borderless パネルは原点が左下。高さは上へ伸ばし、幅は中心を保ったまま広げる
+        // borderless パネルは原点が左下。幅は中心を保ったまま広げる
         // （ユーザーがドラッグで動かした位置を尊重するため、再センタリングはしない）。
+        // 高さは**画面外へ伸びない側へ**——下寄せなら上へ、上寄せなら下へ伸ばす。
+        let y = SettingsStore.shared.hudPosition == .topCenter
+            ? previous.maxY - size.height
+            : previous.minY
         panel.setContentSize(size)
-        panel.setFrameOrigin(CGPoint(x: previous.minX + (previous.width - size.width) / 2,
-                                     y: previous.minY))
+        panel.setFrameOrigin(CGPoint(x: previous.minX + (previous.width - size.width) / 2, y: y))
     }
 
     // MARK: パネル生成
@@ -601,8 +795,10 @@ final class RecordingHUDController {
         let view = RecordingHUDView(
             model: model,
             state: AppState.shared,
+            settings: SettingsStore.shared,
             onStop: { [weak self] in self?.onStop?() },
             onRequestCancel: { [weak self] in self?.requestCancel() },
+            onKeepRecording: { [weak self] in self?.keepRecording() },
             onConfirmCancel: { [weak self] in self?.onCancel?() },
             onDismiss: { [weak self] in self?.hide() },
             onCopyResult: { [weak self] in self?.copyResult() },
@@ -613,7 +809,7 @@ final class RecordingHUDController {
         )
 
         let panel = HUDPanel(
-            contentRect: CGRect(origin: .zero, size: Self.panelSize),
+            contentRect: CGRect(origin: .zero, size: model.panelSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -624,21 +820,35 @@ final class RecordingHUDController {
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.isMovableByWindowBackground = true
+        // 最小表示のホバー判定に使う（フォーカスは移らない。マウス移動を受け取るだけ）。
+        panel.acceptsMouseMovedEvents = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.animationBehavior = .utilityWindow
-        positionAtBottomCenter(panel)
         return panel
     }
 
-    private func positionAtBottomCenter(_ panel: NSPanel) {
+    /// 下寄せのときに画面下端から空ける距離（Dock を避ける）。
+    private static let bottomMargin: CGFloat = 96
+    /// 上寄せのときに空ける距離（`visibleFrame` の時点でメニューバーは除かれている）。
+    private static let topMargin: CGFloat = 24
+
+    /// 設定の表示位置へ置き直す。
+    /// 画面は**マウスのある画面＝キー入力を受けている画面**を選ぶ（従来の挙動を維持）。
+    private func applyPanelPosition() {
+        guard let panel else { return }
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
-        panel.setFrameOrigin(CGPoint(x: visible.midX - Self.panelSize.width / 2,
-                                     y: visible.minY + 96))
+        let size = panel.frame.size
+        let y: CGFloat
+        switch SettingsStore.shared.hudPosition {
+        case .bottomCenter: y = visible.minY + Self.bottomMargin
+        case .topCenter:    y = visible.maxY - size.height - Self.topMargin
+        }
+        panel.setFrameOrigin(CGPoint(x: visible.midX - size.width / 2, y: y))
     }
 
     // MARK: 経過時間
@@ -656,8 +866,15 @@ final class RecordingHUDController {
     }
 
     private func tick() {
-        guard let startedAt else { return }
-        model.setElapsed(Date().timeIntervalSince(startedAt))
+        guard let startedAt else { stopTicking(); return }
+        // 経過時間は HUD が非表示でも数えている（途中で表示へ切り替えたときのため）。
+        // セッションが終わっていたら止める——**失敗で終わったときも**タイマーを残さない。
+        switch AppState.shared.status {
+        case .recording, .processing:
+            model.setElapsed(Date().timeIntervalSince(startedAt))
+        default:
+            stopTicking()
+        }
     }
 
     // MARK: キャンセル
@@ -667,15 +884,24 @@ final class RecordingHUDController {
         guard AppState.shared.status == .recording, !model.isConfirmingCancel else { return }
         if model.needsCancelConfirmation {
             model.isConfirmingCancel = true
+            // 最小表示でも確認は読ませる必要があるので、通常の大きさへ戻す。
+            applyPanelSize()
         } else {
             onCancel?()
         }
     }
 
+    /// キャンセル確認をやめて録音を続ける。
+    private func keepRecording() {
+        guard model.isConfirmingCancel else { return }
+        model.isConfirmingCancel = false
+        applyPanelSize()
+    }
+
     private func handleEscape() {
         // 確認中の Esc は「続ける」に倒す。破棄はクリックでのみ確定させる（誤爆で音声を失わせない）。
         if model.isConfirmingCancel {
-            model.isConfirmingCancel = false
+            keepRecording()
         } else {
             requestCancel()
         }
@@ -685,7 +911,7 @@ final class RecordingHUDController {
 
     /// HUD はフォーカスを持たないので、他アプリ操作中の Esc はグローバル監視で拾う。
     /// グローバル監視はイベントを消費しないため、前面アプリ側の Esc は従来どおり効く。
-    /// HUD 非表示（設定 OFF）のときは監視自体を張らない＝見えない Esc で録音が消えることはない。
+    /// 表示サイズが「非表示」のときは監視自体を張らない＝見えない Esc で録音が消えることはない。
     private func installEscapeMonitors() {
         removeEscapeMonitors()
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in

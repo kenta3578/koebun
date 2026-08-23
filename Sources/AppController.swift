@@ -98,6 +98,13 @@ final class AppController {
         loadFormatter()
     }
 
+    // MARK: - 録音 HUD
+
+    /// 設定で HUD の表示位置・表示サイズを変えたときに、表示中の HUD へ即座に反映する（Issue #35）。
+    func refreshHUDLayout() {
+        hud.applyLayout()
+    }
+
     // MARK: - 音声認識エンジン
 
     /// 設定で選ばれている音声認識エンジンを読み込み直す（起動時とエンジン切り替え時）。
@@ -217,7 +224,8 @@ final class AppController {
 
             try recorder.start()
             state.update(.recording)
-            if SettingsStore.shared.showRecordingHUD { hud.show() }
+            // 表示サイズ（非表示/最小/通常）の判断は HUD 側に一本化してある。
+            hud.show()
             let start = SettingsStore.shared.startSound
             if start != "なし" { NSSound(named: .init(start))?.play() }
         } catch {

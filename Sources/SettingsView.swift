@@ -64,9 +64,25 @@ struct GeneralSettingsView: View {
             }
 
             Section("録音HUD") {
-                Toggle("録音中に HUD を表示", isOn: $settings.showRecordingHUD)
-                Text("波形でマイクが拾えているかを確認でき、停止・キャンセルもできます。"
-                     + "OFF にすると開始音・完了音だけで状態を知らせます（キャンセルは HUD からのみ）。")
+                Picker("表示サイズ", selection: $settings.hudSize) {
+                    ForEach(HUDSize.allCases) { Text($0.label).tag($0) }
+                }
+                .onChange(of: settings.hudSize) { _, _ in
+                    AppController.shared.refreshHUDLayout()
+                }
+
+                Picker("表示位置", selection: $settings.hudPosition) {
+                    ForEach(HUDPosition.allCases) { Text($0.label).tag($0) }
+                }
+                .disabled(settings.hudSize == .hidden)
+                .onChange(of: settings.hudPosition) { _, _ in
+                    AppController.shared.refreshHUDLayout()
+                }
+
+                Text("「通常」は波形でマイクが拾えているかを確認でき、停止・キャンセルもできます。"
+                     + "「最小」は状態と経過時間だけの細いバーで、マウスを乗せると停止・キャンセルが出ます。"
+                     + "「非表示」でも開始音・完了音は鳴ります"
+                     + "（キャンセルは HUD からのみ。挿入できなかった結果だけは失わないよう表示します）。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
