@@ -3,31 +3,52 @@ import ApplicationServices
 
 /// 挿入の結果。**成功だと確信できたときだけ `.succeeded`** を返す。
 ///
-/// `.failed` と `.uncertain` は文言が違うだけで、扱いは同じ（結果を捨てない）。
-/// 判定は当たり外れがあるので、外れたときのコストが「文言が少しズレる」で済むよう
-/// 保全側の挙動を2つで揃えてある。
+/// `.failed` と `.uncertain` は**結果の扱いが同じ**（どちらも捨てない）だが、
+/// **見せ方は分ける**（Issue #34）。`.uncertain` は「送出は済んだ・確認手段が無いだけ」で、
+/// ターミナルのように AX でテキストを読めないアプリでは毎回起きる。
+/// これを警告として描くと、毎回出る警告になって本当の失敗に気づけなくなる。
 enum InsertionOutcome: Equatable {
     /// 挿入先のテキストが実際に増えた（または caret が進んだ）ことを確認できた。
     case succeeded
     /// 挿入先が変化しなかった＝受け付けなかったと判断できた。
     case failed(reason: String)
-    /// 成否を判定できなかった（Accessibility でテキストを読めないアプリなど）。
-    case uncertain(reason: String)
+    /// 挿入は送出したが、成否を判定できなかった（Accessibility でテキストを読めないアプリなど）。
+    /// `detail` は「なぜ確認できないか」だけを言う（何が起きたかは `headline` 側）。
+    case uncertain(detail: String)
 
     var isSucceeded: Bool { self == .succeeded }
 
-    /// HUD に出す1行。
-    var reason: String {
+    /// 本当に失敗したか。**警告色・警告アイコンを使ってよいのはこれが true のときだけ**。
+    var isFailure: Bool {
+        if case .failed = self { return true }
+        return false
+    }
+
+    /// HUD の見出し。**何が起きたか**を先に言う（「確認できません」で終わらせない）。
+    var headline: String {
         switch self {
-        case .succeeded:            return "挿入しました"
-        case .failed(let reason):   return reason
-        case .uncertain(let reason): return reason
+        case .succeeded, .uncertain: return "挿入しました"
+        case .failed(let reason):    return reason
         }
     }
 
-    /// メニューバー側（AppStatus.failed）に出す文言。
+    /// 見出しに添える補足。`.uncertain` のときだけ付く。
+    var detail: String? {
+        switch self {
+        case .succeeded, .failed:    return nil
+        case .uncertain(let detail): return detail
+        }
+    }
+
+    /// 1行に畳んだ文言。
+    var summary: String {
+        guard let detail else { return headline }
+        return "\(headline)（\(detail)）"
+    }
+
+    /// メニューバー側に出す文言。失敗のときだけ結果の在り処を案内する。
     var statusMessage: String {
-        "\(reason)。結果は HUD に残しています"
+        isFailure ? "\(headline)。結果は HUD に残しています" : summary
     }
 }
 
@@ -186,10 +207,10 @@ enum TextInjector {
     /// 「挿入できたことにしない」側に倒す。
     private static func verify(text: String, before: FocusSnapshot?, after: FocusSnapshot?) -> InsertionOutcome {
         guard let before, let after else {
-            return .uncertain(reason: "入力先を読み取れず、挿入できたか確認できません")
+            return .uncertain(detail: "このアプリでは結果を確認できません")
         }
         guard CFEqual(before.element, after.element) else {
-            return .uncertain(reason: "入力先が変わったため、挿入できたか確認できません")
+            return .uncertain(detail: "入力先が変わったため結果を確認できません")
         }
 
         let inserted = text.utf16.count
@@ -204,7 +225,7 @@ enum TextInjector {
             if new == old, before.caret == after.caret {
                 return .failed(reason: "入力先がテキストを受け付けませんでした")
             }
-            return .uncertain(reason: "挿入できたか確認できません")
+            return .uncertain(detail: "結果を確認できません")
         }
 
         if let oldCaret = before.caret, let newCaret = after.caret {
@@ -212,7 +233,7 @@ enum TextInjector {
             return .failed(reason: "入力先がテキストを受け付けませんでした")
         }
 
-        return .uncertain(reason: "このアプリでは挿入できたか確認できません")
+        return .uncertain(detail: "このアプリでは結果を確認できません")
     }
 }
 

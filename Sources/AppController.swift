@@ -98,6 +98,13 @@ final class AppController {
         loadFormatter()
     }
 
+    // MARK: - 録音 HUD
+
+    /// 設定で HUD の表示位置・表示サイズを変えたときに、表示中の HUD へ即座に反映する（Issue #35）。
+    func refreshHUDLayout() {
+        hud.applyLayout()
+    }
+
     // MARK: - 音声認識エンジン
 
     /// 設定で選ばれている音声認識エンジンを読み込み直す（起動時とエンジン切り替え時）。
@@ -217,7 +224,8 @@ final class AppController {
 
             try recorder.start()
             state.update(.recording)
-            if SettingsStore.shared.showRecordingHUD { hud.show() }
+            // 表示サイズ（非表示/最小/通常）の判断は HUD 側に一本化してある。
+            hud.show()
             let start = SettingsStore.shared.startSound
             if start != "なし" { NSSound(named: .init(start))?.play() }
         } catch {
@@ -266,17 +274,20 @@ final class AppController {
                     // 「録音直前のコピー」と誤認しないよう、この間の変化は採用しない。
                     ClipboardWatcher.shared.suppressChanges(for: 2)
                     outcome = await TextInjector.insert(text)
-                    if outcome.isSucceeded {
-                        // 整形を外したことは必ず見せる（無言で生テキストに落ちない）。
-                        if let failure = formatting.failure {
-                            state.update(.done(message: "整形なしで挿入 ✓（\(failure)）"))
-                        } else if let diff, diff.hasChanges {
-                            state.update(.warned(message: "挿入しました ✓ \(diff.shortSummary)"))
-                        } else {
-                            state.update(.done(message: "挿入しました ✓"))
-                        }
-                    } else {
+                    // 「確認できなかっただけ」を失敗として見せない（Issue #34）。
+                    // AX でテキストを読めないアプリ（ターミナル等）では毎回起きるので、
+                    // 警告にすると本当の失敗が埋もれる。
+                    if outcome.isFailure {
                         state.update(.failed(reason: outcome.statusMessage))
+                    } else if let failure = formatting.failure {
+                        // 整形を外したことは必ず見せる（無言で生テキストに落ちない）。
+                        state.update(.done(message: "整形なしで挿入 ✓（\(failure)）"))
+                    } else if let diff, diff.hasChanges {
+                        state.update(.warned(message: "挿入しました ✓ \(diff.shortSummary)"))
+                    } else {
+                        state.update(.done(message: outcome.isSucceeded
+                                           ? "挿入しました ✓"
+                                           : outcome.summary))
                     }
                 }
                 let inserted = !text.isEmpty && outcome.isSucceeded
@@ -308,8 +319,9 @@ final class AppController {
                     // 書き換えの疑いがあるときは、閉じる前に何が変わったかを見せる。
                     hud.finish(warning: diff)
                 } else {
-                    // 挿入できなかった結果は HUD に残し、コピー・再挿入できるようにする。
-                    hud.presentResult(text, reason: outcome.reason)
+                    // 挿入できなかった／確認できなかった結果は HUD に残し、
+                    // コピー・再挿入できるようにする（確認できないだけなら数秒で閉じる）。
+                    hud.presentResult(text, outcome: outcome)
                 }
             } catch {
                 // 失敗は自動で閉じない。HUD に原因を残す。

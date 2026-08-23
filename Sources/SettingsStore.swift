@@ -17,9 +17,14 @@ final class SettingsStore: ObservableObject {
     @Published var stopSound: String {
         didSet { UserDefaults.standard.set(stopSound, forKey: "stopSound") }
     }
-    /// 録音 HUD を表示するか。OFF でも開始音・完了音で状態は分かる。
-    @Published var showRecordingHUD: Bool {
-        didSet { UserDefaults.standard.set(showRecordingHUD, forKey: "showRecordingHUD") }
+    /// 録音 HUD の大きさ（Issue #35）。旧「録音中に HUD を表示」トグルはこれに統合した。
+    /// `.hidden` でも開始音・完了音で状態は分かる。
+    @Published var hudSize: HUDSize {
+        didSet { UserDefaults.standard.set(hudSize.rawValue, forKey: "hudSize") }
+    }
+    /// 録音 HUD を出す位置。表示中に変えても即座に反映する。
+    @Published var hudPosition: HUDPosition {
+        didSet { UserDefaults.standard.set(hudPosition.rawValue, forKey: "hudPosition") }
     }
     /// ⌘V の代わりに1文字ずつキーを送出する。ペーストを受け付けないアプリ向けのフォールバック。
     /// この方式はクリップボードを一切触らない。
@@ -120,7 +125,9 @@ final class SettingsStore: ObservableObject {
     private init() {
         startSound = UserDefaults.standard.string(forKey: "startSound") ?? "Glass"
         stopSound  = UserDefaults.standard.string(forKey: "stopSound")  ?? "Basso"
-        showRecordingHUD = UserDefaults.standard.object(forKey: "showRecordingHUD") as? Bool ?? true
+        hudSize = Self.storedHUDSize()
+        hudPosition = UserDefaults.standard.string(forKey: "hudPosition")
+            .flatMap(HUDPosition.init(rawValue:)) ?? .bottomCenter
         simulateKeypresses = UserDefaults.standard.bool(forKey: "simulateKeypresses")
         // 既定は「結果を残す」。挿入結果を失う事故（Issue #13）の方が、
         // クリップボードが戻らないことより痛い。
@@ -162,6 +169,26 @@ final class SettingsStore: ObservableObject {
         diffGuardEnabled = UserDefaults.standard.object(forKey: "diffGuardEnabled") as? Bool ?? true
         // 誤検知の多い警告は無視されるようになるので、名詞まで見るのは明示的な選択にする。
         diffGuardIncludesNames = UserDefaults.standard.bool(forKey: "diffGuardIncludesNames")
+    }
+
+    /// HUD の大きさを読む。**旧「録音中に HUD を表示」トグル（`showRecordingHUD`）からの移行**を
+    /// ここで吸収する（Issue #35）。
+    ///
+    /// - `hudSize` が保存済みならそれを使う（新しい選択が常に優先）
+    /// - 未保存で旧トグルが `false` なら「非表示」＝ HUD を出さない意思を引き継ぐ
+    /// - それ以外（未設定・旧トグルが true）は既定の「通常」
+    ///
+    /// 旧キーは読むだけで消さない。ここで一度だけ新キーへ書き出すので、次回以降は上の1本目で決まる。
+    private static func storedHUDSize() -> HUDSize {
+        let defaults = UserDefaults.standard
+        if let raw = defaults.string(forKey: "hudSize"), let size = HUDSize(rawValue: raw) {
+            return size
+        }
+        let migrated: HUDSize = (defaults.object(forKey: "showRecordingHUD") as? Bool == false)
+            ? .hidden
+            : .normal
+        defaults.set(migrated.rawValue, forKey: "hudSize")
+        return migrated
     }
 
     /// 保存されているエンジン選択を読む。**保存値があればそれを優先する**ので、

@@ -379,7 +379,10 @@ struct HistoryView: View {
                 let outcome = await TextInjector.insert(text)
                 guard !outcome.isSucceeded else { return }
                 // 挿入できなくても履歴には残っている。手動で貼る導線を案内する。
-                message = "\(outcome.reason)。「コピー」から手動で貼り付けてください。"
+                // **確認できないだけのときは案内しない**（挿入は済んでいる。Issue #34）。
+                message = outcome.isFailure
+                    ? "\(outcome.headline)。「コピー」から手動で貼り付けてください。"
+                    : outcome.summary
             }
         }
     }
