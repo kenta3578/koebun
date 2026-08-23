@@ -6,7 +6,7 @@ struct MenuContent: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        Text(state.status)
+        Text(state.status.menuText)
             .font(.system(size: 12))
 
         Divider()
