@@ -19,17 +19,17 @@ final class AppController {
     }
 
     private func bootstrap() async {
-        state.status = "権限を確認中…"
+        state.update(.loadingModel(step: "権限を確認中…"))
         await PermissionsManager.ensureMicrophone()
         PermissionsManager.ensureAccessibility(prompt: true)
 
-        state.status = "モデルを読み込み中…"
+        state.update(.loadingModel(step: "モデルを読み込み中…"))
         do {
             try await transcriber.load()
             state.modelLoaded = true
-            state.status = "待機中（\(SettingsStore.keyName(for: SettingsStore.shared.hotKeyCode))で録音開始）"
+            state.update(.idle)
         } catch {
-            state.status = "モデル読込失敗: \(error.localizedDescription)"
+            state.update(.failed(reason: "モデル読込失敗: \(error.localizedDescription)"))
         }
 
         hotkeys.onToggle = { [weak self] in
@@ -50,19 +50,17 @@ final class AppController {
         guard state.modelLoaded else { return }
         do {
             try recorder.start()
-            state.isRecording = true
-            state.status = "録音中…（\(SettingsStore.keyName(for: SettingsStore.shared.hotKeyCode))で停止）"
+            state.update(.recording)
             let start = SettingsStore.shared.startSound
             if start != "なし" { NSSound(named: .init(start))?.play() }
         } catch {
-            state.status = "録音開始失敗: \(error.localizedDescription)"
+            state.update(.failed(reason: "録音開始失敗: \(error.localizedDescription)"))
         }
     }
 
     private func stopRecording() {
         guard state.isRecording else { return }
-        state.isRecording = false
-        state.status = "文字起こし中…"
+        state.update(.processing)
         let stop = SettingsStore.shared.stopSound
         if stop != "なし" { NSSound(named: .init(stop))?.play() }
 
@@ -73,13 +71,13 @@ final class AppController {
                 // 整形 LLM の前段で辞書置換を適用する（決定的な文字列処理）
                 let text = ReplacementStore.shared.apply(raw)
                 if text.isEmpty {
-                    state.status = "（無音）待機中（\(SettingsStore.keyName(for: SettingsStore.shared.hotKeyCode))で録音開始）"
+                    state.update(.done(message: "（無音）"))
                 } else {
                     TextInjector.insert(text)
-                    state.status = "挿入しました ✓ 待機中（\(SettingsStore.keyName(for: SettingsStore.shared.hotKeyCode))で録音開始）"
+                    state.update(.done(message: "挿入しました ✓"))
                 }
             } catch {
-                state.status = "文字起こし失敗: \(error.localizedDescription)"
+                state.update(.failed(reason: "文字起こし失敗: \(error.localizedDescription)"))
             }
         }
     }
