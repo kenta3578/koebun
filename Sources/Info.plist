@@ -22,6 +22,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>音声入力の文字起こしのためにマイクを使用します。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>音声入力の文字起こしのために、この Mac の中だけで動く音声認識を使用します。</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

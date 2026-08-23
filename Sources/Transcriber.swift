@@ -6,8 +6,11 @@ enum TranscriberError: Error {
 }
 
 /// WhisperKit ラッパー。large-v3 を日本語で文字起こしする。
-/// 初回ロード時にモデル（数百MB）が自動ダウンロードされる。
-actor Transcriber {
+/// 初回ロード時にモデル（約2.9GB）が自動ダウンロードされる。
+///
+/// `SpeechEngine` の実装の1つ（Issue #27）。**挙動は差し替え前と同じ**で、
+/// 切り替えのために `unload()` だけを足してある。
+actor Transcriber: SpeechEngine {
     private var pipe: WhisperKit?
     private(set) var isReady = false
 
@@ -22,6 +25,12 @@ actor Transcriber {
         )
         pipe = try await WhisperKit(config)
         isReady = true
+    }
+
+    /// 常駐を解除してメモリ（約2.9GB）を返す。Apple 音声認識へ切り替えたときに呼ぶ。
+    func unload() {
+        pipe = nil
+        isReady = false
     }
 
     /// 16kHz mono Float サンプルを日本語テキストに変換する。

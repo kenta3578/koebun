@@ -171,6 +171,14 @@ struct HistoryView: View {
                 if let audio = entry.audio {
                     Label(String(format: "%.1f秒", audio.durationSeconds), systemImage: "mic")
                 }
+                // どのエンジンで処理したか（Issue #27）。エンジンを切り替えて同じ発話を通したとき、
+                // どちらの結果を見ているのかがここで分かる。
+                if let engine = entry.speechEngineLabel {
+                    Label("認識 \(engine)", systemImage: "cpu")
+                }
+                if let engine = entry.formattingEngineLabel {
+                    Label("整形 \(engine)", systemImage: "wand.and.stars")
+                }
                 Label(entry.inserted ? "挿入済み" : "未挿入",
                       systemImage: entry.inserted ? "checkmark.circle" : "xmark.circle")
             }

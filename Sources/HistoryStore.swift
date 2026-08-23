@@ -32,6 +32,7 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
 
     /// meta.json のスキーマ版。整形 LLM を足したあとも古い履歴を読み分けられるようにする。
     /// 2 = 整形ガードの検出結果（`diff`）を追加（Issue #14）。
+    /// 3 = 使用したエンジン（`speechEngine` / `formattingEngine` / `formattingModelId`）を追加（Issue #27）。
     var version: Int = HistoryFiles.schemaVersion
     var createdAt: Date
     /// 文字起こしの生出力。**上書きしない**。
@@ -46,6 +47,18 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     /// プロンプト改善のループを回すために**全文**を残す（要約・省略しない）。
     var prompt: String?
     var durations: Durations
+    /// 文字起こしに使ったエンジン（`SpeechEngineKind.rawValue`）。v2 以前の履歴は nil。
+    ///
+    /// **エンジン比較の一次データはここ**（Issue #27）。同じ発話を両エンジンに通したとき、
+    /// 生テキスト・整形後・所要時間・`diff` の警告をどちらの結果として読めばいいかが
+    /// これが無いと分からなくなる。
+    var speechEngine: String?
+    /// 整形に使ったエンジン（`FormattingEngineKind.rawValue`）。
+    /// 整形を試みなかった発話（`そのまま` モード・整形 OFF）は nil。
+    var formattingEngine: String?
+    /// 整形に使ったモデルの識別子。mlx なら HuggingFace の repo id、Apple なら固定の識別子。
+    /// 同じ mlx でも 4B と 32B では比較の意味が変わるので、エンジン名とは別に残す。
+    var formattingModelId: String?
     /// 整形ガード（Issue #14）の検出結果。点検しなかった発話（整形なし・ガード OFF）は nil。
     /// **あとから傾向を見るために残す**——どのモードでどの種類が何件書き換わるかが分かれば、
     /// 直すべきはプロンプトなのかモデルなのかを判断できる。
@@ -58,7 +71,22 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     var id: String = ""
 
     private enum CodingKeys: String, CodingKey {
-        case version, createdAt, rawText, replacedText, formattedText, modeName, prompt, durations, diff, audio, inserted
+        case version, createdAt, rawText, replacedText, formattedText, modeName, prompt, durations
+        case speechEngine, formattingEngine, formattingModelId, diff, audio, inserted
+    }
+
+    /// 履歴に出す音声認識エンジン名。v2 以前の履歴（エンジンが1つしか無かった頃）は nil。
+    var speechEngineLabel: String? {
+        speechEngine.map { SpeechEngineKind(rawValue: $0)?.shortLabel ?? $0 }
+    }
+
+    /// 履歴に出す整形エンジン名。モデル ID が分かればそれも添える（14B と 32B を混同しないため）。
+    var formattingEngineLabel: String? {
+        guard let formattingEngine else { return nil }
+        let name = FormattingEngineKind(rawValue: formattingEngine)?.shortLabel ?? formattingEngine
+        guard let modelId = formattingModelId, !modelId.isEmpty else { return name }
+        // HuggingFace の repo id は `mlx-community/Qwen3-14B-4bit` と長いので末尾だけ出す。
+        return "\(name) / \(modelId.split(separator: "/").last.map(String.init) ?? modelId)"
     }
 
     /// 一覧に出す1行サマリー。整形後があればそちらを優先する。
@@ -74,7 +102,7 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
 /// 保存は挿入をブロックしてはいけない（挿入の体感速度がこのアプリの価値）ので、
 /// ここの関数はバックグラウンドの `Task.detached` から呼ばれる。
 enum HistoryFiles {
-    static let schemaVersion = 2
+    static let schemaVersion = 3
     static let metaFileName = "meta.json"
     static let audioFileName = "audio.wav"
     /// AudioRecorder が出力する形式（16kHz / mono / Float32）。
@@ -285,6 +313,9 @@ final class HistoryStore: ObservableObject {
     ///   - formattedText: 整形 LLM の出力。整形しなかった／失敗したときは nil。
     ///   - modeName: 使用した整形モード名。
     ///   - prompt: 整形 LLM に送ったシステムプロンプト全文（整形が通ったときのみ）。
+    ///   - speechEngine: 文字起こしに使ったエンジン（`SpeechEngineKind.rawValue`）。
+    ///   - formattingEngine: 整形に使ったエンジン。整形を試みなかったときは nil。
+    ///   - formattingModelId: 整形に使ったモデルの識別子。
     ///   - diff: 整形ガードの検出結果。点検しなかったときは nil。
     func record(
         samples: [Float],
@@ -293,6 +324,9 @@ final class HistoryStore: ObservableObject {
         formattedText: String? = nil,
         modeName: String? = nil,
         prompt: String? = nil,
+        speechEngine: String? = nil,
+        formattingEngine: String? = nil,
+        formattingModelId: String? = nil,
         durations: HistoryEntry.Durations,
         diff: FormatDiff? = nil,
         inserted: Bool
@@ -306,6 +340,9 @@ final class HistoryStore: ObservableObject {
             modeName: modeName,
             prompt: prompt,
             durations: durations,
+            speechEngine: speechEngine,
+            formattingEngine: formattingEngine,
+            formattingModelId: formattingModelId,
             diff: diff,
             audio: nil,
             inserted: inserted
