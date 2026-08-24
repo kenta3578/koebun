@@ -51,6 +51,57 @@ xcodebuild -project koebun.xcodeproj -scheme koebun -resolvePackageDependencies
 git add -f koebun.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 ```
 
+
+## 開発用の署名を固定する（推奨）
+
+`xcodebuild` の既定はアドホック署名で、**ビルドのたびに署名（cdhash）が変わる**。macOS の権限管理（TCC）は署名で同一性を判断するため、ビルドし直すたびに**アクセシビリティ権限が外れて右⌥が無反応になる**。
+
+固定の自己署名証明書を1つ作れば、この問題は消える。**Apple Developer Program（年$99）は不要**。信頼設定（キーチェーンアクセスでの「常に信頼」）も不要で、CLI だけで完結する。
+
+```bash
+# 1. codeSigning 用途の自己署名証明書を作る（有効期限10年）
+openssl req -x509 -newkey rsa:2048 -keyout koebun-dev.key -out koebun-dev.crt -days 3650 -nodes \
+  -subj "/CN=koebun-dev" \
+  -addext "extendedKeyUsage=critical,codeSigning" \
+  -addext "basicConstraints=critical,CA:false" \
+  -addext "keyUsage=critical,digitalSignature"
+
+# 2. p12 にまとめる（macOS の security コマンドが読める形式にするため -certpbe/-keypbe/-macalg が要る。
+#    OpenSSL 3 の既定（AES-256 + SHA-256 MAC）は取り込みに失敗する）
+openssl pkcs12 -export -inkey koebun-dev.key -in koebun-dev.crt -out koebun-dev.p12 \
+  -passout pass:koebun -name "koebun-dev" \
+  -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1
+
+# 3. ログインキーチェーンへ取り込む
+security import koebun-dev.p12 -k ~/Library/Keychains/login.keychain-db -P koebun \
+  -T /usr/bin/codesign -T /usr/bin/security
+
+# 4. 秘密鍵ファイルは不要になるので消す（キーチェーンに入っている）
+rm -f koebun-dev.key koebun-dev.p12
+```
+
+> `security find-identity -v -p codesigning` は「0 valid identities」と表示するが、これは**信頼設定が無いだけ**で、`codesign --sign koebun-dev` は通る。TCC が見る designated requirement は
+> `identifier "com.kenta3578.koebun" and certificate leaf = H"..."` になり、同じ証明書で署名する限り権限は保持される。
+
+## ビルドしてインストールする
+
+```bash
+./scripts/install-local.sh
+```
+
+生成 → ビルド（Release）→ `koebun-dev` があれば署名 → 起動中のアプリを終了 → `/Applications` へインストール → 起動、までを一度に行う。証明書が無い場合はアドホック署名のまま続行する（その場合は毎回アクセシビリティ権限を付け直す必要がある）。
+
+環境変数で挙動を変えられる:
+
+| 変数 | 既定 | 用途 |
+|---|---|---|
+| `KOEBUN_SIGN_IDENTITY` | `koebun-dev` | 署名に使う証明書名 |
+| `KOEBUN_CONFIG` | `Release` | `Debug` にすると開発ビルド |
+| `KOEBUN_DERIVED_DATA` | `.build/dd` | ビルド成果物の置き場 |
+
+**署名を変えた直後だけは、アクセシビリティ権限を付け直す必要がある**（別の署名として扱われるため）。システム設定 → プライバシーとセキュリティ → アクセシビリティ で koebun を「−」で削除してから「+」で追加する。以降は付け直し不要になる。
+
+
 ## 初回実行で必要な権限
 
 メニューバーアイコン → 各設定ボタンから許可する:
