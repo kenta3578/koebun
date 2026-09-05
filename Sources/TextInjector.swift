@@ -54,8 +54,9 @@ enum InsertionOutcome: Equatable {
     }
 
     /// メニューバー側に出す文言。失敗のときだけ結果の在り処を案内する。
-    var statusMessage: String {
-        isFailure ? "\(headline)。結果は HUD に残しています" : summary
+    /// `location` は「HUD」「クリップボードと履歴」など、設定に応じた実際の残し先。
+    func statusMessage(resultKeptIn location: String) -> String {
+        isFailure ? "\(headline)。結果は\(location)に残しています" : summary
     }
 }
 
@@ -94,10 +95,9 @@ enum TextInjector {
 
         if settings.simulateKeypresses {
             await typeText(text)
-            try? await Task.sleep(for: settleDelay)
             // キー送出はクリップボードを一切触らない（この方式を選ぶ理由がそこにあるため）。
             // 失敗しても結果は HUD に残り、そこからコピーできる。
-            return verify(text: text, before: before, after: FocusSnapshot.capture())
+            return await verifyAfterSettle(text: text, before: before)
         }
 
         let pasteboard = NSPasteboard.general
@@ -105,9 +105,8 @@ enum TextInjector {
         let writtenChangeCount = writeToPasteboard(text)
 
         postPaste()
-        try? await Task.sleep(for: settleDelay)
 
-        let outcome = verify(text: text, before: before, after: FocusSnapshot.capture())
+        let outcome = await verifyAfterSettle(text: text, before: before)
 
         if outcome.isSucceeded {
             scheduleClipboardRestore(previous: previous, writtenChangeCount: writtenChangeCount)
@@ -208,12 +207,43 @@ enum TextInjector {
 
     // MARK: - 成否判定
 
+    /// 反映が遅いアプリのために、「変化なし」だったときだけ追加で待って見直す時間。
+    private static let recheckDelay: Duration = .milliseconds(450)
+
+    /// 送出が落ち着くのを待ってから挿入前後を見比べる。
+    ///
+    /// 直後に「変化なし」でも、描画や AX の更新が遅いだけのアプリがある（ターミナル等）。
+    /// 一度だけ待ち直して再確認し、それでも変化が無ければ **`.failed` ではなく `.uncertain`** を返す
+    /// （Issue #43）。「変化を報告しない」と「受け付けなかった」は AX からは区別できないので、
+    /// 警告色で断定しない（Issue #34 と同じ方針）。結果はクリップボード・履歴に残る。
+    private static func verifyAfterSettle(text: String, before: FocusSnapshot?) async -> InsertionOutcome {
+        try? await Task.sleep(for: settleDelay)
+        var verdict = verify(text: text, before: before, after: FocusSnapshot.capture())
+        if case .unchanged = verdict {
+            try? await Task.sleep(for: recheckDelay)
+            verdict = verify(text: text, before: before, after: FocusSnapshot.capture())
+        }
+        switch verdict {
+        case .succeeded:              return .succeeded
+        case .unchanged:              return .uncertain(detail: "入力先が変化を報告しませんでした")
+        case .uncertain(let detail):  return .uncertain(detail: detail)
+        }
+    }
+
+    /// `verify` の生の判定。`unchanged` は「文字数も caret も動かなかった」という観測で、
+    /// それを失敗と呼ぶかは呼び出し側（`verifyAfterSettle`）が決める。
+    private enum Verification {
+        case succeeded
+        case unchanged
+        case uncertain(detail: String)
+    }
+
     /// 挿入前後のフォーカス要素を見比べる。
     ///
     /// **限界**: Accessibility でテキスト長も caret も読めないアプリ（多くの Electron 製アプリ、
     /// 一部のターミナル、Canvas 描画のエディタ）では判定できない。その場合は `.uncertain` を返し、
     /// 「挿入できたことにしない」側に倒す。
-    private static func verify(text: String, before: FocusSnapshot?, after: FocusSnapshot?) -> InsertionOutcome {
+    private static func verify(text: String, before: FocusSnapshot?, after: FocusSnapshot?) -> Verification {
         guard let before, let after else {
             return .uncertain(detail: "このアプリでは結果を確認できません")
         }
@@ -230,15 +260,13 @@ enum TextInjector {
             if new == base + inserted { return .succeeded }
             // アプリ側が整形（改行の正規化・自動補完など）した場合も、増えていれば入った。
             if new > base { return .succeeded }
-            if new == old, before.caret == after.caret {
-                return .failed(reason: "入力先がテキストを受け付けませんでした")
-            }
+            if new == old, before.caret == after.caret { return .unchanged }
             return .uncertain(detail: "結果を確認できません")
         }
 
         if let oldCaret = before.caret, let newCaret = after.caret {
             if newCaret > oldCaret { return .succeeded }
-            return .failed(reason: "入力先がテキストを受け付けませんでした")
+            return .unchanged
         }
 
         return .uncertain(detail: "このアプリでは結果を確認できません")
