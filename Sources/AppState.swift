@@ -81,7 +81,16 @@ enum AppStatus: Equatable {
     }
 
     /// メニューバーに表示するアイコン。
+    ///
+    /// 待機中・録音中は自前のグリフ（吹き出し＋波形。Issue #47）。SF Symbols の `mic` は
+    /// macOS 音声入力や他のマイク系アプリと見分けがつかない。
+    /// それ以外は一過性の状態なので、形と色で区別できる SF Symbols を使う。
     var menuBarImage: NSImage {
+        switch self {
+        case .idle:      return MenuBarGlyph.image(filled: false, tint: nil, label: accessibilityLabel)
+        case .recording: return MenuBarGlyph.image(filled: true, tint: .systemRed, label: accessibilityLabel)
+        default:         break
+        }
         guard let base = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityLabel) else {
             return NSImage()
         }
@@ -100,6 +109,88 @@ enum AppStatus: Equatable {
     @MainActor
     private static var hotKeyName: String {
         SettingsStore.keyName(for: SettingsStore.shared.hotKeyCode)
+    }
+}
+
+/// メニューバー用の独自グリフ。吹き出しの中に3本の波形バー（＝声が文になる）。
+///
+/// Core Graphics で描く（画像アセットを持たない。Retina でも滲まない）。
+/// `filled == false` はテンプレート描画で、メニューバーの明暗にシステムが追従させる。
+enum MenuBarGlyph {
+    /// メニューバーの標準的なアイコン高さに合わせる（SF Symbols 15pt 相当）。
+    private static let size = CGSize(width: 20, height: 16)
+
+    static func image(filled: Bool, tint: NSColor?, label: String) -> NSImage {
+        let image = NSImage(size: size, flipped: false) { rect in
+            draw(in: rect, filled: filled, color: tint ?? .black)
+            return true
+        }
+        image.isTemplate = !filled
+        image.accessibilityDescription = label
+        return image
+    }
+
+    private static func draw(in rect: CGRect, filled: Bool, color: NSColor) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+
+        // 吹き出し本体: 丸角の長方形に、左下へ短いしっぽを付けた**ひと続きの**パス
+        // （別パスで重ねると、線画では底辺がしっぽを横切り、塗りでは重なりが抜ける）。
+        let bodyHeight: CGFloat = 11
+        let tailHeight: CGFloat = 3.5
+        let inset: CGFloat = 0.75
+        let r: CGFloat = 3.5
+        let body = CGRect(x: inset, y: tailHeight, width: rect.width - inset * 2, height: bodyHeight)
+        let bubble = CGMutablePath()
+        bubble.move(to: CGPoint(x: body.minX + r, y: body.minY))
+        bubble.addLine(to: CGPoint(x: body.minX + 4.5, y: body.minY))
+        bubble.addLine(to: CGPoint(x: body.minX + 3.5, y: body.minY - tailHeight))
+        bubble.addLine(to: CGPoint(x: body.minX + 8.5, y: body.minY))
+        bubble.addLine(to: CGPoint(x: body.maxX - r, y: body.minY))
+        bubble.addArc(tangent1End: CGPoint(x: body.maxX, y: body.minY),
+                      tangent2End: CGPoint(x: body.maxX, y: body.minY + r), radius: r)
+        bubble.addLine(to: CGPoint(x: body.maxX, y: body.maxY - r))
+        bubble.addArc(tangent1End: CGPoint(x: body.maxX, y: body.maxY),
+                      tangent2End: CGPoint(x: body.maxX - r, y: body.maxY), radius: r)
+        bubble.addLine(to: CGPoint(x: body.minX + r, y: body.maxY))
+        bubble.addArc(tangent1End: CGPoint(x: body.minX, y: body.maxY),
+                      tangent2End: CGPoint(x: body.minX, y: body.maxY - r), radius: r)
+        bubble.addLine(to: CGPoint(x: body.minX, y: body.minY + r))
+        bubble.addArc(tangent1End: CGPoint(x: body.minX, y: body.minY),
+                      tangent2End: CGPoint(x: body.minX + r, y: body.minY), radius: r)
+        bubble.closeSubpath()
+
+        // 波形バー: 中央に短・長・中の3本。
+        let barWidth: CGFloat = 1.8
+        let barGap: CGFloat = 2.2
+        let heights: [CGFloat] = [3.5, 6.5, 5]
+        let totalWidth = barWidth * 3 + barGap * 2
+        let startX = body.midX - totalWidth / 2
+        let bars = CGMutablePath()
+        for (i, h) in heights.enumerated() {
+            let x = startX + CGFloat(i) * (barWidth + barGap)
+            let bar = CGRect(x: x, y: body.midY - h / 2, width: barWidth, height: h)
+            bars.addRoundedRect(in: bar, cornerWidth: barWidth / 2, cornerHeight: barWidth / 2)
+        }
+
+        ctx.setLineJoin(.round)
+        if filled {
+            // 塗りの吹き出しからバーを抜く（背景色が透けて見える）。
+            ctx.saveGState()
+            ctx.addPath(bubble)
+            ctx.addPath(bars)
+            ctx.clip(using: .evenOdd)
+            ctx.setFillColor(color.cgColor)
+            ctx.fill(rect)
+            ctx.restoreGState()
+        } else {
+            ctx.setStrokeColor(color.cgColor)
+            ctx.setLineWidth(1.5)
+            ctx.addPath(bubble)
+            ctx.strokePath()
+            ctx.setFillColor(color.cgColor)
+            ctx.addPath(bars)
+            ctx.fillPath()
+        }
     }
 }
 

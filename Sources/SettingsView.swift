@@ -24,15 +24,11 @@ struct GeneralSettingsView: View {
     var body: some View {
         Form {
             Section("サウンド") {
-                Picker("録音開始音", selection: $settings.startSound) {
-                    ForEach(SettingsStore.systemSounds, id: \.self) { Text($0).tag($0) }
-                }
-                .onChange(of: settings.startSound) { _, new in preview(new) }
-
-                Picker("録音停止音", selection: $settings.stopSound) {
-                    ForEach(SettingsStore.systemSounds, id: \.self) { Text($0).tag($0) }
-                }
-                .onChange(of: settings.stopSound) { _, new in preview(new) }
+                soundRow("録音開始音", selection: $settings.startSound)
+                soundRow("録音停止音", selection: $settings.stopSound)
+                Text("選び直すと鳴ります。試聴ボタンでいまの音を聞き直せます。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("音声認識") {
@@ -156,6 +152,25 @@ struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .onDisappear { cancelRecording() }
+    }
+
+    /// 音のピッカーと試聴ボタンの1行（Issue #48）。
+    private func soundRow(_ title: String, selection: Binding<String>) -> some View {
+        HStack {
+            Picker(title, selection: selection) {
+                ForEach(SettingsStore.systemSounds, id: \.self) { Text($0).tag($0) }
+            }
+            .onChange(of: selection.wrappedValue) { _, new in preview(new) }
+            Button {
+                preview(selection.wrappedValue)
+            } label: {
+                Image(systemName: "play.circle")
+            }
+            .buttonStyle(.borderless)
+            .disabled(selection.wrappedValue == "なし")
+            .help("試聴")
+            .accessibilityLabel("\(title)を試聴")
+        }
     }
 
     private func preview(_ name: String) {

@@ -510,6 +510,9 @@ final class RecordingHUDController {
 
     private let model = RecordingHUDModel()
     private var panel: NSPanel?
+    /// 表示位置の設定が変わってから、まだ置き直していない（Issue #46）。
+    /// 非表示中に設定を変えると `applyLayout` は置き直せないので、次に出すときに置く。
+    private var needsReposition = false
     private var ticker: Timer?
     private var startedAt: Date?
     private var localMonitor: Any?
@@ -560,15 +563,17 @@ final class RecordingHUDController {
         let panel = self.panel ?? makePanel()
         self.panel = panel
         applyPanelSize()
-        // 位置を決めるのは初回だけ。以降はユーザーがドラッグした位置を保つ
-        // （設定で位置を変えたときは `applyLayout` から明示的に置き直す）。
-        if isNew { applyPanelPosition() }
+        // 位置を決めるのは初回と、設定で位置を変えた直後だけ。
+        // それ以外はユーザーがドラッグした位置を保つ。
+        if isNew || needsReposition { applyPanelPosition() }
         panel.orderFrontRegardless()
         installHoverMonitors()
     }
 
     /// 設定（表示位置・表示サイズ）の変更を、表示中の HUD へ即座に反映する（Issue #35）。
     func applyLayout() {
+        // 位置設定の変更は、表示中なら下で即座に置き直す。非表示中なら次に出すときに置く。
+        needsReposition = true
         guard SettingsStore.shared.hudSize != .hidden else {
             // 結果を残しているときは閉じない。結果を失わせないことが設定より優先。
             guard model.pendingResult == nil else { return }
@@ -861,6 +866,7 @@ final class RecordingHUDController {
         case .topCenter:    y = visible.maxY - size.height - Self.topMargin
         }
         panel.setFrameOrigin(CGPoint(x: visible.midX - size.width / 2, y: y))
+        needsReposition = false
     }
 
     // MARK: 経過時間
