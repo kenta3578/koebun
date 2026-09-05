@@ -83,6 +83,19 @@ rm -f koebun-dev.key koebun-dev.p12
 > `security find-identity -v -p codesigning` は「0 valid identities」と表示するが、これは**信頼設定が無いだけ**で、`codesign --sign koebun-dev` は通る。TCC が見る designated requirement は
 > `identifier "com.kenta3578.koebun" and certificate leaf = H"..."` になり、同じ証明書で署名する限り権限は保持される。
 
+### 署名を切り替えた直後に「トグルを ON にしても権限が付かない」とき
+
+アドホック署名で使っていた期間があると、システム設定のアクセシビリティ一覧に**旧署名の koebun が登録として残る**（ビルドごとに1件ずつ溜まる）。この行のトグルは旧署名にしか効かないので、`koebun-dev` で署名し直したアプリを ON にしたつもりでも権限は付かない。アプリの再起動では直らない。
+
+一度だけ TCC の登録を消して、新署名で登録し直す:
+
+```bash
+tccutil reset Accessibility com.kenta3578.koebun   # 旧登録を全部消す
+open -a koebun                                     # 起動時に権限確認ダイアログが出るので、そこから ON にする
+```
+
+以後は同じ証明書で署名し続ける限り、この作業は不要。
+
 ## ビルドしてインストールする
 
 ```bash
