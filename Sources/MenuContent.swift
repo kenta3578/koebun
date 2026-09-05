@@ -33,10 +33,10 @@ struct MenuContent: View {
         Divider()
 
         Button("アクセシビリティ設定を開く") {
-            openPrivacyPane("Privacy_Accessibility")
+            PermissionsManager.openPrivacyPane(.accessibility)
         }
         Button("マイク設定を開く") {
-            openPrivacyPane("Privacy_Microphone")
+            PermissionsManager.openPrivacyPane(.microphone)
         }
 
         Divider()
@@ -45,12 +45,5 @@ struct MenuContent: View {
             NSApp.terminate(nil)
         }
         .keyboardShortcut("q")
-    }
-
-    private func openPrivacyPane(_ anchor: String) {
-        let urlString = "x-apple.systempreferences:com.apple.preference.security?\(anchor)"
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
-        }
     }
 }
