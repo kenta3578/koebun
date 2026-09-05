@@ -278,7 +278,7 @@ final class AppController {
                     // AX でテキストを読めないアプリ（ターミナル等）では毎回起きるので、
                     // 警告にすると本当の失敗が埋もれる。
                     if outcome.isFailure {
-                        state.update(.failed(reason: outcome.statusMessage))
+                        state.update(.failed(reason: outcome.statusMessage, hint: outcome.hint))
                     } else if let failure = formatting.failure {
                         // 整形を外したことは必ず見せる（無言で生テキストに落ちない）。
                         state.update(.done(message: "整形なしで挿入 ✓（\(failure)）"))

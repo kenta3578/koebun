@@ -19,7 +19,8 @@ enum AppStatus: Equatable {
     /// 気づかないまま流れないようにする。
     case warned(message: String)
     /// 失敗。原因が読めるよう、自動復帰させずに残す。
-    case failed(reason: String)
+    /// `hint` は「設定で直せる失敗」のときだけ付き、HUD がそこへ飛ぶボタンを出す。
+    case failed(reason: String, hint: FailureHint? = nil)
 
     /// 完了表示を待機へ戻すまでの時間。
     static let doneDisplayDuration: Duration = .seconds(1.5)
@@ -75,7 +76,7 @@ enum AppStatus: Equatable {
         case .processing:              return "文字起こし・整形中…"
         case .done(let message):       return "\(message) 待機中（\(Self.hotKeyName)で録音開始）"
         case .warned(let message):     return message
-        case .failed(let reason):      return reason
+        case .failed(let reason, _):   return reason
         }
     }
 

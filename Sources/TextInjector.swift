@@ -11,7 +11,8 @@ enum InsertionOutcome: Equatable {
     /// 挿入先のテキストが実際に増えた（または caret が進んだ）ことを確認できた。
     case succeeded
     /// 挿入先が変化しなかった＝受け付けなかったと判断できた。
-    case failed(reason: String)
+    /// `hint` は設定で直せる原因（権限）のときだけ付く。
+    case failed(reason: String, hint: FailureHint? = nil)
     /// 挿入は送出したが、成否を判定できなかった（Accessibility でテキストを読めないアプリなど）。
     /// `detail` は「なぜ確認できないか」だけを言う（何が起きたかは `headline` 側）。
     case uncertain(detail: String)
@@ -28,8 +29,14 @@ enum InsertionOutcome: Equatable {
     var headline: String {
         switch self {
         case .succeeded, .uncertain: return "挿入しました"
-        case .failed(let reason):    return reason
+        case .failed(let reason, _): return reason
         }
+    }
+
+    /// 設定で直せる原因への手がかり。`.failed` のうち権限起因のときだけ付く。
+    var hint: FailureHint? {
+        if case .failed(_, let hint) = self { return hint }
+        return nil
     }
 
     /// 見出しに添える補足。`.uncertain` のときだけ付く。
@@ -79,7 +86,8 @@ enum TextInjector {
         guard AXIsProcessTrusted() else {
             // CGEvent の送出自体ができない。結果だけでも拾えるようにしてから返す。
             if keepResult { writeToPasteboard(text) }
-            return .failed(reason: "アクセシビリティ権限が無いため入力できません")
+            return .failed(reason: "アクセシビリティ権限が無いため入力できません",
+                           hint: .accessibilityPermission)
         }
 
         let before = FocusSnapshot.capture()

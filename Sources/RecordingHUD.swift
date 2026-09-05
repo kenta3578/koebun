@@ -206,7 +206,7 @@ struct RecordingHUDView: View {
             case .processing:           processingContent
             case .done(let message):    simpleRow(message)
             case .warned(let message):  simpleRow(message)
-            case .failed(let reason):   failedContent(reason)
+            case .failed(let reason, let hint): failedContent(reason, hint: hint)
             default:                    simpleRow(state.status.accessibilityLabel)
             }
         }
@@ -268,8 +268,9 @@ struct RecordingHUDView: View {
         }
     }
 
-    // 失敗: 自動で閉じず、原因を読めるようにして明示的に閉じさせる
-    private func failedContent(_ reason: String) -> some View {
+    // 失敗: 自動で閉じず、原因を読めるようにして明示的に閉じさせる。
+    // 設定で直せる失敗（権限）は、失敗を見ているその場から設定へ飛べるようにする（Issue #39）。
+    private func failedContent(_ reason: String, hint: FailureHint?) -> some View {
         HStack(spacing: 10) {
             statusIcon
             Text(reason)
@@ -277,6 +278,10 @@ struct RecordingHUDView: View {
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
+            if let hint {
+                Button(hint.actionTitle) { hint.perform() }
+                    .controlSize(.small)
+            }
             Button("閉じる", action: onDismiss)
                 .controlSize(.small)
         }
