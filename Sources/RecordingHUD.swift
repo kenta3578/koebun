@@ -76,6 +76,8 @@ final class RecordingHUDModel: ObservableObject {
         var isFailure: Bool
         /// コピー・再挿入の結果を伝える一時メッセージ。
         var note: String?
+        /// 設定で直せる失敗（権限）への手がかり。あるときだけ「設定を開く」を出す（Issue #39）。
+        var hint: FailureHint? = nil
     }
 
     /// 無音判定を「起動直後の空バッファ」で誤発火させないためのカウンタ。
@@ -340,6 +342,10 @@ struct RecordingHUDView: View {
                         .truncationMode(.tail)
                 }
                 Spacer()
+                if let hint = result.hint {
+                    Button(hint.actionTitle) { hint.perform() }
+                        .controlSize(.small)
+                }
                 Button("閉じる", action: onDismissResult)
                     .controlSize(.small)
             }
@@ -717,7 +723,8 @@ final class RecordingHUDController {
                                     title: outcome.headline,
                                     detail: outcome.detail,
                                     isFailure: outcome.isFailure,
-                                    note: nil)
+                                    note: nil,
+                                    hint: outcome.hint)
         resultAutoHides = !outcome.isFailure
 
         presentPanel()
