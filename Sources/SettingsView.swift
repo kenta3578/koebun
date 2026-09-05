@@ -82,7 +82,7 @@ struct GeneralSettingsView: View {
                 Text("「通常」は波形でマイクが拾えているかを確認でき、停止・キャンセルもできます。"
                      + "「最小」は状態と経過時間だけの細いバーで、マウスを乗せると停止・キャンセルが出ます。"
                      + "「非表示」でも開始音・完了音は鳴ります"
-                     + "（キャンセルは HUD からのみ。挿入できなかった結果だけは失わないよう表示します）。")
+                     + "（キャンセルは HUD からのみ。挿入できなかった結果は「挿入」の設定に従って表示します）。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -100,7 +100,14 @@ struct GeneralSettingsView: View {
                        isOn: $settings.keepResultOnClipboardWhenUnsure)
                 Text("挿入できたと確認できたときだけ元のクリップボードへ戻します。"
                      + "確認できなかったときは結果を残すので、そのまま ⌘V で貼れます"
-                     + "（OFF にすると常に元へ戻します。結果は HUD 側に残ります）。")
+                     + "（OFF にすると常に元へ戻します。結果は履歴に残ります）。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Toggle("挿入できなかったとき結果を HUD に残す", isOn: $settings.showResultPanel)
+                Text("ON だと、挿入できなかった・確認できなかった結果をコピー／もう一度挿入できるパネルで残します。"
+                     + "OFF だと HUD はそのまま閉じます。結果は履歴（と上の設定に従ってクリップボード）に残ります。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

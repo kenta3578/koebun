@@ -36,6 +36,11 @@ final class SettingsStore: ObservableObject {
     @Published var keepResultOnClipboardWhenUnsure: Bool {
         didSet { UserDefaults.standard.set(keepResultOnClipboardWhenUnsure, forKey: "keepResultOnClipboardWhenUnsure") }
     }
+    /// 挿入できなかった・確認できなかった結果を HUD のパネルに残す（Issue #44）。
+    /// OFF でも結果はクリップボード（上の設定に従う）と履歴に残るので失われない。
+    @Published var showResultPanel: Bool {
+        didSet { UserDefaults.standard.set(showResultPanel, forKey: "showResultPanel") }
+    }
     @Published var hotKeyCode: UInt16 {
         didSet { UserDefaults.standard.set(Int(hotKeyCode), forKey: "hotKeyCode") }
     }
@@ -117,6 +122,12 @@ final class SettingsStore: ObservableObject {
         (3, "3秒"), (5, "5秒"), (8, "8秒"), (15, "15秒"), (30, "30秒")
     ]
 
+    /// 挿入できなかった結果がどこに残るか（メニューバーの文言に使う）。
+    var resultLocationDescription: String {
+        if showResultPanel { return "HUD" }
+        return keepResultOnClipboardWhenUnsure ? "クリップボードと履歴" : "履歴"
+    }
+
     /// 履歴の保存期間の選択肢（日数 → 表示名）。0 = 無期限。
     static let historyRetentionOptions: [(days: Int, label: String)] = [
         (7, "7日"), (30, "30日"), (90, "90日"), (365, "1年"), (0, "無期限")
@@ -133,6 +144,7 @@ final class SettingsStore: ObservableObject {
         // クリップボードが戻らないことより痛い。
         keepResultOnClipboardWhenUnsure =
             UserDefaults.standard.object(forKey: "keepResultOnClipboardWhenUnsure") as? Bool ?? true
+        showResultPanel = UserDefaults.standard.object(forKey: "showResultPanel") as? Bool ?? true
         let stored = UserDefaults.standard.integer(forKey: "hotKeyCode")
         hotKeyCode = stored > 0 ? UInt16(stored) : 61
         // 0（無期限）と未設定を区別するため object で取り出す。

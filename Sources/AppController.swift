@@ -278,7 +278,9 @@ final class AppController {
                     // AX でテキストを読めないアプリ（ターミナル等）では毎回起きるので、
                     // 警告にすると本当の失敗が埋もれる。
                     if outcome.isFailure {
-                        state.update(.failed(reason: outcome.statusMessage, hint: outcome.hint))
+                        state.update(.failed(
+                            reason: outcome.statusMessage(resultKeptIn: SettingsStore.shared.resultLocationDescription),
+                            hint: outcome.hint))
                     } else if let failure = formatting.failure {
                         // 整形を外したことは必ず見せる（無言で生テキストに落ちない）。
                         state.update(.done(message: "整形なしで挿入 ✓（\(failure)）"))
@@ -318,10 +320,17 @@ final class AppController {
                     // 挿入まで終えてから HUD を閉じる（完了表示を一瞬見せる）。
                     // 書き換えの疑いがあるときは、閉じる前に何が変わったかを見せる。
                     hud.finish(warning: diff)
-                } else {
+                } else if SettingsStore.shared.showResultPanel {
                     // 挿入できなかった／確認できなかった結果は HUD に残し、
                     // コピー・再挿入できるようにする（確認できないだけなら数秒で閉じる）。
                     hud.presentResult(text, outcome: outcome)
+                } else if outcome.isFailure {
+                    // パネルを出さない設定（Issue #44）。結果は履歴（とクリップボード）にある。
+                    // 失敗の原因はメニューバーに残る。
+                    hud.hide()
+                } else {
+                    // 確認できなかっただけなら、成功と同じく一瞬見せて閉じる。
+                    hud.finish(warning: diff)
                 }
             } catch {
                 // 失敗は自動で閉じない。HUD に原因を残す。
