@@ -18,8 +18,9 @@ struct SettingsView: View {
 /// サウンド・ホットキーなど基本設定。
 struct GeneralSettingsView: View {
     @ObservedObject private var settings = SettingsStore.shared
-    @State private var isRecording = false
-    @State private var recordingMonitor: Any?
+    /// ホットキーの録り中か（AppState の録音状態とは無関係）。
+    @State private var isCapturingHotKey = false
+    @State private var captureMonitors: [Any] = []
 
     var body: some View {
         Form {
@@ -113,12 +114,12 @@ struct GeneralSettingsView: View {
                 HStack {
                     Text("録音トリガー")
                     Spacer()
-                    Text(isRecording
+                    Text(isCapturingHotKey
                          ? "modifier キーを押してください…"
                          : SettingsStore.keyName(for: settings.hotKeyCode))
-                        .foregroundStyle(isRecording ? .secondary : .primary)
-                    Button(isRecording ? "キャンセル" : "変更") {
-                        isRecording ? cancelRecording() : startHotkeyRecording()
+                        .foregroundStyle(isCapturingHotKey ? .secondary : .primary)
+                    Button(isCapturingHotKey ? "キャンセル" : "変更") {
+                        isCapturingHotKey ? cancelHotKeyCapture() : startHotKeyCapture()
                     }
                 }
             }
@@ -151,7 +152,7 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onDisappear { cancelRecording() }
+        .onDisappear { cancelHotKeyCapture() }
     }
 
     /// 音のピッカーと試聴ボタンの1行（Issue #48）。
@@ -178,23 +179,37 @@ struct GeneralSettingsView: View {
         NSSound(named: .init(name))?.play()
     }
 
-    private func startHotkeyRecording() {
-        isRecording = true
-        recordingMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { event in
+    /// 修飾キーの押下を 1 回だけ拾ってホットキーにする。
+    ///
+    /// global monitor は**他アプリ**へ配送されるイベントしか受け取らない。設定ウィンドウは
+    /// `NSApp.activate` で前面＝アクティブなので、自アプリに配送される押下は local monitor
+    /// でないと拾えない（Issue #68）。両方張り、先に来た方を採用する。
+    private func startHotKeyCapture() {
+        isCapturingHotKey = true
+        let accept: (NSEvent) -> Bool = { event in
             let code = event.keyCode
-            let flags = event.modifierFlags
-            guard SettingsStore.isKeyDown(keyCode: code, flags: flags) else { return }
+            guard SettingsStore.isKeyDown(keyCode: code, flags: event.modifierFlags) else { return false }
             DispatchQueue.main.async {
                 SettingsStore.shared.hotKeyCode = code
-                self.cancelRecording()
+                cancelHotKeyCapture()
             }
+            return true
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: { event in
+            // 採用した押下は飲み込む（設定画面のフォーカスを動かさない）。
+            accept(event) ? nil : event
+        }) {
+            captureMonitors.append(local)
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: { _ = accept($0) }) {
+            captureMonitors.append(global)
         }
     }
 
-    private func cancelRecording() {
-        isRecording = false
-        if let m = recordingMonitor { NSEvent.removeMonitor(m) }
-        recordingMonitor = nil
+    private func cancelHotKeyCapture() {
+        isCapturingHotKey = false
+        captureMonitors.forEach(NSEvent.removeMonitor)
+        captureMonitors.removeAll()
     }
 }
 
