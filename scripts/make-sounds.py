@@ -38,6 +38,31 @@ def tone(freq, seconds, *, wave_fn="sine", attack=0.004, decay=None, level=1.0):
         out.append(v * env * level)
     return out
 
+def glide(f0, f1, seconds, *, decay, level=1.0, attack=0.001):
+    """周波数が f0 → f1 へ指数的に滑る減衰音（泡がはじける「ポッ」の芯）。"""
+    n = int(RATE * seconds)
+    out, phase = [], 0.0
+    for i in range(n):
+        t = i / RATE
+        f = f0 * (f1 / f0) ** (t / seconds)
+        phase += 2 * math.pi * f / RATE
+        env = min(1.0, t / attack) * math.exp(-t / decay)
+        out.append(math.sin(phase) * env * level)
+    return out
+
+def purr_burst(freqs, seconds, *, mod_hz, decay, level=1.0):
+    """(周波数, 重み) の正弦波を重ね、mod_hz で振幅変調した短い「ブルッ」。"""
+    n = int(RATE * seconds)
+    total = sum(w for _, w in freqs)
+    out = []
+    for i in range(n):
+        t = i / RATE
+        v = sum(w * math.sin(2 * math.pi * f * t) for f, w in freqs) / total
+        am = 0.55 + 0.45 * math.sin(2 * math.pi * mod_hz * t)
+        env = min(1.0, t / 0.003) * math.exp(-t / decay)
+        out.append(v * am * env * level)
+    return out
+
 def mix(*segments, gap=0.0):
     """音を順に並べる（gap 秒の無音を挟む）。"""
     silence = [0.0] * int(RATE * gap)
@@ -72,6 +97,18 @@ PRESETS = {
     "chime-open":    lambda: overlay(tone(523, 0.30, decay=0.10), tone(784, 0.30, decay=0.10), 0.0),
     # 柔らかい下降の和音（停止向き）
     "chime-close":   lambda: overlay(tone(784, 0.30, decay=0.10), tone(523, 0.30, decay=0.10), 0.03),
+    # macOS の Pop 風: 700→480Hz を 15ms で急降下する「ポッ」＋ 70ms 後の小さな反響
+    # （実物を解析: 本体 5〜15ms・約 600〜700Hz、反響 70ms・135ms）
+    "pop-like":      lambda: overlay(
+                         overlay(glide(720, 480, 0.06, decay=0.007),
+                                 glide(680, 470, 0.06, decay=0.007, level=0.6), 0.068),
+                         glide(660, 460, 0.05, decay=0.006, level=0.25), 0.135),
+    # macOS の Purr 風: 520Hz の脈 → 790Hz の脈（各 20〜30ms、約 28Hz の振幅変調で「ブルッ」）
+    # ＋ 135ms 後の薄い反響（実物を解析: 15〜35ms が 500Hz 台、40〜60ms が 790Hz 台）
+    "purr-like":     lambda: overlay(
+                         overlay(purr_burst([(520, 1.0), (1040, 0.3)], 0.045, mod_hz=28, decay=0.014),
+                                 purr_burst([(790, 1.0), (1580, 0.3)], 0.045, mod_hz=28, decay=0.012, level=1.1), 0.026),
+                         purr_burst([(780, 1.0), (1560, 0.3)], 0.04, mod_hz=28, decay=0.012, level=0.28), 0.135),
 }
 
 def write_wav(path, samples, gain):
