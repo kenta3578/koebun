@@ -239,7 +239,7 @@ final class AppController {
             // 表示サイズ（非表示/最小/通常）の判断は HUD 側に一本化してある。
             hud.show()
             let start = SettingsStore.shared.startSound
-            if start != "なし" { NSSound(named: .init(start))?.play() }
+            SoundPlayer.play(start)
         } catch {
             state.update(.failed(reason: "録音開始失敗: \(error.localizedDescription)"))
         }
@@ -252,7 +252,7 @@ final class AppController {
         // クリップボードは「録音中にコピーしたもの」も拾うので、停止のこの時点で確定させる。
         let pending = takePending()
         let stop = SettingsStore.shared.stopSound
-        if stop != "なし" { NSSound(named: .init(stop))?.play() }
+        SoundPlayer.play(stop)
 
         let samples = recorder.stop()
         Task { @MainActor in
