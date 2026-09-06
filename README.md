@@ -134,6 +134,8 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 
 ## 設定
 
+> **設定項目の全体像と「やりたいこと → どこを触る」の早見表は [docs/MANUAL.md](docs/MANUAL.md)（説明書）にまとめています。** 以下は概要です。
+
 メニューバーアイコン > 「設定…」から変更できます。タブは「一般」「辞書置換」「整形」の 3 つ。
 
 ### 一般
