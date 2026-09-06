@@ -27,9 +27,12 @@ struct GeneralSettingsView: View {
             Section("サウンド") {
                 soundRow("録音開始音", selection: $settings.startSound)
                 soundRow("録音停止音", selection: $settings.stopSound)
-                Text("選び直すと鳴ります。試聴ボタンでいまの音を聞き直せます。")
+                Text("選び直すと鳴ります。試聴ボタンでいまの音を聞き直せます。"
+                     + "自分の音は \(SoundPlayer.customDirectory.path) に aiff / wav / mp3 / m4a を置くと出ます"
+                     + "（scripts/make-sounds.py で候補を作れます）。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section("音声認識") {
@@ -156,10 +159,20 @@ struct GeneralSettingsView: View {
     }
 
     /// 音のピッカーと試聴ボタンの1行（Issue #48）。
+    /// 選択肢は「なし」→ 自分の音（~/koebun/sounds/）→ システム音（Issue #71）。
     private func soundRow(_ title: String, selection: Binding<String>) -> some View {
-        HStack {
+        let custom = SoundPlayer.customSounds()
+        return HStack {
             Picker(title, selection: selection) {
-                ForEach(SettingsStore.systemSounds, id: \.self) { Text($0).tag($0) }
+                Text(SoundPlayer.none).tag(SoundPlayer.none)
+                if !custom.isEmpty {
+                    Section("自分の音") {
+                        ForEach(custom, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+                Section("システム音") {
+                    ForEach(SoundPlayer.systemSounds, id: \.self) { Text($0).tag($0) }
+                }
             }
             .onChange(of: selection.wrappedValue) { _, new in preview(new) }
             Button {
@@ -168,15 +181,14 @@ struct GeneralSettingsView: View {
                 Image(systemName: "play.circle")
             }
             .buttonStyle(.borderless)
-            .disabled(selection.wrappedValue == "なし")
+            .disabled(selection.wrappedValue == SoundPlayer.none)
             .help("試聴")
             .accessibilityLabel("\(title)を試聴")
         }
     }
 
     private func preview(_ name: String) {
-        guard name != "なし" else { return }
-        NSSound(named: .init(name))?.play()
+        SoundPlayer.play(name)
     }
 
     /// 修飾キーの押下を 1 回だけ拾ってホットキーにする。

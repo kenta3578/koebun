@@ -5,12 +5,6 @@ import AppKit
 final class SettingsStore: ObservableObject {
     static let shared = SettingsStore()
 
-    static let systemSounds: [String] = [
-        "なし", "Basso", "Blow", "Bottle", "Frog", "Funk",
-        "Glass", "Hero", "Morse", "Ping", "Pop", "Purr",
-        "Sosumi", "Submarine", "Tink"
-    ]
-
     @Published var startSound: String {
         didSet { UserDefaults.standard.set(startSound, forKey: "startSound") }
     }
@@ -145,8 +139,11 @@ final class SettingsStore: ObservableObject {
     ]
 
     private init() {
-        startSound = UserDefaults.standard.string(forKey: "startSound") ?? "Glass"
-        stopSound  = UserDefaults.standard.string(forKey: "stopSound")  ?? "Basso"
+        // 自分の音（~/koebun/sounds/）を指していてファイルが消えていたら「なし」に戻す（Issue #71）。
+        let storedStart = UserDefaults.standard.string(forKey: "startSound") ?? "Glass"
+        let storedStop  = UserDefaults.standard.string(forKey: "stopSound")  ?? "Basso"
+        startSound = SoundPlayer.isAvailable(storedStart) ? storedStart : SoundPlayer.none
+        stopSound  = SoundPlayer.isAvailable(storedStop)  ? storedStop  : SoundPlayer.none
         hudSize = Self.storedHUDSize()
         hudPosition = UserDefaults.standard.string(forKey: "hudPosition")
             .flatMap(HUDPosition.init(rawValue:)) ?? .bottomCenter
