@@ -192,11 +192,20 @@ final class ClipboardWatcher {
         self.timer = timer
     }
 
-    /// 挿入処理がクリップボードを踏む間、その変化を採用しない。
+    /// 見張りを止める（整形 OFF で消費先が無いとき）。
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        lastChangeAt = nil
+        suppressedUntil = nil
+    }
+
+    /// 挿入処理がクリップボードを踏む間、その変化を採用しない。動いていなければ何もしない。
     ///
     /// これが無いと、連続で録音したとき**直前に自分が挿入した文章**が
     /// 「録音3秒前にコピーされた内容」として次の整形に混ざる。
     func suppressChanges(for seconds: TimeInterval) {
+        guard timer != nil else { return }
         poll()
         suppressedUntil = Date().addingTimeInterval(seconds)
     }

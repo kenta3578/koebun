@@ -570,9 +570,11 @@ final class RecordingHUDController {
     }
 
     /// 設定（表示位置・表示サイズ）の変更を、表示中の HUD へ即座に反映する（Issue #35）。
-    func applyLayout() {
-        // 位置設定の変更は、表示中なら下で即座に置き直す。非表示中なら次に出すときに置く。
-        needsReposition = true
+    ///
+    /// 置き直すのは**位置**の設定が変わったときだけ。サイズだけの変更でドラッグ位置を
+    /// 中央へ戻さない（Issue #57）。非表示中に位置が変わったら、次に出すときに置く。
+    func applyLayout(positionChanged: Bool) {
+        if positionChanged { needsReposition = true }
         guard SettingsStore.shared.hudSize != .hidden else {
             // 結果を残しているときは閉じない。結果を失わせないことが設定より優先。
             guard model.pendingResult == nil else { return }

@@ -212,6 +212,9 @@ final class AppState: ObservableObject {
 
     /// `.recording` の別名。状態は status に一本化しているので保存しない。
     var isRecording: Bool { status == .recording }
+    /// 文字起こし・整形・挿入の途中か。この間に新しい録音を始めると、
+    /// 旧パイプラインの完了表示が新しい録音の表示を潰す（Issue #57）。
+    var isProcessing: Bool { status == .processing }
 
     private var doneResetTask: Task<Void, Never>?
 

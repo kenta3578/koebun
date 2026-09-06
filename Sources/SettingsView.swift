@@ -64,7 +64,7 @@ struct GeneralSettingsView: View {
                     ForEach(HUDSize.allCases) { Text($0.label).tag($0) }
                 }
                 .onChange(of: settings.hudSize) { _, _ in
-                    AppController.shared.refreshHUDLayout()
+                    AppController.shared.refreshHUDLayout(positionChanged: false)
                 }
 
                 Picker("表示位置", selection: $settings.hudPosition) {
@@ -72,7 +72,7 @@ struct GeneralSettingsView: View {
                 }
                 .disabled(settings.hudSize == .hidden)
                 .onChange(of: settings.hudPosition) { _, _ in
-                    AppController.shared.refreshHUDLayout()
+                    AppController.shared.refreshHUDLayout(positionChanged: true)
                 }
 
                 Text("「通常」は波形でマイクが拾えているかを確認でき、停止・キャンセルもできます。"
@@ -295,6 +295,9 @@ struct FormatterSettingsView: View {
 
             Section("コンテキスト") {
                 Toggle("整形プロンプトにコンテキストを渡す", isOn: $settings.contextInjectionEnabled)
+                    .onChange(of: settings.contextInjectionEnabled) { _, _ in
+                        AppController.shared.updateClipboardWatcher()
+                    }
                 Toggle("アプリ別にモードを自動で切り替える", isOn: $settings.autoModeSwitchEnabled)
 
                 Text("録音開始時の最前面アプリ名・ウィンドウタイトル・選択テキストと、"

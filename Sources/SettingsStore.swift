@@ -75,7 +75,8 @@ final class SettingsStore: ObservableObject {
         }
     }
     /// 整形プロンプトにコンテキスト（アプリ名・選択テキスト・クリップボード・日時）を載せるか。
-    /// OFF なら取得自体を行わない。
+    /// OFF なら取得自体を行わない。**整形が OFF のときも取得しない**（消費先が無いのに
+    /// 録音開始前の AX 同期 IPC で右⌥の反応を遅らせていた。Issue #57）。`usesContext` を見る。
     @Published var contextInjectionEnabled: Bool {
         didSet { UserDefaults.standard.set(contextInjectionEnabled, forKey: "contextInjectionEnabled") }
     }
@@ -121,6 +122,11 @@ final class SettingsStore: ObservableObject {
     static let formatTimeoutOptions: [(seconds: Double, label: String)] = [
         (3, "3秒"), (5, "5秒"), (8, "8秒"), (15, "15秒"), (30, "30秒")
     ]
+
+    /// 録音開始時にコンテキストを取り、クリップボードを見張るか。
+    /// 整形 LLM が ON で、かつコンテキスト注入が ON のときだけ。どちらかが OFF なら
+    /// ホットパスから AX 同期 IPC と常駐タイマーを外す。
+    var usesContext: Bool { formatterEnabled && contextInjectionEnabled }
 
     /// 挿入できなかった結果がどこに残るか（メニューバーの文言に使う）。
     var resultLocationDescription: String {
