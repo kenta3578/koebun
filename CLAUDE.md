@@ -78,6 +78,7 @@ xcodebuild -project koebun.xcodeproj -scheme koebun -configuration Debug \
   2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)"      # 型チェック（署名なし・高速）
 ./scripts/install-local.sh                          # 実機へインストールして起動（マージ後に必ず）
 pgrep -x koebun                                     # 起動確認
+./scripts/kpi.sh                                    # 北極星の KPI（平日の挿入回数）を履歴から集計
 tccutil reset Accessibility com.kenta3578.koebun    # 権限トグルが効かないときの一度きりのリセット
 gh issue list --state open                          # 候補プール（ai_docs ではなく Issue に置く）
 ```
