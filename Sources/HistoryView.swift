@@ -35,6 +35,10 @@ struct HistoryView: View {
     @State private var variant: Variant = .raw
     @State private var player: AVAudioPlayer?
     @State private var message: String?
+    /// 「辞書に登録」ポップオーバー（Issue #60）。
+    @State private var isAddingRule = false
+    @State private var newRuleFrom = ""
+    @State private var newRuleTo = ""
 
     private var selected: HistoryEntry? {
         store.entries.first { $0.id == selection }
@@ -226,6 +230,10 @@ struct HistoryView: View {
                 Button(player?.isPlaying == true ? "停止" : "録音を再生") { togglePlayback(entry) }
             }
 
+            Button("辞書に登録…") { beginAddingRule(entry) }
+                .help("誤認識された語を辞書置換に登録します。文中の語を選んで ⌘C してから押すと、読みが埋まります")
+                .popover(isPresented: $isAddingRule, arrowEdge: .bottom) { addRulePopover }
+
             Spacer()
 
             Button(role: .destructive) {
@@ -354,6 +362,55 @@ struct HistoryView: View {
     }
 
     // MARK: - 操作
+
+    // MARK: - 辞書に登録（Issue #60）
+
+    /// 誤認識に気づいた瞬間に登録できるようにする。SwiftUI の `Text` は選択範囲を読めないので、
+    /// 直前に ⌘C した文字列が生テキストに含まれていればそれを「読み」に入れる。
+    private func beginAddingRule(_ entry: HistoryEntry) {
+        let copied = NSPasteboard.general.string(forType: .string)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let source = variant.text(of: entry) ?? entry.rawText
+        newRuleFrom = (!copied.isEmpty && copied.count <= 40 && source.contains(copied)) ? copied : ""
+        newRuleTo = ""
+        isAddingRule = true
+    }
+
+    private var addRulePopover: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("辞書置換に登録").font(.headline)
+            Text("次の録音から、読みが出てきたら置換後に置き換わります。")
+                .font(.caption).foregroundStyle(.secondary)
+            TextField("読み（誤認識された語）", text: $newRuleFrom)
+            TextField("置換後（正しい語）", text: $newRuleTo)
+            HStack {
+                Spacer()
+                Button("キャンセル") { isAddingRule = false }
+                Button("登録") { commitRule() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(newRuleFrom.trimmingCharacters(in: .whitespaces).isEmpty
+                              || newRuleTo.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .textFieldStyle(.roundedBorder)
+        .padding(12)
+        .frame(width: 320)
+    }
+
+    private func commitRule() {
+        let from = newRuleFrom.trimmingCharacters(in: .whitespaces)
+        let to = newRuleTo.trimmingCharacters(in: .whitespaces)
+        guard !from.isEmpty, !to.isEmpty else { return }
+        let store = ReplacementStore.shared
+        if let i = store.rules.firstIndex(where: { $0.from.compare(from, options: .caseInsensitive) == .orderedSame }) {
+            store.rules[i].to = to
+            message = "辞書の「\(from)」を「\(to)」に更新しました。次の録音から効きます。"
+        } else {
+            store.rules.append(ReplacementRule(from: from, to: to))
+            message = "辞書に「\(from)」→「\(to)」を登録しました。次の録音から効きます。"
+        }
+        isAddingRule = false
+    }
 
     private func copy(_ entry: HistoryEntry) {
         guard let text = variant.text(of: entry), !text.isEmpty else { return }

@@ -265,8 +265,12 @@ final class AppController {
                 let transcribeStart = Date()
                 let raw = try await speechEngine.transcribe(samples)
                 let replaceStart = Date()
-                // 整形 LLM の前段で辞書置換を適用する（決定的な文字列処理）
-                let replaced = ReplacementStore.shared.apply(raw)
+                // 整形 LLM の前段で辞書置換 → フィラー除去を適用する（どちらも決定的な文字列処理。
+                // 辞書が先。「アットマーク」のような読みをフィラー除去が崩さないように）。
+                var replaced = ReplacementStore.shared.apply(raw)
+                if SettingsStore.shared.fillerRemovalEnabled {
+                    replaced = FillerStore.shared.apply(replaced)
+                }
                 let replaceEnd = Date()
 
                 // 整形はここ。失敗しても replaced を挿入するので、発話は落ちない。
