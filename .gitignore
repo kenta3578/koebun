@@ -50,3 +50,6 @@ Models/
 
 # Local docs (personal notes, not for git)
 local_docs/
+
+# Claude Code の worktree 置き場（EnterWorktree が作る。中身は本体で追跡しない）
+.claude/worktrees/
