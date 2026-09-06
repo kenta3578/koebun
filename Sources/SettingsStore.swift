@@ -48,6 +48,11 @@ final class SettingsStore: ObservableObject {
     @Published var historyRetentionDays: Int {
         didSet { UserDefaults.standard.set(historyRetentionDays, forKey: "historyRetentionDays") }
     }
+    /// フィラー（えっと・あの・まあ…）を決定的に取り除く（Issue #59）。LLM を使わず遅延ゼロ。
+    /// 語彙は `~/koebun/fillers.json`。履歴には生テキストが残るので OFF に戻せば元どおり。
+    @Published var fillerRemovalEnabled: Bool {
+        didSet { UserDefaults.standard.set(fillerRemovalEnabled, forKey: "fillerRemovalEnabled") }
+    }
 
     // MARK: - エンジン選択（Issue #27）
 
@@ -155,6 +160,7 @@ final class SettingsStore: ObservableObject {
         hotKeyCode = stored > 0 ? UInt16(stored) : 61
         // 0（無期限）と未設定を区別するため object で取り出す。
         historyRetentionDays = UserDefaults.standard.object(forKey: "historyRetentionDays") as? Int ?? 30
+        fillerRemovalEnabled = UserDefaults.standard.object(forKey: "fillerRemovalEnabled") as? Bool ?? true
 
         // 音声認識の既定は Apple（Issue #31）。ダウンロードが 0 で、実測でも WhisperKit より速く、
         // 句読点まで認識側が付けてくる。**macOS 26 未満ではこの既定が使えない**ので、

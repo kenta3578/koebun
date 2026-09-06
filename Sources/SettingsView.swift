@@ -390,9 +390,13 @@ struct FormatterSettingsView: View {
 /// 辞書置換ルールの編集。編集内容は即座に `~/koebun/replacements.json` に保存される。
 struct ReplacementsSettingsView: View {
     @ObservedObject private var store = ReplacementStore.shared
+    @ObservedObject private var settings = SettingsStore.shared
+    @ObservedObject private var fillers = FillerStore.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            fillerSection
+            Divider().padding(.vertical, 4)
             Text("文字起こし直後に機械的に置換します（大文字・小文字は区別しません）。"
                  + "同じ位置に複数該当したら長いルールが優先されます。")
                 .font(.callout)
@@ -442,6 +446,47 @@ struct ReplacementsSettingsView: View {
                 .textSelection(.enabled)
         }
         .padding()
+    }
+
+    /// フィラー除去（Issue #59）。語彙は 2 種類に分けて編集する。
+    private var fillerSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("フィラーを取り除く（えっと・あの・まあ…）", isOn: $settings.fillerRemovalEnabled)
+            Text("LLM を使わず機械的に消すので遅延はありません。数値・URL・英単語には触れません。"
+                 + "「あの人」「その本」のように意味を持つ位置の語は残します。履歴には元の文が残ります。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 12) {
+                fillerField("どこでも消す語（読点区切り）", words: $fillers.list.anywhere)
+                fillerField("文頭・読点の後・文末でだけ消す語", words: $fillers.list.atBoundary)
+            }
+            .disabled(!settings.fillerRemovalEnabled)
+            HStack {
+                Spacer()
+                Button("既定の語に戻す") { fillers.list = .default }
+                    .controlSize(.small)
+                    .disabled(fillers.list == .default)
+            }
+            Text(FillerStore.fileURL.path)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func fillerField(_ title: String, words: Binding<[String]>) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            TextField("", text: Binding(
+                get: { words.wrappedValue.joined(separator: "、") },
+                set: { words.wrappedValue = $0.split(whereSeparator: { "、,".contains($0) })
+                    .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
+            ), axis: .vertical)
+            .textFieldStyle(.roundedBorder)
+            .lineLimit(2...4)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     /// 既定の記号ルールのうち、`from` が未登録のものだけを追加する。
