@@ -12,14 +12,8 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     struct Durations: Codable, Equatable {
         var transcribeMs: Int
         var replaceMs: Int
-        /// 整形 LLM（Issue #10）が未実装のため今は nil。
-        var formatMs: Int?
-
-        init(transcribeMs: Int, replaceMs: Int, formatMs: Int? = nil) {
-            self.transcribeMs = transcribeMs
-            self.replaceMs = replaceMs
-            self.formatMs = formatMs
-        }
+        /// 整形しなかった発話は nil。
+        var formatMs: Int? = nil
     }
 
     /// 保存した録音の情報。書き出しに失敗したときは nil。
@@ -39,11 +33,11 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     var rawText: String
     /// 辞書置換（決定的な文字列処理）を適用した結果。
     var replacedText: String
-    /// 整形 LLM の出力。Issue #10 が入るまで nil。
+    /// 整形 LLM の出力。整形しなかった発話は nil。
     var formattedText: String?
-    /// 使用した整形モード名。Issue #10 が入るまで nil。
+    /// 使用した整形モード名。整形しなかった発話は nil。
     var modeName: String?
-    /// 整形 LLM に送ったプロンプト全文。Issue #10 が入るまで nil。
+    /// 整形 LLM に送ったプロンプト全文。整形しなかった発話は nil。
     /// プロンプト改善のループを回すために**全文**を残す（要約・省略しない）。
     var prompt: String?
     var durations: Durations
@@ -280,18 +274,6 @@ enum HistoryFiles {
     }
 }
 
-enum HistoryError: LocalizedError {
-    /// 再処理の UI 導線（モード選択）が未実装のため呼べない。
-    case reprocessUnavailable
-
-    var errorDescription: String? {
-        switch self {
-        case .reprocessUnavailable:
-            return "別モードでの再処理は履歴 UI 側の導線が入るまで無効です。"
-        }
-    }
-}
-
 /// 履歴の共有状態。ファイル入出力は `HistoryFiles`、ここは UI に見せる一覧の管理だけ。
 @MainActor
 final class HistoryStore: ObservableObject {
@@ -393,17 +375,4 @@ final class HistoryStore: ObservableObject {
         }
     }
 
-    // MARK: - 再処理（未実装）
-
-    /// 別モードでの再処理（Superwhisper の Process Again 相当）。
-    ///
-    /// **未実装**: 整形の実体（`Formatter` / `Mode`）は Issue #10 で入ったが、
-    /// 履歴 UI に「どのモードで処理し直すか」を選ばせる導線がまだ無い。残りは:
-    ///   1. `entry.replacedText`（または audio.wav の再文字起こし結果）を指定モードで整形
-    ///   2. `formattedText` / `modeName` / `prompt` / `durations.formatMs` を埋めて meta.json を上書き
-    ///   3. 一覧を更新して整形後テキストを表示する
-    func reprocess(_ entry: HistoryEntry, modeName: String) async throws {
-        _ = (entry, modeName)
-        throw HistoryError.reprocessUnavailable
-    }
 }

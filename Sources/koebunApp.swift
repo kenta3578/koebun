@@ -2,9 +2,9 @@ import SwiftUI
 
 /// koebun: 完全ローカルの音声入力アプリ（メニューバー常駐）。
 ///
-/// 最小動作（Issue #2）:
-///   右⌥(Right Option) 押下中だけ録音 → WhisperKit(large-v3, 日本語) で文字起こし
-///   → 最前面アプリのカーソル位置に挿入。
+/// 流れ:
+///   右⌥(Right Option) でトグル録音 → Apple 音声認識（設定で WhisperKit にも切替可）で文字起こし
+///   → 辞書置換 →（任意で LLM 整形）→ 最前面アプリのカーソル位置に挿入。
 @main
 struct KoebunApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate

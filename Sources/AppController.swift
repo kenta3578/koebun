@@ -71,7 +71,7 @@ final class AppController {
     private func bootstrap() async {
         state.update(.loadingModel(step: "権限を確認中…"))
         await PermissionsManager.ensureMicrophone()
-        PermissionsManager.ensureAccessibility(prompt: true)
+        PermissionsManager.promptAccessibilityIfNeeded()
 
         await reloadSpeechEngine()
 
@@ -83,8 +83,9 @@ final class AppController {
         // 保存期間を過ぎた履歴を掃除する（ディスクを食い続けないように）。
         HistoryStore.shared.purgeExpired()
 
-        // クリップボードは「録音開始の3秒前」まで遡って採用するので、常時見張る必要がある。
-        ClipboardWatcher.shared.start()
+        // クリップボードは「録音開始の3秒前」まで遡って採用するので、使うときは常時見張る。
+        // 整形 OFF（既定）なら消費先が無いので回さない（Issue #57）。
+        updateClipboardWatcher()
 
         // 録音レベルは HUD の波形にだけ流す（AppState を毎フレーム更新しない）。
         recorder.onLevel = { [hud] level in
@@ -101,8 +102,9 @@ final class AppController {
     // MARK: - 録音 HUD
 
     /// 設定で HUD の表示位置・表示サイズを変えたときに、表示中の HUD へ即座に反映する（Issue #35）。
-    func refreshHUDLayout() {
-        hud.applyLayout()
+    /// `positionChanged` が true のときだけ置き直す（サイズ変更ではドラッグ位置を保つ。Issue #57）。
+    func refreshHUDLayout(positionChanged: Bool) {
+        hud.applyLayout(positionChanged: positionChanged)
     }
 
     // MARK: - 音声認識エンジン
@@ -139,8 +141,18 @@ final class AppController {
 
     // MARK: - 整形モデル
 
+    /// コンテキストを使う設定のときだけクリップボードを見張る。設定変更時にも呼ぶ。
+    func updateClipboardWatcher() {
+        if SettingsStore.shared.usesContext {
+            ClipboardWatcher.shared.start()
+        } else {
+            ClipboardWatcher.shared.stop()
+        }
+    }
+
     /// 整形 LLM を常駐させる。録音はロードの完了を待たない（間に合わなければ整形を飛ばす）。
     func loadFormatter() {
+        updateClipboardWatcher()
         guard SettingsStore.shared.formatterEnabled else {
             Task { [mlxFormatter, appleFormatter] in
                 await mlxFormatter.unload()
@@ -211,11 +223,12 @@ final class AppController {
     }
 
     private func startRecording() {
-        guard state.modelLoaded else { return }
+        guard state.modelLoaded, !state.isProcessing else { return }
         do {
             // コンテキストは録音開始の**前**に取る。HUD を出したあとだと、
             // アプリによっては選択のハイライトが外れて選択テキストを読めなくなる。
-            let context = SettingsStore.shared.contextInjectionEnabled
+            // 整形 OFF なら取らない（AX 同期 IPC で右⌥の反応が最大 400ms 遅れる。Issue #57）。
+            let context = SettingsStore.shared.usesContext
                 ? ContextCapture.captureAtRecordingStart() : nil
             pending = PendingRecording(
                 context: context,

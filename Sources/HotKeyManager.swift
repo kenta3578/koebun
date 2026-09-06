@@ -20,12 +20,6 @@ final class HotKeyManager {
         }
     }
 
-    func stop() {
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        monitor = nil
-        isDown = false
-    }
-
     private func handle(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
         guard keyCode == SettingsStore.shared.hotKeyCode else { return }
         let pressed = SettingsStore.isKeyDown(keyCode: keyCode, flags: flags)

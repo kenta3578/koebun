@@ -87,22 +87,18 @@ enum AppStatus: Equatable {
     /// それ以外は一過性の状態なので、形と色で区別できる SF Symbols を使う。
     var menuBarImage: NSImage {
         switch self {
-        case .idle:      return MenuBarGlyph.image(filled: false, tint: nil, label: accessibilityLabel)
-        case .recording: return MenuBarGlyph.image(filled: true, tint: .systemRed, label: accessibilityLabel)
+        case .idle:      return MenuBarGlyph.idle(label: accessibilityLabel)
+        case .recording: return MenuBarGlyph.recording(label: accessibilityLabel)
         default:         break
         }
-        guard let base = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityLabel) else {
-            return NSImage()
+        // symbolName はリテラル固定の SF Symbols 名なので、ここで nil にはならない。
+        let base = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityLabel)!
+        var config = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        if let tintColor {
+            config = config.applying(NSImage.SymbolConfiguration(paletteColors: [tintColor]))
         }
-        let sizing = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
-        guard let tintColor else {
-            let image = base.withSymbolConfiguration(sizing) ?? base
-            image.isTemplate = true
-            return image
-        }
-        let config = sizing.applying(NSImage.SymbolConfiguration(paletteColors: [tintColor]))
-        let image = base.withSymbolConfiguration(config) ?? base
-        image.isTemplate = false
+        let image = base.withSymbolConfiguration(config)!
+        image.isTemplate = tintColor == nil
         return image
     }
 
@@ -120,12 +116,24 @@ enum MenuBarGlyph {
     /// メニューバーの標準的なアイコン高さに合わせる（SF Symbols 15pt 相当）。
     private static let size = CGSize(width: 20, height: 16)
 
-    static func image(filled: Bool, tint: NSColor?, label: String) -> NSImage {
+    /// 待機中: 線画のテンプレート画像（メニューバーの明暗にシステムが追従させる）。
+    static func idle(label: String) -> NSImage {
         let image = NSImage(size: size, flipped: false) { rect in
-            draw(in: rect, filled: filled, color: tint ?? .black)
+            draw(in: rect, filled: false, color: .black)
             return true
         }
-        image.isTemplate = !filled
+        image.isTemplate = true
+        image.accessibilityDescription = label
+        return image
+    }
+
+    /// 録音中: 赤の塗りでバーを抜いた画像。
+    static func recording(label: String) -> NSImage {
+        let image = NSImage(size: size, flipped: false) { rect in
+            draw(in: rect, filled: true, color: .systemRed)
+            return true
+        }
+        image.isTemplate = false
         image.accessibilityDescription = label
         return image
     }
@@ -204,6 +212,9 @@ final class AppState: ObservableObject {
 
     /// `.recording` の別名。状態は status に一本化しているので保存しない。
     var isRecording: Bool { status == .recording }
+    /// 文字起こし・整形・挿入の途中か。この間に新しい録音を始めると、
+    /// 旧パイプラインの完了表示が新しい録音の表示を潰す（Issue #57）。
+    var isProcessing: Bool { status == .processing }
 
     private var doneResetTask: Task<Void, Never>?
 

@@ -13,17 +13,12 @@ enum PermissionsManager {
         }
     }
 
-    static func microphoneAuthorized() -> Bool {
-        AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-    }
-
-    /// アクセシビリティ（入力監視 / イベント送出）権限を確認。
-    /// 未許可なら System Settings へ誘導するプロンプトを表示する。
-    @discardableResult
-    static func ensureAccessibility(prompt: Bool = true) -> Bool {
+    /// アクセシビリティ（入力監視 / イベント送出）権限が無ければ、System Settings へ誘導する
+    /// システムのプロンプトを出す。真偽が要る場所は `AXIsProcessTrusted()` を直接使う。
+    static func promptAccessibilityIfNeeded() {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        let options = [key: prompt] as CFDictionary
-        return AXIsProcessTrustedWithOptions(options)
+        let options = [key: true] as CFDictionary
+        AXIsProcessTrustedWithOptions(options)
     }
 
     /// システム設定の「プライバシーとセキュリティ」内の該当ペインを開く。
