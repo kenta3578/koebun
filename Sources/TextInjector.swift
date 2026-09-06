@@ -99,6 +99,10 @@ enum TextInjector {
             return await verifyAfterSettle(text: text, before: before)
         }
 
+        // 挿入はクリップボードを踏む（⌘V 方式と復元）。その変化を「録音直前のコピー」と
+        // 誤認しないよう、この間の変化は採用しない。HUD・履歴からの再挿入も同じ入口を通る
+        // ので、ここに置けば経路ごとの漏れが起きない（Issue #63）。
+        ClipboardWatcher.shared.suppressChanges(for: 2)
         let pasteboard = NSPasteboard.general
         let previous = pasteboard.string(forType: .string)
         let writtenChangeCount = writeToPasteboard(text)

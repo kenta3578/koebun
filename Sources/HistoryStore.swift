@@ -281,6 +281,9 @@ final class HistoryStore: ObservableObject {
 
     /// 新しい順。
     @Published private(set) var entries: [HistoryEntry] = []
+    /// ディスクへ書き出し中の履歴。`reload` はディスクの一覧にこれを合成する
+    /// （書き込み完了前に再読み込みすると直前の発話が一覧から消えていた。Issue #63）。
+    private var writing: [HistoryEntry.ID: HistoryEntry] = [:]
 
     private init() {}
 
@@ -331,21 +334,31 @@ final class HistoryStore: ObservableObject {
         )
         entry.id = HistoryFiles.directoryName(for: createdAt)
         entries.insert(entry, at: 0)
+        writing[entry.id] = entry
 
         Task.detached(priority: .utility) {
             do {
                 let written = try HistoryFiles.write(entry, samples: samples)
-                await MainActor.run { HistoryStore.shared.merge(written) }
+                await MainActor.run { HistoryStore.shared.finishWriting(written) }
             } catch {
                 NSLog("koebun: 履歴の保存に失敗しました: \(error)")
+                await MainActor.run { HistoryStore.shared.writing[entry.id] = nil }
             }
         }
     }
 
-    /// 書き出し後の内容（音声情報など）を一覧側に反映する。
-    private func merge(_ entry: HistoryEntry) {
+    /// 書き出し後の内容（音声情報など）を一覧側に反映し、書き込み中の印を外す。
+    private func finishWriting(_ entry: HistoryEntry) {
+        writing[entry.id] = nil
         guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
         entries[index] = entry
+    }
+
+    /// ディスクから読んだ一覧に、まだ書き込み中の履歴を合成して置き換える。
+    private func replaceEntries(with loaded: [HistoryEntry]) {
+        let onDisk = Set(loaded.map(\.id))
+        let pending = writing.values.filter { !onDisk.contains($0.id) }
+        entries = pending.isEmpty ? loaded : (loaded + pending).sorted { $0.createdAt > $1.createdAt }
     }
 
     // MARK: - 一覧
@@ -353,7 +366,7 @@ final class HistoryStore: ObservableObject {
     func reload() {
         Task.detached(priority: .userInitiated) {
             let loaded = HistoryFiles.loadEntries()
-            await MainActor.run { HistoryStore.shared.entries = loaded }
+            await MainActor.run { HistoryStore.shared.replaceEntries(with: loaded) }
         }
     }
 
@@ -370,8 +383,7 @@ final class HistoryStore: ObservableObject {
             let removed = HistoryFiles.purge(retentionDays: days)
             guard removed > 0 else { return }
             NSLog("koebun: 保存期間（\(days)日）を過ぎた履歴を \(removed) 件削除しました")
-            let loaded = HistoryFiles.loadEntries()
-            await MainActor.run { HistoryStore.shared.entries = loaded }
+            await MainActor.run { HistoryStore.shared.reload() }
         }
     }
 

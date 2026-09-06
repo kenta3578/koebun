@@ -29,7 +29,12 @@ APP_SRC="$DERIVED/Build/Products/$CONFIG/koebun.app"
 
 if security find-certificate -c "$IDENTITY" >/dev/null 2>&1; then
   echo "==> $IDENTITY で署名（権限を保持するため）"
-  codesign --force --deep --sign "$IDENTITY" "$APP_SRC"
+  echo "    （キーチェーンの許可ダイアログが出たら「常に許可」。出続けるときは BUILD.md「署名ステップで止まる」）"
+  if ! codesign --force --deep --sign "$IDENTITY" "$APP_SRC"; then
+    echo "==> 署名に失敗しました。インストールせず終了します（/Applications の旧ビルドはそのまま）" >&2
+    echo "    対処: BUILD.md「install-local.sh の署名ステップで止まる」を参照" >&2
+    exit 1
+  fi
 else
   echo "==> $IDENTITY が無いのでアドホック署名のまま（起動のたびに権限を取り直す必要あり）"
 fi
