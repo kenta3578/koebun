@@ -206,8 +206,7 @@ struct RecordingHUDView: View {
             switch state.status {
             case .recording:            recordingContent
             case .processing:           processingContent
-            case .done(let message):    simpleRow(message)
-            case .warned(let message):  simpleRow(message)
+            case .done(let message), .warned(let message): simpleRow(message)
             case .failed(let reason, let hint): failedContent(reason, hint: hint)
             default:                    simpleRow(state.status.accessibilityLabel)
             }
@@ -475,12 +474,12 @@ private struct WaveformView: View {
 
 // MARK: - パネル
 
-/// borderless な NSPanel は既定で key になれずボタンが反応しないため、key 化だけ許す。
-/// `.nonactivatingPanel` なのでアプリ自体はアクティブにならず、
-/// 最前面アプリのキーボードフォーカス（＝挿入先）は奪わない。
 /// Esc の keyCode。監視クロージャは非同期文脈から参照されるのでファイルスコープに置く。
 private let escapeKeyCode: UInt16 = 53
 
+/// borderless な NSPanel は既定で key になれずボタンが反応しないため、key 化だけ許す。
+/// `.nonactivatingPanel` なのでアプリ自体はアクティブにならず、
+/// 最前面アプリのキーボードフォーカス（＝挿入先）は奪わない。
 private final class HUDPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -590,8 +589,7 @@ final class RecordingHUDController {
             applyPanelSize()
             return
         }
-        presentPanel()
-        applyPanelPosition()
+        presentPanel()  // needsReposition が立っているので、ここで置き直しも済む
         // 非表示から戻したときは Esc 監視も張り直す（結果表示中は張らない）。
         if startedAt != nil, model.pendingResult == nil { installEscapeMonitors() }
     }
@@ -651,7 +649,6 @@ final class RecordingHUDController {
         model.reset()
         startedAt = nil
         panel?.orderOut(nil)
-        applyPanelSize()
     }
 
     /// 完了表示を一瞬だけ見せてから自動的に閉じる（挿入できたことを HUD 側でも確認できる）。
@@ -688,15 +685,11 @@ final class RecordingHUDController {
 
     /// 警告から履歴を開く。読んでいる途中に HUD が消えないよう自動クローズを止める。
     private func openHistory() {
-        autoHideTask?.cancel()
-        autoHideTask = nil
         HistoryWindowController.shared.show()
         hide()
     }
 
     private func dismissWarning() {
-        model.warning = nil
-        applyPanelSize()
         AppState.shared.update(.idle)
         hide()
     }
@@ -774,10 +767,8 @@ final class RecordingHUDController {
             let outcome = await TextInjector.insert(result.text)
             guard model.pendingResult?.text == result.text else { return }
             if outcome.isSucceeded {
-                model.pendingResult = nil
-                applyPanelSize()
                 AppState.shared.update(.done(message: "挿入しました ✓"))
-                finish()
+                finish()  // 残していた結果を片付けて閉じる
             } else {
                 model.setResultNote(outcome.summary)
             }

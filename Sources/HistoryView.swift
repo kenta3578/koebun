@@ -222,10 +222,6 @@ struct HistoryView: View {
                 .disabled((variant.text(of: entry) ?? "").isEmpty)
                 .help("ウィンドウを閉じて、直前に使っていたアプリのカーソル位置に挿入します")
 
-            Button("別モードで再処理") { }
-                .disabled(true)
-                .help("整形 LLM（Issue #10）の実装後に有効になります")
-
             if entry.audio != nil {
                 Button(player?.isPlaying == true ? "停止" : "録音を再生") { togglePlayback(entry) }
             }

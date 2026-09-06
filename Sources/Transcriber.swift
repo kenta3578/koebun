@@ -12,7 +12,6 @@ enum TranscriberError: Error {
 /// 切り替えのために `unload()` だけを足してある。
 actor Transcriber: SpeechEngine {
     private var pipe: WhisperKit?
-    private(set) var isReady = false
 
     /// モデルをロード（ローカルキャッシュを優先）。
     func load() async throws {
@@ -24,13 +23,11 @@ actor Transcriber: SpeechEngine {
             modelFolder: modelFolder.path
         )
         pipe = try await WhisperKit(config)
-        isReady = true
     }
 
     /// 常駐を解除してメモリ（約2.9GB）を返す。Apple 音声認識へ切り替えたときに呼ぶ。
     func unload() {
         pipe = nil
-        isReady = false
     }
 
     /// 16kHz mono Float サンプルを日本語テキストに変換する。

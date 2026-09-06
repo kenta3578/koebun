@@ -25,11 +25,6 @@ struct CapturedContext: Sendable, Equatable {
     var clipboardText: String?
     /// 録音を開始した時刻。`【日時】` として渡す値であり、クリップボードの採用判定の基準でもある。
     var capturedAt: Date
-
-    /// 実際に何か1つでも取れているか。
-    var hasAnyDetail: Bool {
-        appName != nil || windowTitle != nil || selectedText != nil || clipboardText != nil
-    }
 }
 
 // MARK: - プロンプトへの流し込み

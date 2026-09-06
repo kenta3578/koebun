@@ -77,7 +77,6 @@ enum TextInjector {
     private static let restoreDelay: Duration = .milliseconds(250)
     // MARK: - 入口
 
-    @discardableResult
     static func insert(_ text: String) async -> InsertionOutcome {
         guard !text.isEmpty else { return .succeeded }
 
@@ -108,13 +107,11 @@ enum TextInjector {
 
         let outcome = await verifyAfterSettle(text: text, before: before)
 
-        if outcome.isSucceeded {
-            scheduleClipboardRestore(previous: previous, writtenChangeCount: writtenChangeCount)
-        } else if !keepResult {
-            // 「結果を残さない」設定なら従来どおり復元する（結果は HUD 側に残る）。
+        // 成功したら復元する。非成功でも「結果を残さない」設定なら復元する（結果は HUD 側に残る）。
+        // keepResult かつ非成功のときだけ復元しない＝結果がクリップボードに残り、手動で貼れる。
+        if outcome.isSucceeded || !keepResult {
             scheduleClipboardRestore(previous: previous, writtenChangeCount: writtenChangeCount)
         }
-        // keepResult かつ非成功のときは復元しない＝結果がクリップボードに残り、手動で貼れる。
 
         return outcome
     }
@@ -251,14 +248,13 @@ enum TextInjector {
             return .uncertain(detail: "入力先が変わったため結果を確認できません")
         }
 
-        let inserted = text.utf16.count
         let selectionLength = before.selectionLength ?? 0
 
         if let old = before.characterCount, let new = after.characterCount {
             // 選択範囲は置き換わるので、その分を差し引いた長さが基準。
             let base = old - selectionLength
-            if new == base + inserted { return .succeeded }
-            // アプリ側が整形（改行の正規化・自動補完など）した場合も、増えていれば入った。
+            // 増えていれば入った（text は空でないので、ぴったり一致もこれに含まれる。
+            // アプリ側が整形＝改行の正規化・自動補完などをした場合も同じ）。
             if new > base { return .succeeded }
             if new == old, before.caret == after.caret { return .unchanged }
             return .uncertain(detail: "結果を確認できません")

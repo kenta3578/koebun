@@ -71,7 +71,7 @@ final class AppController {
     private func bootstrap() async {
         state.update(.loadingModel(step: "権限を確認中…"))
         await PermissionsManager.ensureMicrophone()
-        PermissionsManager.ensureAccessibility(prompt: true)
+        PermissionsManager.promptAccessibilityIfNeeded()
 
         await reloadSpeechEngine()
 
