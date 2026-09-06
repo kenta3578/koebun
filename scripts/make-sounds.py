@@ -63,6 +63,31 @@ def purr_burst(freqs, seconds, *, mod_hz, decay, level=1.0):
         out.append(v * am * env * level)
     return out
 
+def knock(seconds=0.09, *, body=190.0, sub=45.0, level=1.0, seed=1):
+    """木を軽く叩いた「コツッ」。短い雑音のアタック＋ body Hz の胴鳴り＋ sub Hz の低い響き。"""
+    import random
+    rnd = random.Random(seed)
+    n = int(RATE * seconds)
+    out = []
+    for i in range(n):
+        t = i / RATE
+        click = (rnd.random() * 2 - 1) * math.exp(-t / 0.002) * 0.35
+        tone_ = math.sin(2 * math.pi * body * t) * math.exp(-t / 0.02)
+        low = math.sin(2 * math.pi * sub * t) * math.exp(-t / 0.026) * 1.2
+        env = min(1.0, t / 0.0015)
+        out.append((click + tone_ + low) * env * level)
+    return out
+
+def beep(freq, seconds, *, attack=0.005, release=0.015, level=1.0):
+    """一定音量のビープ（台形エンベロープ）。"""
+    n = int(RATE * seconds)
+    out = []
+    for i in range(n):
+        t = i / RATE
+        env = min(1.0, t / attack, (seconds - t) / release)
+        out.append(math.sin(2 * math.pi * freq * t) * max(0.0, env) * level)
+    return out
+
 def mix(*segments, gap=0.0):
     """音を順に並べる（gap 秒の無音を挟む）。"""
     silence = [0.0] * int(RATE * gap)
@@ -109,6 +134,15 @@ PRESETS = {
                          overlay(purr_burst([(520, 1.0), (1040, 0.3)], 0.045, mod_hz=28, decay=0.014),
                                  purr_burst([(790, 1.0), (1580, 0.3)], 0.045, mod_hz=28, decay=0.012, level=1.1), 0.026),
                          purr_burst([(780, 1.0), (1560, 0.3)], 0.04, mod_hz=28, decay=0.012, level=0.28), 0.135),
+    # 「クラシック」風の開始音: 木のノック → 100ms 後に C5（522Hz）のビープ 55ms → 薄い残響
+    # （実物を解析: ノック 25〜65ms は 190Hz ＋ 40Hz 台、ビープ 150〜210ms、残響 275〜320ms）
+    "classic-start": lambda: overlay(
+                         overlay(knock(level=1.0),
+                                 beep(522, 0.065, attack=0.006, release=0.02, level=0.9), 0.125),
+                         beep(522, 0.045, attack=0.01, release=0.03, level=0.18), 0.25),
+    # 「クラシック」風の停止音: 木のノックだけ。150ms 後にごく小さな 2 打目
+    "classic-stop":  lambda: overlay(knock(level=1.15, seed=2),
+                                     knock(0.06, body=250, sub=60, level=0.22, seed=3), 0.125),
 }
 
 def write_wav(path, samples, gain):
