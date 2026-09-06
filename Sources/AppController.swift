@@ -287,9 +287,6 @@ final class AppController {
                 if text.isEmpty {
                     state.update(.done(message: "（無音）"))
                 } else {
-                    // 挿入はクリップボードを踏む（⌘V 方式と復元）。その変化を
-                    // 「録音直前のコピー」と誤認しないよう、この間の変化は採用しない。
-                    ClipboardWatcher.shared.suppressChanges(for: 2)
                     outcome = await TextInjector.insert(text)
                     // 「確認できなかっただけ」を失敗として見せない（Issue #34）。
                     // AX でテキストを読めないアプリ（ターミナル等）では毎回起きるので、
