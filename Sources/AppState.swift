@@ -22,6 +22,15 @@ enum AppStatus: Equatable {
     /// `hint` は「設定で直せる失敗」のときだけ付き、HUD がそこへ飛ぶボタンを出す。
     case failed(reason: String, hint: FailureHint? = nil)
 
+    /// 右⌥で録音を始めてよい状態か。モデル読込中・録音中・処理中は始めない。
+    /// 失敗表示中は始めてよい（挿入に失敗しただけで、次の発話は受け付ける）。
+    var canStartRecording: Bool {
+        switch self {
+        case .idle, .done, .warned, .failed: return true
+        case .loadingModel, .recording, .processing: return false
+        }
+    }
+
     /// 完了表示を待機へ戻すまでの時間。
     static let doneDisplayDuration: Duration = .seconds(1.5)
     /// 警告表示を待機へ戻すまでの時間。読んで判断する必要があるので完了より長く出す。
@@ -208,13 +217,9 @@ final class AppState: ObservableObject {
     static let shared = AppState()
 
     @Published private(set) var status: AppStatus = .loadingModel(step: "起動中…")
-    @Published var modelLoaded = false
 
     /// `.recording` の別名。状態は status に一本化しているので保存しない。
     var isRecording: Bool { status == .recording }
-    /// 文字起こし・整形・挿入の途中か。この間に新しい録音を始めると、
-    /// 旧パイプラインの完了表示が新しい録音の表示を潰す（Issue #57）。
-    var isProcessing: Bool { status == .processing }
 
     private var doneResetTask: Task<Void, Never>?
 

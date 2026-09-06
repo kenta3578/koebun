@@ -243,11 +243,7 @@ struct RecordingHUDView: View {
     // 停止・キャンセルはホバーで出す＝常時は場所を取らない。
     private var minimalContent: some View {
         HStack(spacing: 6) {
-            Image(systemName: state.status.symbolName)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(statusColor)
-                .frame(width: 12)
-                .accessibilityLabel(state.status.accessibilityLabel)
+            statusIcon(size: 10, width: 12)
             Text(model.elapsedText)
                 .font(.system(size: 11, design: .monospaced))
                 .monospacedDigit()
@@ -269,15 +265,33 @@ struct RecordingHUDView: View {
         }
     }
 
-    // 失敗: 自動で閉じず、原因を読めるようにして明示的に閉じさせる。
-    // 設定で直せる失敗（権限）は、失敗を見ているその場から設定へ飛べるようにする（Issue #39）。
+    // 失敗（結果テキストを伴わないもの＝文字起こし失敗・録音開始失敗など）。
+    // 見出し行は結果付きの失敗と**同じ部品**を使う。以前は別実装で、権限失敗の「設定を開く」を
+    // 片方にだけ付けて出なかった（Issue #39 → #64）。
     private func failedContent(_ reason: String, hint: FailureHint?) -> some View {
-        HStack(spacing: 10) {
-            statusIcon
-            Text(reason)
-                .font(.system(size: 12))
+        resultHeader(isFailure: true, title: reason, detail: nil, hint: hint, onDismiss: onDismiss)
+            .padding(.vertical, 2)
+    }
+
+    /// 失敗・未確認の見出し行。アイコン（失敗は警告色、未確認は情報色）・見出し・補足・
+    /// 設定で直せる失敗への「設定を開く」・閉じる。結果テキストの有無に関わらずこれを使う。
+    private func resultHeader(isFailure: Bool, title: String, detail: String?,
+                              hint: FailureHint?, onDismiss: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: isFailure ? "exclamationmark.triangle.fill" : "info.circle")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isFailure ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
             Spacer()
             if let hint {
                 Button(hint.actionTitle) { hint.perform() }
@@ -326,28 +340,8 @@ struct RecordingHUDView: View {
     // 確認できないだけの状態は情報色で描き、数秒で自動的に閉じる。失敗は警告色のまま残す。
     private func resultContent(_ result: RecordingHUDModel.PendingResult) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: result.isFailure ? "exclamationmark.triangle.fill" : "info.circle")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(result.isFailure ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
-                Text(result.title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .lineLimit(1)
-                if let detail = result.detail {
-                    Text(detail)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                Spacer()
-                if let hint = result.hint {
-                    Button(hint.actionTitle) { hint.perform() }
-                        .controlSize(.small)
-                }
-                Button("閉じる", action: onDismissResult)
-                    .controlSize(.small)
-            }
+            resultHeader(isFailure: result.isFailure, title: result.title, detail: result.detail,
+                         hint: result.hint, onDismiss: onDismissResult)
 
             ScrollView {
                 Text(result.text)
@@ -421,11 +415,14 @@ struct RecordingHUDView: View {
         .padding(.vertical, 8)
     }
 
-    private var statusIcon: some View {
+    private var statusIcon: some View { statusIcon(size: 13, width: 18) }
+
+    /// 状態アイコン。メニューバーと同じシンボルと色で、**色と形の両方**で状態を示す。
+    private func statusIcon(size: CGFloat, width: CGFloat) -> some View {
         Image(systemName: state.status.symbolName)
-            .font(.system(size: 13, weight: .semibold))
+            .font(.system(size: size, weight: .semibold))
             .foregroundStyle(statusColor)
-            .frame(width: 18)
+            .frame(width: width)
             .accessibilityLabel(state.status.accessibilityLabel)
     }
 
@@ -535,8 +532,7 @@ final class RecordingHUDController {
     }
 
     func show() {
-        autoHideTask?.cancel()
-        autoHideTask = nil
+        cancelAutoHide()
         model.reset()
         startedAt = Date()
         // 経過時間は**非表示でも数える**。録音の途中で「最小/通常」へ切り替えたときに
@@ -632,18 +628,23 @@ final class RecordingHUDController {
         model.isHovering = hovering
         // 結果を読もうとして乗せたなら、自動クローズは止める。
         if hovering, model.pendingResult != nil {
-            autoHideTask?.cancel()
-            autoHideTask = nil
+            cancelAutoHide()
         } else if !hovering, model.pendingResult != nil {
             scheduleResultAutoHide()
         }
         applyPanelSize()
     }
 
-    /// 即座に閉じる（キャンセル時・失敗表示を閉じたとき）。
-    func hide() {
+    /// 自動クローズの予約を取り消す。予約と取り消しはここ以外で `autoHideTask` に触らない
+    /// （8 経路にコピーされていて、1 か所書き忘れると HUD が勝手に閉じた。Issue #64）。
+    private func cancelAutoHide() {
         autoHideTask?.cancel()
         autoHideTask = nil
+    }
+
+    /// 即座に閉じる（キャンセル時・失敗表示を閉じたとき）。
+    func hide() {
+        cancelAutoHide()
         resultAutoHides = false
         stopTicking()
         removeEscapeMonitors()
@@ -675,7 +676,7 @@ final class RecordingHUDController {
         model.warning = hasWarning ? warning : nil
         applyPanelSize()
 
-        autoHideTask?.cancel()
+        cancelAutoHide()
         autoHideTask = Task { [weak self] in
             try? await Task.sleep(for: hasWarning
                                   ? AppStatus.warnedDisplayDuration
@@ -712,8 +713,7 @@ final class RecordingHUDController {
     /// 失敗は原因を読ませる必要があるので残す。**確認できなかっただけなら数秒で閉じる**
     /// （Issue #34: 毎回出る警告は読まれなくなる）。閉じても結果はクリップボードと履歴に残る。
     func presentResult(_ text: String, outcome: InsertionOutcome) {
-        autoHideTask?.cancel()
-        autoHideTask = nil
+        cancelAutoHide()
         stopTicking()
         // Esc で消えると結果を失う。結果を残している間は Esc 監視を張らない。
         removeEscapeMonitors()
@@ -734,7 +734,7 @@ final class RecordingHUDController {
     /// 「確認できなかっただけ」の結果を自動的に閉じる。失敗のときは何もしない。
     private func scheduleResultAutoHide() {
         guard resultAutoHides, model.pendingResult != nil else { return }
-        autoHideTask?.cancel()
+        cancelAutoHide()
         autoHideTask = Task { [weak self] in
             try? await Task.sleep(for: Self.uncertainResultDuration)
             guard !Task.isCancelled else { return }
@@ -746,8 +746,7 @@ final class RecordingHUDController {
     /// ユーザーが結果に触れたら自動クローズをやめる（読んでいる途中で消さない）。
     private func keepResultOpen() {
         resultAutoHides = false
-        autoHideTask?.cancel()
-        autoHideTask = nil
+        cancelAutoHide()
     }
 
     private func copyResult() {

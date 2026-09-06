@@ -118,7 +118,6 @@ final class AppController {
     }
 
     private func reloadSpeechEngine() async {
-        state.modelLoaded = false
         state.update(.loadingModel(step: "音声認識モデルを読み込み中…"))
 
         guard let (kind, engine) = resolveSpeechEngine() else {
@@ -132,7 +131,6 @@ final class AppController {
 
         do {
             try await engine.load()
-            state.modelLoaded = true
             state.update(.idle)
         } catch {
             state.update(.failed(reason: "モデル読込失敗: \(error.localizedDescription)"))
@@ -223,7 +221,8 @@ final class AppController {
     }
 
     private func startRecording() {
-        guard state.modelLoaded, !state.isProcessing else { return }
+        // 読込中・処理中は始めない（処理中に始めると旧パイプラインの完了表示が新しい表示を潰す。Issue #57）。
+        guard state.status.canStartRecording else { return }
         do {
             // コンテキストは録音開始の**前**に取る。HUD を出したあとだと、
             // アプリによっては選択のハイライトが外れて選択テキストを読めなくなる。
@@ -283,29 +282,16 @@ final class AppController {
                 let diff = inspectFormatting(before: replaced, after: formatting.result?.text)
 
                 // 挿入は成否を判定して返る。成功と確認できなければ結果を捨てない（Issue #13）。
-                var outcome: InsertionOutcome = .succeeded
-                if text.isEmpty {
-                    state.update(.done(message: "（無音）"))
-                } else {
-                    outcome = await TextInjector.insert(text)
-                    // 「確認できなかっただけ」を失敗として見せない（Issue #34）。
-                    // AX でテキストを読めないアプリ（ターミナル等）では毎回起きるので、
-                    // 警告にすると本当の失敗が埋もれる。
-                    if outcome.isFailure {
-                        state.update(.failed(
-                            reason: outcome.statusMessage(resultKeptIn: SettingsStore.shared.resultLocationDescription),
-                            hint: outcome.hint))
-                    } else if let failure = formatting.failure {
-                        // 整形を外したことは必ず見せる（無言で生テキストに落ちない）。
-                        state.update(.done(message: "整形なしで挿入 ✓（\(failure)）"))
-                    } else if let diff, diff.hasChanges {
-                        state.update(.warned(message: "挿入しました ✓ \(diff.shortSummary)"))
-                    } else {
-                        state.update(.done(message: outcome.isSucceeded
-                                           ? "挿入しました ✓"
-                                           : outcome.summary))
-                    }
-                }
+                let outcome: InsertionOutcome = text.isEmpty ? .succeeded : await TextInjector.insert(text)
+                // 見せ方（メニューバーの状態と HUD の動き）は 1 か所で導出する（Issue #64）。
+                let presentation = InsertionPresentation.make(
+                    outcome: outcome,
+                    text: text,
+                    formattingFailure: formatting.failure,
+                    diff: diff,
+                    showResultPanel: SettingsStore.shared.showResultPanel,
+                    resultLocation: SettingsStore.shared.resultLocationDescription)
+                state.update(presentation.status)
                 let inserted = !text.isEmpty && outcome.isSucceeded
 
                 // 履歴は挿入のあとにバックグラウンドで書き出す（保存が挿入を遅らせない）。
@@ -330,21 +316,11 @@ final class AppController {
                     inserted: inserted
                 )
 
-                if outcome.isSucceeded {
-                    // 挿入まで終えてから HUD を閉じる（完了表示を一瞬見せる）。
-                    // 書き換えの疑いがあるときは、閉じる前に何が変わったかを見せる。
-                    hud.finish(warning: diff)
-                } else if SettingsStore.shared.showResultPanel {
-                    // 挿入できなかった／確認できなかった結果は HUD に残し、
-                    // コピー・再挿入できるようにする（確認できないだけなら数秒で閉じる）。
-                    hud.presentResult(text, outcome: outcome)
-                } else if outcome.isFailure {
-                    // パネルを出さない設定（Issue #44）。結果は履歴（とクリップボード）にある。
-                    // 失敗の原因はメニューバーに残る。
-                    hud.hide()
-                } else {
-                    // 確認できなかっただけなら、成功と同じく一瞬見せて閉じる。
-                    hud.finish(warning: diff)
+                // 履歴を書き出してから HUD を動かす（完了表示を一瞬見せる／結果を残す／閉じる）。
+                switch presentation.hud {
+                case .finish(let warning): hud.finish(warning: warning)
+                case .keepResult:          hud.presentResult(text, outcome: outcome)
+                case .hide:                hud.hide()
                 }
             } catch {
                 // 失敗は自動で閉じない。HUD に原因を残す。
