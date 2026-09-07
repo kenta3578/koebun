@@ -6,8 +6,8 @@
 
 **既定の構成ではモデルのダウンロードが要りません。** 起動して権限を許可すれば、そのまま喋って挿入まで通ります（macOS 26 以降）。数GB のモデルが要るのは、認識を WhisperKit に替えるか、LLM 整形を自分で ON にしたときだけです。
 
-<!-- TODO(#16): デモ GIF を docs/demo.gif に置いてここに貼る（右⌥で録音 → 挿入されるまで）-->
-<!-- TODO(#16): メニューバー UI のスクショを docs/menubar.png に置いてここに貼る -->
+<!-- TODO(#91): デモ GIF を docs/demo.gif に置いてここに貼る（右⌥で録音 → 挿入されるまで）-->
+<!-- TODO(#91): メニューバー UI のスクショを docs/menubar.png に置いてここに貼る -->
 
 ---
 
@@ -32,7 +32,7 @@
 
 | 機能 | 状態 |
 |---|---|
-| 署名済みバイナリの配布（Releases / Homebrew） | 未配布 — [#16](https://github.com/kenta3578/koebun/issues/16) |
+| 署名済みバイナリの配布（Releases / Homebrew） | 未配布 — [#91](https://github.com/kenta3578/koebun/issues/91) |
 
 **他ツールとの速度・精度の比較は書きません。** 「Superwhisper より速い／正確」といった主張は現時点で一切していません。
 
@@ -192,9 +192,9 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 
 ## ロードマップ
 
-Superwhisper との比較調査は [`ai_docs/competitor-superwhisper.md`](ai_docs/competitor-superwhisper.md)、設計の経緯は [`ai_docs/research-log.md`](ai_docs/research-log.md) にあります。
+設計の根拠は [`ai_docs/design-rationale.md`](ai_docs/design-rationale.md)、経緯は [`ai_docs/research-log.md`](ai_docs/research-log.md) にあります。
 
-残っている大きなものは **署名済みバイナリの配布（[#16](https://github.com/kenta3578/koebun/issues/16)）** です。ダウンロード不要で試せる既定にしたので、`.dmg` を配れば「落として起動して喋る」まで一直線になります。
+残っている大きなものは **署名済みバイナリの配布（[#91](https://github.com/kenta3578/koebun/issues/91)）** です。ダウンロード不要で試せる既定にしたので、`.dmg` を配れば「落として起動して喋る」まで一直線になります。
 
 明確に作らないもの: 会議録音・話者分離・iOS/Windows 版・多言語対応・クラウドモデル。
 

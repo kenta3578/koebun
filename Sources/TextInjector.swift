@@ -74,7 +74,7 @@ enum InsertionOutcome: Equatable {
 ///
 /// どちらも Accessibility 権限が要る。挿入後は Accessibility API で挿入先の文字数・caret を
 /// 見比べて成否を判定し、確信が持てなければ `.uncertain` を返して結果を保全する
-/// （`ai_docs/competitor-superwhisper.md` §8-3, §8-5）。
+/// （`ai_docs/design-rationale.md` §4）。
 @MainActor
 enum TextInjector {
     /// ペースト/キー送出が挿入先に反映されるのを待つ時間。

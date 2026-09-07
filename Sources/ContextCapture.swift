@@ -4,7 +4,7 @@ import ApplicationServices
 /// 録音1回ぶんの周辺情報（どのアプリで、何を選択していて、直前に何をコピーしたか）。
 ///
 /// 整形の精度は「どのアプリで何をしているか」を知っているだけで跳ねる
-/// （`ai_docs/competitor-superwhisper.md` §3 Context Awareness）。一方で同じ資料は
+/// （`ai_docs/design-rationale.md` §6）。一方で同じ資料は
 /// **取りすぎると品質が落ちる**とも言っているので、
 /// - どの項目を使うかは `ModeContext` でモードごとに選ぶ（既定は最小）
 /// - 1項目あたりの長さを `ContextCapture.maxFieldLength` で頭打ちにする
