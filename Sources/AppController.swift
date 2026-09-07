@@ -22,6 +22,9 @@ final class AppController {
     }
     private var pending: PendingRecording?
 
+    /// アクセシビリティ権限が付くのを見張るタイマー（Issue #78）。許可を検知したら止める。
+    private var accessibilityTimer: Timer?
+
     /// 録音中にオーディオデバイスの構成が変わったか（Issue #77）。
     /// 変わった時点でエンジンは止まり、以降の発話はサンプルに入らないので、
     /// 「途中までで処理した」ことを結果表示に必ず出す。停止処理で読んで false に戻す。
@@ -78,12 +81,19 @@ final class AppController {
         await PermissionsManager.ensureMicrophone()
         PermissionsManager.promptAccessibilityIfNeeded()
 
-        await reloadSpeechEngine()
-
+        // ホットキーはモデルの読み込みを待たずに張る。macOS 26 未満では既定が
+        // WhisperKit に落ちるので、待つと約2.9GB のダウンロードのあいだずっと
+        // 右⌥ が無反応になる（Issue #78）。
         hotkeys.onToggle = { [weak self] in
             Task { @MainActor in self?.toggleRecording() }
         }
         hotkeys.start()
+
+        await reloadSpeechEngine()
+
+        // 権限が無いとグローバル監視は一度も発火しない。「待機中」と出したまま
+        // 永久に効かない状態を作らず、許可されるまで見張る（Issue #78）。
+        updateAccessibilityState()
 
         // 保存期間を過ぎた履歴を掃除する（ディスクを食い続けないように）。
         HistoryStore.shared.purgeExpired()
@@ -455,6 +465,42 @@ final class AppController {
         audioDeviceChangedDuringRecording = false
         hud.hide()
         state.update(.idle)
+    }
+
+    /// アクセシビリティ権限の状態を UI に反映し、未許可なら許可されるまで見張る。
+    ///
+    /// グローバル監視は trusted でないと一度も発火しないので、起動時に張っただけでは
+    /// 後から許可しても右⌥ が効かない。許可を検知したら張り直す（Issue #78）。
+    private func updateAccessibilityState() {
+        guard !PermissionsManager.isAccessibilityTrusted else {
+            accessibilityTimer?.invalidate()
+            accessibilityTimer = nil
+            return
+        }
+
+        state.update(.failed(
+            reason: "アクセシビリティ権限がありません（右⌥ が効きません）",
+            hint: .accessibilityPermission
+        ))
+
+        guard accessibilityTimer == nil else { return }
+        let timer = Timer(timeInterval: 2, repeats: true) { _ in
+            Task { @MainActor in AppController.shared.pollAccessibility() }
+        }
+        timer.tolerance = 1
+        // システム設定を触っている間もメニュー操作中も止めない。
+        RunLoop.main.add(timer, forMode: .common)
+        accessibilityTimer = timer
+    }
+
+    /// 権限が付いたらホットキーを張り直す。張り直さないと監視は動き出さない。
+    private func pollAccessibility() {
+        guard PermissionsManager.isAccessibilityTrusted else { return }
+        accessibilityTimer?.invalidate()
+        accessibilityTimer = nil
+        hotkeys.start()
+        state.update(.idle)
+        NSLog("koebun: アクセシビリティ権限を検知したのでホットキーを登録し直しました")
     }
 
     /// 録音中にオーディオデバイスの構成が変わった。AVAudioEngine は既に止まっていて

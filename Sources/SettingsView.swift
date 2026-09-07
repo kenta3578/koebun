@@ -22,8 +22,8 @@ struct GeneralSettingsView: View {
     /// エンジンの切り替えを録音中・処理中だけ止めるために見る（Issue #77）。
     @ObservedObject private var appState = AppState.shared
     /// ホットキーの録り中か（AppState の録音状態とは無関係）。
-    @State private var isCapturingHotKey = false
-    @State private var captureMonitors: [Any] = []
+    /// ウィンドウを閉じても監視が残らないよう、状態は View の外に置く（Issue #78）。
+    @ObservedObject private var hotKeyCapture = HotKeyCapture.shared
 
     var body: some View {
         Form {
@@ -172,12 +172,12 @@ struct GeneralSettingsView: View {
                 HStack {
                     Text("録音トリガー")
                     Spacer()
-                    Text(isCapturingHotKey
+                    Text(hotKeyCapture.isCapturing
                          ? "modifier キーを押してください…"
                          : SettingsStore.keyName(for: settings.hotKeyCode))
-                        .foregroundStyle(isCapturingHotKey ? .secondary : .primary)
-                    Button(isCapturingHotKey ? "キャンセル" : "変更") {
-                        isCapturingHotKey ? cancelHotKeyCapture() : startHotKeyCapture()
+                        .foregroundStyle(hotKeyCapture.isCapturing ? .secondary : .primary)
+                    Button(hotKeyCapture.isCapturing ? "キャンセル" : "変更") {
+                        hotKeyCapture.isCapturing ? hotKeyCapture.cancel() : hotKeyCapture.start()
                     }
                 }
             }
@@ -212,7 +212,10 @@ struct GeneralSettingsView: View {
         .formStyle(.grouped)
         // システム設定側で変えられている可能性があるので、開くたびに OS から読み直す。
         .onAppear { loginItem.refresh() }
-        .onDisappear { cancelHotKeyCapture() }
+        // .onDisappear はウィンドウを閉じても発火しない（isReleasedWhenClosed = false で
+        // ビュー階層が生きたまま残るため）。実際の解除は SettingsWindowController の
+        // windowWillClose が行う。ここは念のための保険（Issue #78）。
+        .onDisappear { hotKeyCapture.cancel() }
     }
 
     /// 音のピッカーと試聴ボタンの1行（Issue #48）。
@@ -248,38 +251,6 @@ struct GeneralSettingsView: View {
         SoundPlayer.play(name)
     }
 
-    /// 修飾キーの押下を 1 回だけ拾ってホットキーにする。
-    ///
-    /// global monitor は**他アプリ**へ配送されるイベントしか受け取らない。設定ウィンドウは
-    /// `NSApp.activate` で前面＝アクティブなので、自アプリに配送される押下は local monitor
-    /// でないと拾えない（Issue #68）。両方張り、先に来た方を採用する。
-    private func startHotKeyCapture() {
-        isCapturingHotKey = true
-        let accept: (NSEvent) -> Bool = { event in
-            let code = event.keyCode
-            guard SettingsStore.isKeyDown(keyCode: code, flags: event.modifierFlags) else { return false }
-            DispatchQueue.main.async {
-                SettingsStore.shared.hotKeyCode = code
-                cancelHotKeyCapture()
-            }
-            return true
-        }
-        if let local = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: { event in
-            // 採用した押下は飲み込む（設定画面のフォーカスを動かさない）。
-            accept(event) ? nil : event
-        }) {
-            captureMonitors.append(local)
-        }
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: { _ = accept($0) }) {
-            captureMonitors.append(global)
-        }
-    }
-
-    private func cancelHotKeyCapture() {
-        isCapturingHotKey = false
-        captureMonitors.forEach(NSEvent.removeMonitor)
-        captureMonitors.removeAll()
-    }
 }
 
 /// 整形 LLM の設定。モード定義そのものは `~/koebun/modes/*.json` を直接編集する

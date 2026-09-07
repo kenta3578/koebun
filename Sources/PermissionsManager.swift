@@ -13,12 +13,20 @@ enum PermissionsManager {
         }
     }
 
-    /// アクセシビリティ（入力監視 / イベント送出）権限が無ければ、System Settings へ誘導する
-    /// システムのプロンプトを出す。真偽が要る場所は `AXIsProcessTrusted()` を直接使う。
-    static func promptAccessibilityIfNeeded() {
+    /// アクセシビリティ（入力監視 / イベント送出）権限があるか。
+    ///
+    /// **グローバルなキー監視はこれが true でないと一度も発火しない。** 起動時に監視を
+    /// 張っただけでは、後から許可しても右⌥ が効かないので、許可されたかを見張るのに使う
+    /// （Issue #78）。
+    static var isAccessibilityTrusted: Bool { AXIsProcessTrusted() }
+
+    /// アクセシビリティ権限が無ければ、System Settings へ誘導するシステムのプロンプトを出す。
+    /// 戻り値は「いま許可されているか」。
+    @discardableResult
+    static func promptAccessibilityIfNeeded() -> Bool {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         let options = [key: true] as CFDictionary
-        AXIsProcessTrustedWithOptions(options)
+        return AXIsProcessTrustedWithOptions(options)
     }
 
     /// システム設定の「プライバシーとセキュリティ」内の該当ペインを開く。
