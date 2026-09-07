@@ -15,6 +15,8 @@ enum FormatterError: LocalizedError {
     /// 出力トークンの上限に当たって末尾が生成されなかった（Issue #82）。
     /// 途中で切れたテキストを挿入すると発話の後半が黙って消えるので、失敗として扱う。
     case truncated
+    /// 思考ブロック（`<think>`）が閉じないまま返ってきた（Issue #87）。
+    case thinkingLeftover
 
     var errorDescription: String? {
         switch self {
@@ -28,6 +30,8 @@ enum FormatterError: LocalizedError {
             return reason
         case .truncated:
             return "整形結果が途中で切れました"
+        case .thinkingLeftover:
+            return "整形が思考の途中で止まりました"
         }
     }
 }
@@ -74,6 +78,13 @@ actor Formatter: FormattingEngine {
     private var loadTask: Task<Void, Error>?
     /// `loadTask` が読み込もうとしているモデル ID。
     private var loadingModelId: String?
+    /// ロードの世代。**後から返ってきた古いロードが、新しいロードの結果を壊さない**ようにする。
+    ///
+    /// `performLoad` は自分がまだ現行のロードかを見ずに `container` / `loadedModelId` /
+    /// `loadState` を書いていた。ダウンロード中にモデルを選び直すと、先行ロードが後から
+    /// catch に入り、`.notLoaded` で新しい `.ready` を上書きして以後ずっと
+    /// 「整形モデルが準備できていません」になるか、ロード済みの 9GB を破棄していた（Issue #87）。
+    private var loadGeneration = 0
 
     var isReady: Bool {
         if case .ready = loadState { return true }
@@ -99,10 +110,12 @@ actor Formatter: FormattingEngine {
         loadTask?.cancel()
         container = nil
         loadedModelId = nil
+        loadGeneration += 1
+        let generation = loadGeneration
 
         let task = Task { [weak self] in
             guard let self else { return }
-            try await self.performLoad(modelId: modelId, onProgress: onProgress)
+            try await self.performLoad(modelId: modelId, generation: generation, onProgress: onProgress)
         }
         loadTask = task
         loadingModelId = modelId
@@ -117,8 +130,10 @@ actor Formatter: FormattingEngine {
 
     private func performLoad(
         modelId: String,
+        generation: Int,
         onProgress: @Sendable @escaping (LoadState) -> Void
     ) async throws {
+        guard generation == loadGeneration else { return }
         update(.loading(modelId: modelId, fraction: nil), notify: onProgress)
 
         do {
@@ -129,13 +144,20 @@ actor Formatter: FormattingEngine {
                 onProgress(.loading(modelId: modelId, fraction: fraction))
             }
             try Task.checkCancellation()
+            // 自分より新しいロードが始まっていたら、そちらの結果を壊さない。
+            guard generation == loadGeneration else { return }
             self.container = container
             self.loadedModelId = modelId
             update(.ready(modelId: modelId), notify: onProgress)
         } catch is CancellationError {
+            // キャンセルされた＝新しいロードへ引き継がれている。状態には触らない。
+            guard generation == loadGeneration else { throw CancellationError() }
             update(.notLoaded, notify: onProgress)
             throw CancellationError()
         } catch {
+            // Hub のダウンロードは URLError.cancelled のように CancellationError 以外でも
+            // 返る。自分が現行でなければ、新しいロードが積んだコンテナを破棄してはいけない。
+            guard generation == loadGeneration else { throw error }
             self.container = nil
             self.loadedModelId = nil
             update(.failed(reason: error.localizedDescription), notify: onProgress)
@@ -216,6 +238,7 @@ actor Formatter: FormattingEngine {
 
         let cleaned = Self.clean(raw)
         guard !cleaned.isEmpty else { throw FormatterError.emptyOutput }
+        guard !Self.isUnclosedThinking(cleaned) else { throw FormatterError.thinkingLeftover }
         guard FormattingLength.isPlausible(cleaned, for: text) else {
             throw FormatterError.truncated
         }
@@ -225,7 +248,21 @@ actor Formatter: FormattingEngine {
     /// 出力トークンの上限。整形は入力とほぼ同じ長さに収まるので、その倍で頭打ちにする。
     private static func maxTokens(for text: String) -> Int {
         // 日本語はおおむね1文字1トークン強。箇条書き化で行が増えるぶんを見て2倍＋定数。
-        min(2048, max(256, text.count * 2 + 128))
+        //
+        // 下限が 256 だと、`enable_thinking: false` がテンプレート側で効かなかったときに
+        // **短い発話ほど確実に** `</think>` へ到達する前で打ち切られる（思考ブロックは
+        // 数百トークンに達する）。思考が入っても閉じられる程度まで上げておく（Issue #87）。
+        min(2048, max(768, text.count * 2 + 128))
+    }
+
+    /// 思考ブロックが閉じないまま返ってきたか。
+    ///
+    /// `clean` は `</think>` が**あれば**その後ろを採るだけなので、開きタグしか無い出力は
+    /// そのまま通る。空でもないので `emptyOutput` にも掛からず、
+    /// `<think>\nThe user said ... I should keep the numbers ...` という英語の思考文が
+    /// そのままカーソルに入っていた（Issue #87）。
+    static func isUnclosedThinking(_ text: String) -> Bool {
+        text.hasPrefix("<think")
     }
 
     /// モデルの出力から、整形結果そのもの以外を落とす。

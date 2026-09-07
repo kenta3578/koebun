@@ -6,23 +6,44 @@ enum TranscriberError: Error {
 }
 
 /// WhisperKit ラッパー。large-v3 を日本語で文字起こしする。
-/// 初回ロード時にモデル（約2.9GB）が自動ダウンロードされる。
+/// モデル（約2.9GB）は初回ロード時にダウンロードされる。
 ///
 /// `SpeechEngine` の実装の1つ（Issue #27）。**挙動は差し替え前と同じ**で、
 /// 切り替えのために `unload()` だけを足してある。
 actor Transcriber: SpeechEngine {
     private var pipe: WhisperKit?
 
-    /// モデルをロード（ローカルキャッシュを優先）。
+    /// 使うモデルの variant 名。
+    static let model = "large-v3"
+
+    /// モデルをロードする。**無ければダウンロードする。**
+    ///
+    /// 以前は `modelFolder` にキャッシュのパスを渡していたが、WhisperKit は
+    /// `modelFolder` が非 nil だと**ダウンロード分岐に入らない**
+    /// （`if let folder = modelFolder { ... } else if download { ...ダウンロード... }`）。
+    /// 開発機には既にキャッシュがあったので気づかれないまま、他人が WhisperKit を選ぶと
+    /// 2.9GB は永久に落ちてこず、録音のたびに `modelsUnavailable` になっていた（Issue #83）。
+    ///
+    /// `modelFolder` を渡さないと `load` の既定が false になる（`config.load ??
+    /// (config.modelFolder != nil)`）ので、明示的に true にする。既にキャッシュがあれば
+    /// HubApi が既存ファイルを見るので再ダウンロードは走らない。
     func load() async throws {
-        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        let modelFolder = cacheDir
-            .appendingPathComponent("argmaxinc/whisperkit-coreml/openai_whisper-large-v3")
-        let config = WhisperKitConfig(
-            model: "large-v3",
-            modelFolder: modelFolder.path
-        )
+        let config = WhisperKitConfig(model: Self.model, load: true, download: true)
         pipe = try await WhisperKit(config)
+    }
+
+    /// モデルが既にダウンロード済みか。UI に「ダウンロード中」を出すかの判断に使う。
+    ///
+    /// `.cachesDirectory` は OS がパージしうるので、消えていれば取得からやり直す。
+    static var hasCachedModel: Bool {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        else { return false }
+        // 一式のうち1つでも欠けると `loadModels` が modelsUnavailable を投げるので、
+        // 代表として MelSpectrogram の有無を見る。
+        let probe = caches
+            .appendingPathComponent("argmaxinc/whisperkit-coreml/openai_whisper-\(model)")
+            .appendingPathComponent("MelSpectrogram.mlmodelc")
+        return FileManager.default.fileExists(atPath: probe.path)
     }
 
     /// 常駐を解除してメモリ（約2.9GB）を返す。Apple 音声認識へ切り替えたときに呼ぶ。

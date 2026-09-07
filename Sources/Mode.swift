@@ -15,8 +15,6 @@ struct Mode: Codable, Identifiable, Equatable {
     var order: Int
     /// LLM を通すか。`false`（＝`そのまま`）なら整形処理を一切走らせない最速パス。
     var usesLLM: Bool
-    /// このモードだけ別モデルを使いたいときの HuggingFace リポジトリ ID。nil なら設定の既定モデル。
-    var modelId: String?
     /// モード固有の指示。`commonRules` の後ろに連結される。
     var systemPrompt: String
     /// どのコンテキストをプロンプトに載せるか。**既定は最小**（`ModeContext` の項注参照）。
@@ -28,7 +26,12 @@ struct Mode: Codable, Identifiable, Equatable {
     var id: String { name }
 
     private enum CodingKeys: String, CodingKey {
-        case name, order, usesLLM, modelId, systemPrompt, context, appMatch
+        // modelId は「モードごとに別モデル」を意図して置いていたが、モデルのロードは
+        // 設定の既定しか見ておらず**一度も使われていなかった**。にもかかわらず整形が
+        // 失敗したときの履歴にだけ「使ったモデル」として記録され、成功時と食い違って
+        // エンジン比較の一次データを汚していたので外した（Issue #87）。
+        // 既存の JSON に残っていても未知のキーとして無視されるだけで壊れない。
+        case name, order, usesLLM, systemPrompt, context, appMatch
     }
 
     /// 全モード共通の禁止事項。**JSON からは編集できない**。
@@ -100,8 +103,9 @@ struct Mode: Codable, Identifiable, Equatable {
     /// 実際に LLM へ送るシステムプロンプト。共通規則 ＋ モード固有の指示 ＋（あれば）コンテキスト。
     ///
     /// コンテキストを**システムプロンプト側に置く**のは、発話本文（user メッセージ）と
-    /// 混ざらないようにするため。履歴には送信プロンプト全文が残るので、
-    /// 何を渡したかは履歴からそのまま読める（`HistoryEntry.prompt`）。
+    /// 混ざらないようにするため。履歴（`HistoryEntry.prompt`）にはルール部分だけが残り、
+    /// コンテキストの中身は除かれる——選択テキストやクリップボードをそのまま保存すると、
+    /// 発話していないものが平文でディスクに残るため（Issue #81）。
     func fullSystemPrompt(context contextBlock: String? = nil) -> String {
         assemble(rules: Self.commonRules, contextRules: Self.contextRules, context: contextBlock)
     }
@@ -190,7 +194,6 @@ extension Mode {
         name = try container.decode(String.self, forKey: .name)
         order = try container.decodeIfPresent(Int.self, forKey: .order) ?? 100
         usesLLM = try container.decodeIfPresent(Bool.self, forKey: .usesLLM) ?? true
-        modelId = try container.decodeIfPresent(String.self, forKey: .modelId)
         systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt) ?? ""
         context = try container.decodeIfPresent(ModeContext.self, forKey: .context) ?? ModeContext()
         appMatch = try container.decodeIfPresent([String].self, forKey: .appMatch) ?? []
@@ -211,7 +214,6 @@ extension Mode {
                 name: "そのまま",
                 order: 10,
                 usesLLM: false,
-                modelId: nil,
                 systemPrompt: "",
                 // LLM を通さないモードなので、コンテキストを取っても渡す先が無い。
                 context: ModeContext(),
@@ -224,7 +226,6 @@ extension Mode {
                 name: "メッセージ",
                 order: 20,
                 usesLLM: true,
-                modelId: nil,
                 systemPrompt: """
                     Slack やチャットに送る文章として整形する。
                     - やわらかい口語。硬い書き言葉や事務的な定型文にしない。
@@ -250,7 +251,6 @@ extension Mode {
                 name: "メール",
                 order: 30,
                 usesLLM: true,
-                modelId: nil,
                 systemPrompt: """
                     メールの本文として整形する。
                     - 敬体（です・ます）に統一する。
@@ -273,7 +273,6 @@ extension Mode {
                 name: "コード",
                 order: 40,
                 usesLLM: true,
-                modelId: nil,
                 systemPrompt: """
                     技術的な記述・コードコメントとして整形する。
                     - 技術用語は一般的な表記に直す（「エーピーアイ」→「API」、「ジェイソン」→「JSON」、\
@@ -308,7 +307,6 @@ extension Mode {
                 name: "メモ",
                 order: 50,
                 usesLLM: true,
-                modelId: nil,
                 systemPrompt: """
                     自分用のメモとして整形する。
                     - 常体または体言止めで簡潔に。

@@ -95,8 +95,9 @@ final class AppController {
         // 永久に効かない状態を作らず、許可されるまで見張る（Issue #78）。
         updateAccessibilityState()
 
-        // 保存期間を過ぎた履歴を掃除する（ディスクを食い続けないように）。
-        HistoryStore.shared.purgeExpired()
+        // 保存先を 0700 で用意し、保存期間の掃除を定期的に回す。起動時にしか掃除して
+        // いなかったので、常駐したままだと「7日」と表示しながら消えなかった（Issue #81）。
+        HistoryStore.shared.start()
 
         // クリップボードは「録音開始の3秒前」まで遡って採用するので、使うときは常時見張る。
         // 整形 OFF（既定）なら消費先が無いので回さない（Issue #57）。
@@ -146,12 +147,19 @@ final class AppController {
             return
         }
 
-        state.update(.loadingModel(step: "音声認識モデルを読み込み中…"))
-
         guard let (kind, engine) = resolveSpeechEngine() else {
             state.update(.failed(reason: "Apple 音声認識には \(EngineSupport.requiresMacOS26)"))
             return
         }
+
+        // WhisperKit は初回に約2.9GB を取りに行く。「読み込み中」とだけ出すと
+        // 回線次第で数十分固まったように見える（Issue #83）。
+        let isDownloading = kind == .whisperKit && !Transcriber.hasCachedModel
+        state.update(.loadingModel(
+            step: isDownloading
+                ? "音声認識モデルをダウンロード中…（約2.9GB）"
+                : "音声認識モデルを読み込み中…"
+        ))
 
         // 選ばれなかった方を降ろす（WhisperKit なら約2.9GB が返る）。
         if kind != .whisperKit { await whisperTranscriber.unload() }
@@ -161,7 +169,13 @@ final class AppController {
             try await engine.load()
             state.update(.idle)
         } catch {
-            state.update(.failed(reason: "モデル読込失敗: \(error.localizedDescription)"))
+            // WhisperKit の modelsUnavailable は生のまま出すと「Model file not found at
+            // .../MelSpectrogram.mlmodelc」で、何をすればいいか分からない（Issue #83）。
+            let reason = isDownloading
+                ? "音声認識モデルを取得できませんでした（ネットワークと空き容量を確認してください）"
+                : "モデル読込失敗: \(error.localizedDescription)"
+            NSLog("koebun: 音声認識モデルの読み込みに失敗しました: \(error)")
+            state.update(.failed(reason: reason))
         }
     }
 
@@ -337,13 +351,14 @@ final class AppController {
                 let inserted = !text.isEmpty && outcome.isSucceeded
 
                 // 履歴は挿入のあとにバックグラウンドで書き出す（保存が挿入を遅らせない）。
+                // 無音だった発話は `record` 側で弾く（Issue #81）。
                 HistoryStore.shared.record(
                     samples: samples,
                     rawText: raw,
                     replacedText: replaced,
                     formattedText: formatting.result?.text,
                     modeName: formatting.modeName,
-                    prompt: formatting.result?.prompt,
+                    prompt: formatting.promptForHistory,
                     // どのエンジンで処理したかを残す。これがエンジン比較（Issue #27）の一次データ。
                     speechEngine: speechKind.rawValue,
                     formattingEngine: formatting.engineKind?.rawValue,
@@ -395,6 +410,24 @@ final class AppController {
         var engineKind: FormattingEngineKind? = nil
         /// 整形を試みたモデルの識別子。
         var modelId: String? = nil
+        /// 履歴に残すプロンプト。**コンテキストを除いてある**（Issue #81）。
+        var promptForHistory: String? = nil
+    }
+
+    /// 履歴に残すプロンプトを作る。
+    ///
+    /// 送信プロンプトをそのまま残すと、`【選択テキスト】` `【クリップボード】` の中身
+    /// （開いている `.env`・API キー・顧客データ）が `~/koebun/history/*/meta.json` に
+    /// 平文で保存期間ぶん残る。ユーザーが「発話の履歴」と認識している場所に、
+    /// 発話していないものが入るのはプライバシーの約束を破る（Issue #81）。
+    /// ルール部分は残すので、プロンプト改善のループは従来どおり回せる。
+    private static func promptForHistory(_ prompt: String?, contextBlock: String?) -> String? {
+        guard let prompt else { return nil }
+        guard let contextBlock, !contextBlock.isEmpty else { return prompt }
+        return prompt.replacingOccurrences(
+            of: contextBlock,
+            with: "（コンテキストは履歴に残していません）"
+        )
     }
 
     /// 置換後テキストを現在のモードで整形する。**例外を外に出さない**。
@@ -422,9 +455,11 @@ final class AppController {
                 failure: "Apple 整形には \(EngineSupport.requiresMacOS26)"
             )
         }
-        // モード指定のモデルがあればそれを、無ければ設定の既定を記録する
-        // （Apple 実装はモデルを選べないので、成功した結果の modelId で上書きされる）。
-        let modelId = mode.modelId ?? SettingsStore.shared.formatterModelId
+        // 整形が失敗したときに履歴へ残すモデル ID。成功時は結果の modelId で上書きされる
+        // （Apple 実装はモデルを選べないので固定の識別子を返す）。
+        // 以前はここで `mode.modelId` を優先していたが、そちらはロードに使われておらず、
+        // 失敗時だけ「使っていないモデル」が記録されて成功時と食い違っていた（Issue #87）。
+        let modelId = SettingsStore.shared.formatterModelId
 
         let timeout = Duration.seconds(SettingsStore.shared.formatTimeoutSeconds)
         do {
@@ -433,7 +468,8 @@ final class AppController {
             )
             return FormatOutcome(
                 modeName: mode.name, result: result, attempted: true, failure: nil,
-                engineKind: engineKind, modelId: result.modelId
+                engineKind: engineKind, modelId: result.modelId,
+                promptForHistory: Self.promptForHistory(result.prompt, contextBlock: contextBlock)
             )
         } catch {
             // Apple Intelligence が無効・非対応のときもここ。理由は `AppStatus` に出る
