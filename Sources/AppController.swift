@@ -22,6 +22,11 @@ final class AppController {
     }
     private var pending: PendingRecording?
 
+    /// 録音中にオーディオデバイスの構成が変わったか（Issue #77）。
+    /// 変わった時点でエンジンは止まり、以降の発話はサンプルに入らないので、
+    /// 「途中までで処理した」ことを結果表示に必ず出す。停止処理で読んで false に戻す。
+    private var audioDeviceChangedDuringRecording = false
+
     // MARK: - エンジン（Issue #27）
 
     /// 実装は差し替え可能で、**いったん作ったものは使い回す**。
@@ -91,6 +96,11 @@ final class AppController {
         recorder.onLevel = { [hud] level in
             Task { @MainActor in hud.push(level: level) }
         }
+        // 録音中に AirPods が繋がる／USB マイクを抜くと AVAudioEngine が止まり、
+        // 以降の音が入らない。黙って欠けたまま挿入しないよう、その場で締める（Issue #77）。
+        recorder.onConfigurationChange = { [weak self] in
+            Task { @MainActor in self?.handleAudioConfigurationChange() }
+        }
         hud.onStop = { [weak self] in self?.stopRecording() }
         hud.onCancel = { [weak self] in self?.cancelRecording() }
 
@@ -118,6 +128,14 @@ final class AppController {
     }
 
     private func reloadSpeechEngine() async {
+        // 録音中・文字起こし中に載せ替えると、マイクが開いたまま状態だけが上書きされて
+        // 録音を止める手段が無くなり、次の録音でクラッシュする（Issue #77）。
+        // UI 側でも切り替えを無効にしてあるが、経路を 1 つに絞れないのでここでも守る。
+        guard state.status.canSwitchEngine else {
+            NSLog("koebun: 録音・処理中のため音声認識エンジンの切り替えを見送りました")
+            return
+        }
+
         state.update(.loadingModel(step: "音声認識モデルを読み込み中…"))
 
         guard let (kind, engine) = resolveSpeechEngine() else {
@@ -255,6 +273,9 @@ final class AppController {
         SoundPlayer.play(stop)
 
         let samples = recorder.stop()
+        // ここで読んで戻す（この録音ぶんの事情なので、次の録音へ持ち越さない）。
+        let deviceChanged = audioDeviceChangedDuringRecording
+        audioDeviceChangedDuringRecording = false
         Task { @MainActor in
             do {
                 guard let (speechKind, speechEngine) = resolveSpeechEngine() else {
@@ -292,6 +313,11 @@ final class AppController {
                     showResultPanel: SettingsStore.shared.showResultPanel,
                     resultLocation: SettingsStore.shared.resultLocationDescription)
                 state.update(presentation.status)
+                // 途中でデバイスが変わって音が欠けたことは、成功表示に紛れさせない（Issue #77）。
+                // 失敗表示のときは原因の方が大事なので上書きしない。
+                if deviceChanged, !presentation.status.isFailed {
+                    state.update(.warned(message: "録音デバイスが変わったため、切り替え前までの音声で処理しました"))
+                }
                 let inserted = !text.isEmpty && outcome.isSucceeded
 
                 // 履歴は挿入のあとにバックグラウンドで書き出す（保存が挿入を遅らせない）。
@@ -426,7 +452,17 @@ final class AppController {
         guard state.isRecording else { return }
         _ = recorder.stop()
         pending = nil
+        audioDeviceChangedDuringRecording = false
         hud.hide()
         state.update(.idle)
+    }
+
+    /// 録音中にオーディオデバイスの構成が変わった。AVAudioEngine は既に止まっていて
+    /// 以降の音は入らないので、ここで締めて途中までの音声を処理する（Issue #77）。
+    private func handleAudioConfigurationChange() {
+        guard state.isRecording else { return }
+        NSLog("koebun: 録音中にオーディオデバイスが変わったため録音を終了します")
+        audioDeviceChangedDuringRecording = true
+        stopRecording()
     }
 }

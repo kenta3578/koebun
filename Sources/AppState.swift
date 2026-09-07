@@ -31,6 +31,25 @@ enum AppStatus: Equatable {
         }
     }
 
+    /// 失敗表示か。原因を残したいので、他の表示で上書きしてよいかの判断に使う。
+    var isFailed: Bool {
+        if case .failed = self { return true }
+        return false
+    }
+
+    /// 音声認識エンジンを載せ替えてよい状態か。
+    ///
+    /// 録音中・文字起こし中に載せ替えると、マイクが開いたまま状態だけが上書きされて
+    /// **録音を止める手段が無くなる**（`isRecording` が false になるので右⌥ で止められず、
+    /// `canStartRecording` も false なので始められない）。Issue #77。
+    /// 起動時は `.loadingModel` から読み込むので、そこは通す。
+    var canSwitchEngine: Bool {
+        switch self {
+        case .recording, .processing: return false
+        case .loadingModel, .idle, .done, .warned, .failed: return true
+        }
+    }
+
     /// 完了表示を待機へ戻すまでの時間。
     static let doneDisplayDuration: Duration = .seconds(1.5)
     /// 警告表示を待機へ戻すまでの時間。読んで判断する必要があるので完了より長く出す。

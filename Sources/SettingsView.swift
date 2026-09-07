@@ -19,6 +19,8 @@ struct SettingsView: View {
 struct GeneralSettingsView: View {
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var loginItem = LoginItem.shared
+    /// エンジンの切り替えを録音中・処理中だけ止めるために見る（Issue #77）。
+    @ObservedObject private var appState = AppState.shared
     /// ホットキーの録り中か（AppState の録音状態とは無関係）。
     @State private var isCapturingHotKey = false
     @State private var captureMonitors: [Any] = []
@@ -89,6 +91,14 @@ struct GeneralSettingsView: View {
                 }
                 .onChange(of: settings.speechEngine) { _, _ in
                     AppController.shared.loadSpeechEngine()
+                }
+                // 録音中・文字起こし中の載せ替えはマイクを開いたままにする（Issue #77）。
+                .disabled(!appState.status.canSwitchEngine)
+
+                if !appState.status.canSwitchEngine {
+                    Text("録音・処理が終わるまでエンジンは切り替えられません。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Text("既定は Apple 音声認識です。OS 内蔵なのでアプリ側のダウンロードも"
