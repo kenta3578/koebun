@@ -95,8 +95,9 @@ final class AppController {
         // 永久に効かない状態を作らず、許可されるまで見張る（Issue #78）。
         updateAccessibilityState()
 
-        // 保存期間を過ぎた履歴を掃除する（ディスクを食い続けないように）。
-        HistoryStore.shared.purgeExpired()
+        // 保存先を 0700 で用意し、保存期間の掃除を定期的に回す。起動時にしか掃除して
+        // いなかったので、常駐したままだと「7日」と表示しながら消えなかった（Issue #81）。
+        HistoryStore.shared.start()
 
         // クリップボードは「録音開始の3秒前」まで遡って採用するので、使うときは常時見張る。
         // 整形 OFF（既定）なら消費先が無いので回さない（Issue #57）。
@@ -337,13 +338,14 @@ final class AppController {
                 let inserted = !text.isEmpty && outcome.isSucceeded
 
                 // 履歴は挿入のあとにバックグラウンドで書き出す（保存が挿入を遅らせない）。
+                // 無音だった発話は `record` 側で弾く（Issue #81）。
                 HistoryStore.shared.record(
                     samples: samples,
                     rawText: raw,
                     replacedText: replaced,
                     formattedText: formatting.result?.text,
                     modeName: formatting.modeName,
-                    prompt: formatting.result?.prompt,
+                    prompt: formatting.promptForHistory,
                     // どのエンジンで処理したかを残す。これがエンジン比較（Issue #27）の一次データ。
                     speechEngine: speechKind.rawValue,
                     formattingEngine: formatting.engineKind?.rawValue,
@@ -395,6 +397,24 @@ final class AppController {
         var engineKind: FormattingEngineKind? = nil
         /// 整形を試みたモデルの識別子。
         var modelId: String? = nil
+        /// 履歴に残すプロンプト。**コンテキストを除いてある**（Issue #81）。
+        var promptForHistory: String? = nil
+    }
+
+    /// 履歴に残すプロンプトを作る。
+    ///
+    /// 送信プロンプトをそのまま残すと、`【選択テキスト】` `【クリップボード】` の中身
+    /// （開いている `.env`・API キー・顧客データ）が `~/koebun/history/*/meta.json` に
+    /// 平文で保存期間ぶん残る。ユーザーが「発話の履歴」と認識している場所に、
+    /// 発話していないものが入るのはプライバシーの約束を破る（Issue #81）。
+    /// ルール部分は残すので、プロンプト改善のループは従来どおり回せる。
+    private static func promptForHistory(_ prompt: String?, contextBlock: String?) -> String? {
+        guard let prompt else { return nil }
+        guard let contextBlock, !contextBlock.isEmpty else { return prompt }
+        return prompt.replacingOccurrences(
+            of: contextBlock,
+            with: "（コンテキストは履歴に残していません）"
+        )
     }
 
     /// 置換後テキストを現在のモードで整形する。**例外を外に出さない**。
@@ -433,7 +453,8 @@ final class AppController {
             )
             return FormatOutcome(
                 modeName: mode.name, result: result, attempted: true, failure: nil,
-                engineKind: engineKind, modelId: result.modelId
+                engineKind: engineKind, modelId: result.modelId,
+                promptForHistory: Self.promptForHistory(result.prompt, contextBlock: contextBlock)
             )
         } catch {
             // Apple Intelligence が無効・非対応のときもここ。理由は `AppStatus` に出る

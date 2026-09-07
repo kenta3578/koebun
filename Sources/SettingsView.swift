@@ -24,6 +24,8 @@ struct GeneralSettingsView: View {
     /// ホットキーの録り中か（AppState の録音状態とは無関係）。
     /// ウィンドウを閉じても監視が残らないよう、状態は View の外に置く（Issue #78）。
     @ObservedObject private var hotKeyCapture = HotKeyCapture.shared
+    /// 履歴の全削除は取り消せないので必ず確認する（Issue #81）。
+    @State private var isConfirmingDeleteAll = false
 
     var body: some View {
         Form {
@@ -193,6 +195,8 @@ struct GeneralSettingsView: View {
                     HistoryStore.shared.purgeExpired()
                 }
 
+                Toggle("録音した音声も保存する", isOn: $settings.saveAudio)
+
                 HStack {
                     Text("保存先")
                     Spacer()
@@ -202,8 +206,17 @@ struct GeneralSettingsView: View {
                     .buttonStyle(.link)
                 }
 
+                HStack {
+                    Text("すべての履歴")
+                    Spacer()
+                    // 一覧は新しい 500 件しか読まないので、これが無いとそれより古いものを
+                    // アプリから消す手段が無い（Issue #81）。
+                    Button("削除…", role: .destructive) { isConfirmingDeleteAll = true }
+                }
+
                 Text("1発話ごとに録音・生テキスト・置換後テキスト・送信プロンプトを保存します。"
-                     + "整形 AI が事実を書き換えていないか、生テキストと突き合わせて確認できます。")
+                     + "整形 AI が事実を書き換えていないか、生テキストと突き合わせて確認できます。"
+                     + "送信プロンプトからは選択テキストとクリップボードの中身を除いて保存します。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -216,6 +229,14 @@ struct GeneralSettingsView: View {
         // ビュー階層が生きたまま残るため）。実際の解除は SettingsWindowController の
         // windowWillClose が行う。ここは念のための保険（Issue #78）。
         .onDisappear { hotKeyCapture.cancel() }
+        .confirmationDialog("すべての履歴を削除しますか？",
+                            isPresented: $isConfirmingDeleteAll,
+                            titleVisibility: .visible) {
+            Button("削除", role: .destructive) { HistoryStore.shared.deleteAll() }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("録音・生テキスト・送信プロンプトがすべて消えます。取り消せません。")
+        }
     }
 
     /// 音のピッカーと試聴ボタンの1行（Issue #48）。

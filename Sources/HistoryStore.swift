@@ -119,7 +119,7 @@ enum HistoryFiles {
     /// 保存先フォルダを Finder で開く（1度も保存していないと存在しないので作ってから開く）。
     @MainActor
     static func revealRoot() {
-        try? FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try? createPrivateDirectory(at: rootURL)
         NSWorkspace.shared.open(rootURL)
     }
 
@@ -149,28 +149,55 @@ enum HistoryFiles {
 
     /// 1発話ぶんを `~/koebun/history/<timestamp>/` に書き出す。
     ///
-    /// 音声の書き出しに失敗しても meta.json は必ず残す（テキストの方が検証に効く）。
+    /// **meta.json を先に書く。** 音声を先に書くと、ディスクが逼迫したときに
+    /// 「audio.wav だけがある」状態になり、一覧にも出ず削除もできない孤児が残る
+    /// （10 分の録音で約 38MB、`.atomic` は一時ファイル + rename なので一時的に 2 倍の
+    /// 空きを要求する。大きい方が通って後の小さい方が落ちるのは典型パターン）。
+    /// 先に書けば「メタが無い＝存在しない履歴」という不変条件が保てる（Issue #81）。
     static func write(_ entry: HistoryEntry, samples: [Float]) throws -> HistoryEntry {
         var entry = entry
         let dir = directoryURL(for: entry.id)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try createPrivateDirectory(at: dir)
+        let metaURL = dir.appendingPathComponent(metaFileName)
 
-        if !samples.isEmpty {
-            do {
-                try wavData(from: samples).write(to: dir.appendingPathComponent(audioFileName), options: .atomic)
-                entry.audio = HistoryEntry.Audio(
-                    fileName: audioFileName,
-                    sampleRate: sampleRate,
-                    channels: channels,
-                    durationSeconds: Double(samples.count) / Double(sampleRate)
-                )
-            } catch {
-                NSLog("koebun: 履歴の音声書き出しに失敗しました: \(error)")
-            }
+        try encoder.encode(entry).write(to: metaURL, options: .atomic)
+
+        guard !samples.isEmpty else { return entry }
+        do {
+            try wavData(from: samples).write(to: dir.appendingPathComponent(audioFileName), options: .atomic)
+            entry.audio = HistoryEntry.Audio(
+                fileName: audioFileName,
+                sampleRate: sampleRate,
+                channels: channels,
+                durationSeconds: Double(samples.count) / Double(sampleRate)
+            )
+            // 音声の情報を含めて書き直す。
+            try encoder.encode(entry).write(to: metaURL, options: .atomic)
+        } catch {
+            NSLog("koebun: 履歴の音声書き出しに失敗しました: \(error)")
         }
-
-        try encoder.encode(entry).write(to: dir.appendingPathComponent(metaFileName), options: .atomic)
         return entry
+    }
+
+    /// 履歴のディレクトリに使う権限。
+    ///
+    /// 既定（0755）のままだと、マルチユーザーの Mac で他アカウントから発話の全文と
+    /// 音声を読める。`~/koebun` は Desktop や Documents と違い TCC の保護対象外（Issue #81）。
+    private static let privateAttributes: [FileAttributeKey: Any] = [.posixPermissions: 0o700]
+
+    static func createPrivateDirectory(at url: URL) throws {
+        try FileManager.default.createDirectory(
+            at: url, withIntermediateDirectories: true, attributes: privateAttributes
+        )
+    }
+
+    /// 保存先を用意し、既にあるものも 0700 に締め直す（以前は 0755 で作っていた）。
+    static func prepareRoot() {
+        let manager = FileManager.default
+        try? createPrivateDirectory(at: rootURL)
+        for url in [rootURL.deletingLastPathComponent(), rootURL] {
+            try? manager.setAttributes(privateAttributes, ofItemAtPath: url.path)
+        }
     }
 
     /// 16kHz / mono / Float32 のサンプルを WAV（IEEE float, fmt tag 3）にする。
@@ -225,7 +252,11 @@ enum HistoryFiles {
 
         return newest.compactMap { name in
             let url = directoryURL(for: name).appendingPathComponent(metaFileName)
-            guard let data = try? Data(contentsOf: url) else { return nil }
+            guard let data = try? Data(contentsOf: url) else {
+                // 無言で読み飛ばすと、音声だけが残った孤児に気づけない（Issue #81）。
+                NSLog("koebun: 履歴 \(name)/\(metaFileName) がありません（録音だけが残っている可能性があります）")
+                return nil
+            }
             guard var entry = try? decoder.decode(HistoryEntry.self, from: data) else {
                 NSLog("koebun: 履歴 \(name)/\(metaFileName) を読めませんでした")
                 return nil
@@ -237,7 +268,24 @@ enum HistoryFiles {
     }
 
     static func delete(id: String) {
-        try? FileManager.default.removeItem(at: directoryURL(for: id))
+        do {
+            try FileManager.default.removeItem(at: directoryURL(for: id))
+        } catch CocoaError.fileNoSuchFile {
+            // 既に無いのは正常（purge と重なったときなど）。
+        } catch {
+            // 握り潰すと「消したのに復活した」の原因が追えない（Issue #81）。
+            NSLog("koebun: 履歴 \(id) の削除に失敗しました: \(error)")
+        }
+    }
+
+    /// 履歴をすべて消す。`listLimit`（500 件）より古いものは一覧に出ないので、
+    /// これが無いと**アプリから消す手段が存在しない**（Issue #81）。
+    static func deleteAll() {
+        let manager = FileManager.default
+        guard let names = try? manager.contentsOfDirectory(atPath: rootURL.path) else { return }
+        for name in names where !name.hasPrefix(".") {
+            delete(id: name)
+        }
     }
 
     /// 保存期間を過ぎたディレクトリを削除する。`retentionDays <= 0` なら無期限（何もしない）。
@@ -284,8 +332,31 @@ final class HistoryStore: ObservableObject {
     /// ディスクへ書き出し中の履歴。`reload` はディスクの一覧にこれを合成する
     /// （書き込み完了前に再読み込みすると直前の発話が一覧から消えていた。Issue #63）。
     private var writing: [HistoryEntry.ID: HistoryEntry] = [:]
+    /// 削除された ID。書き出しが後から完了しても復活させないため（Issue #81）。
+    private var deleted: Set<HistoryEntry.ID> = []
+    /// 保存期間の掃除を定期的に回すタイマー。
+    private var purgeTimer: Timer?
+    /// 掃除の間隔。常駐したまま日付をまたいでも、その日のうちに効くようにする。
+    private static let purgeInterval: TimeInterval = 60 * 60
 
     private init() {}
+
+    /// 保存先を用意し、保存期間の掃除を始める（起動時に一度だけ呼ぶ）。
+    ///
+    /// 以前は起動時と設定変更時にしか掃除していなかったので、メニューバー常駐で
+    /// 何週間も動かしていると「7日」と表示しながら消えなかった。保存期間はこのアプリで
+    /// 唯一の明示的なプライバシー制御なので、表示と実挙動の食い違いが一番効く（Issue #81）。
+    func start() {
+        HistoryFiles.prepareRoot()
+        purgeExpired()
+        guard purgeTimer == nil else { return }
+        let timer = Timer(timeInterval: Self.purgeInterval, repeats: true) { _ in
+            Task { @MainActor in HistoryStore.shared.purgeExpired() }
+        }
+        timer.tolerance = Self.purgeInterval / 4
+        RunLoop.main.add(timer, forMode: .common)
+        purgeTimer = timer
+    }
 
     // MARK: - 記録
 
@@ -316,6 +387,10 @@ final class HistoryStore: ObservableObject {
         diff: FormatDiff? = nil,
         inserted: Bool
     ) {
+        // 無音（文字起こしが何も返さなかった）は残さない。誤爆した録音の WAV が
+        // 溜まり続けるだけで、後から見ても何も分からない（Issue #81）。
+        guard !rawText.isEmpty || !replacedText.isEmpty else { return }
+
         let createdAt = Date()
         var entry = HistoryEntry(
             createdAt: createdAt,
@@ -336,13 +411,16 @@ final class HistoryStore: ObservableObject {
         entries.insert(entry, at: 0)
         writing[entry.id] = entry
 
+        // 音声を残すかは設定で選べる。他人に配る前提だと「発話した音声が全部ディスクに
+        // 残る」ことがユーザーの選択になっていないので、切れるようにする（Issue #81）。
+        let saveAudio = SettingsStore.shared.saveAudio
         Task.detached(priority: .utility) {
             do {
-                let written = try HistoryFiles.write(entry, samples: samples)
+                let written = try HistoryFiles.write(entry, samples: saveAudio ? samples : [])
                 await MainActor.run { HistoryStore.shared.finishWriting(written) }
             } catch {
                 NSLog("koebun: 履歴の保存に失敗しました: \(error)")
-                await MainActor.run { HistoryStore.shared.writing[entry.id] = nil }
+                await MainActor.run { HistoryStore.shared.abandonWriting(entry.id) }
             }
         }
     }
@@ -350,8 +428,24 @@ final class HistoryStore: ObservableObject {
     /// 書き出し後の内容（音声情報など）を一覧側に反映し、書き込み中の印を外す。
     private func finishWriting(_ entry: HistoryEntry) {
         writing[entry.id] = nil
+        // 書き出しの最中に削除されていたら、書き上がったものを消し直す。
+        // これが無いと、削除タスクが先に走ったときに書き出しがディレクトリを作り直し、
+        // 消したはずの音声と全文がディスクに残る（Issue #81）。
+        if deleted.remove(entry.id) != nil {
+            let id = entry.id
+            Task.detached(priority: .utility) { HistoryFiles.delete(id: id) }
+            return
+        }
         guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
         entries[index] = entry
+    }
+
+    /// 書き出しに失敗した分の後始末。中途半端に残ったディレクトリも消す。
+    private func abandonWriting(_ id: HistoryEntry.ID) {
+        writing[id] = nil
+        deleted.remove(id)
+        entries.removeAll { $0.id == id }
+        Task.detached(priority: .utility) { HistoryFiles.delete(id: id) }
     }
 
     /// ディスクから読んだ一覧に、まだ書き込み中の履歴を合成して置き換える。
@@ -371,9 +465,29 @@ final class HistoryStore: ObservableObject {
     }
 
     func delete(_ entry: HistoryEntry) {
-        entries.removeAll { $0.id == entry.id }
         let id = entry.id
+        entries.removeAll { $0.id == id }
+        // 書き込み中の印も外す。残っていると `reload` が `writing` から復元して
+        // 一覧に戻ってくる（Issue #81）。
+        writing[id] = nil
+        // 書き出しが後から完了したときに消し直せるよう覚えておく。
+        deleted.insert(id)
+        if deleted.count > 64 { deleted = Set(deleted.sorted().suffix(32)) }
         Task.detached(priority: .utility) { HistoryFiles.delete(id: id) }
+    }
+
+    /// 履歴をすべて消す。
+    ///
+    /// 一覧は新しい 500 件しか読まないので、これが無いと**それより古いものを
+    /// アプリから消す手段が存在しない**（保存期間「無期限」だと恒久的に残る）。Issue #81。
+    func deleteAll() {
+        entries.removeAll()
+        writing.removeAll()
+        deleted.removeAll()
+        Task.detached(priority: .utility) {
+            HistoryFiles.deleteAll()
+            await MainActor.run { HistoryStore.shared.reload() }
+        }
     }
 
     /// 保存期間を過ぎた履歴を削除する（起動時と設定変更時に呼ぶ）。
