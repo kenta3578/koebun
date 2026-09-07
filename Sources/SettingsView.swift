@@ -34,6 +34,10 @@ struct GeneralSettingsView: View {
                     get: { loginItem.isEnabled },
                     set: { loginItem.setEnabled($0) }
                 ))
+                // どちらも押しても必ず失敗する。`requiresApproval` はアプリ側から解除
+                // できず（下の「ログイン項目を開く」が唯一の手段）、`/Applications` の外
+                // からの登録は壊れたログイン項目を作るだけ（Issue #84）。
+                .disabled(loginItem.requiresApproval || loginItem.isOutsideApplications)
 
                 Text("ログイン時にメニューバーへ常駐します（Dock には出ません）。"
                      + "この設定はシステム設定の「一般 > ログイン項目と機能拡張」と同じものなので、"
@@ -500,6 +504,7 @@ struct ReplacementsSettingsView: View {
                         }
                         .buttonStyle(.borderless)
                         .help("このルールを削除")
+                        .accessibilityLabel("このルールを削除")
                     }
                     .textFieldStyle(.roundedBorder)
                 }
@@ -552,17 +557,7 @@ struct ReplacementsSettingsView: View {
     }
 
     private func fillerField(_ title: String, words: Binding<[String]>) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            TextField("", text: Binding(
-                get: { words.wrappedValue.joined(separator: "、") },
-                set: { words.wrappedValue = $0.split(whereSeparator: { "、,".contains($0) })
-                    .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
-            ), axis: .vertical)
-            .textFieldStyle(.roundedBorder)
-            .lineLimit(2...4)
-        }
-        .frame(maxWidth: .infinity)
+        FillerWordsField(title: title, words: words)
     }
 
     /// 既定の記号ルールのうち、`from` が未登録のものだけを追加する。
@@ -571,5 +566,58 @@ struct ReplacementsSettingsView: View {
         let missing = ReplacementStore.defaultRules.filter { !existing.contains($0.from.lowercased()) }
         guard !missing.isEmpty else { return }
         store.rules.append(contentsOf: missing)
+    }
+}
+
+/// フィラー語の編集欄。
+///
+/// 配列と文字列を毎打鍵で往復させると `get(set(s)) != s` になり、区切り文字（`、`）を
+/// 打った瞬間に `filter { !$0.isEmpty }` で落ちて消える。続けて次の語を打つと**既存の語に
+/// 連結されて壊れる**ため、UI から語を追加する正規の手段が存在しなかった（Issue #84）。
+/// 編集中は文字列のまま持ち、確定（Enter・フォーカスを外す）したときだけ配列へ落とす。
+/// 保存も確定時の1回で済む（以前は 1 打鍵ごとに `fillers.json` を書き出していた）。
+private struct FillerWordsField: View {
+    let title: String
+    @Binding var words: [String]
+
+    @State private var text = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            TextField("", text: $text, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(2...4)
+                .focused($isFocused)
+                .accessibilityLabel(title)
+                .onAppear { text = Self.join(words) }
+                // 外から変わったとき（「既定の語に戻す」）は表示を作り直す。編集中は触らない。
+                .onChange(of: words) { _, new in
+                    guard !isFocused else { return }
+                    text = Self.join(new)
+                }
+                .onChange(of: isFocused) { _, focused in
+                    if !focused { commit() }
+                }
+                .onSubmit { commit() }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func commit() {
+        let parsed = Self.split(text)
+        if parsed != words { words = parsed }
+        text = Self.join(parsed)
+    }
+
+    private static func join(_ words: [String]) -> String {
+        words.joined(separator: "、")
+    }
+
+    private static func split(_ text: String) -> [String] {
+        text.split(whereSeparator: { "、,".contains($0) })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 }

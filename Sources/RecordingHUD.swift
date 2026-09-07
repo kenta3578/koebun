@@ -381,7 +381,7 @@ struct RecordingHUDView: View {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(.orange)
                 Text("整形で\(diff.shortSummary)")
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
@@ -558,9 +558,9 @@ final class RecordingHUDController {
         let panel = self.panel ?? makePanel()
         self.panel = panel
         applyPanelSize()
-        // 位置を決めるのは初回と、設定で位置を変えた直後だけ。
+        // 位置を決めるのは初回・設定で位置を変えた直後・**表示先の画面から外れたとき**。
         // それ以外はユーザーがドラッグした位置を保つ。
-        if isNew || needsReposition { applyPanelPosition() }
+        if isNew || needsReposition || isOffCurrentScreen() { applyPanelPosition() }
         panel.orderFrontRegardless()
         installHoverMonitors()
     }
@@ -793,7 +793,37 @@ final class RecordingHUDController {
             ? previous.maxY - size.height
             : previous.minY
         panel.setContentSize(size)
-        panel.setFrameOrigin(CGPoint(x: previous.minX + (previous.width - size.width) / 2, y: y))
+        let origin = CGPoint(x: previous.minX + (previous.width - size.width) / 2, y: y)
+        panel.setFrameOrigin(Self.clamped(origin, size: size))
+    }
+
+    /// パネルが、いまマウスのある画面から外れているか。
+    ///
+    /// 位置を決めるのが初回と設定変更だけだったので、外部ディスプレイで最初に録音すると
+    /// 内蔵ディスプレイへ移っても HUD は外部に出続けた。ディスプレイを外した場合は
+    /// borderless window が画面内クランプの対象外なので存在しない座標に出て、
+    /// **見えないまま Esc 監視だけが張られた**状態になっていた（Issue #84）。
+    private func isOffCurrentScreen() -> Bool {
+        guard let panel else { return false }
+        let mouse = NSEvent.mouseLocation
+        let target = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
+        guard let target else { return false }
+        return !target.frame.intersects(panel.frame)
+    }
+
+    /// パネルの原点を、いる画面の可視領域に収める。
+    ///
+    /// 幅の変更を「中心を保つ」だけで行っていたので、画面端へドラッグした HUD が
+    /// 結果パネル（380×160）に育つと右側が画面外へ出て、「設定を開く」「閉じる」が
+    /// 押せなくなっていた。失敗パネルは自動で閉じないので出しっぱなしになる（Issue #84）。
+    private static func clamped(_ origin: CGPoint, size: CGSize) -> CGPoint {
+        let rect = CGRect(origin: origin, size: size)
+        let screen = NSScreen.screens.first { $0.frame.intersects(rect) } ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return origin }
+        // 画面より大きいパネルは想定しないが、その場合は左下に寄せる。
+        let x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
+        let y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
+        return CGPoint(x: x, y: y)
     }
 
     // MARK: パネル生成
@@ -834,6 +864,11 @@ final class RecordingHUDController {
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.animationBehavior = .utilityWindow
+        // 画面共有・画面収録に映さない。HUD は本人が見るためのもので、共有相手に
+        // 見せる必要は無い。失敗パネルは明示的に閉じるまで残り、`.canJoinAllSpaces` で
+        // 全 Space の最前面に付いてくるので、会議で共有中に挿入が失敗すると
+        // 直前に喋った文が参加者全員に見え続けていた（Issue #84）。
+        panel.sharingType = .none
         return panel
     }
 
