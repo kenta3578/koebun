@@ -246,13 +246,50 @@ final class SettingsStore: ObservableObject {
     }
 
     /// keyCode が押下状態かを modifier flags で判定。
+    /// その修飾キーが押されているか。**左右を区別する**。
+    ///
+    /// `NSEvent.ModifierFlags` は左右を持たないので、生の rawValue にあるデバイス依存マスク
+    /// （NX_DEVICE*KEYMASK）を見る。区別しないと、左⌥ を押したまま右⌥ を離したときに
+    /// 「まだ押されている」と誤判定し、`isDown` が固着して次の録音が始まらない（Issue #78）。
     static func isKeyDown(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+        if let mask = deviceMask(for: keyCode) {
+            return flags.rawValue & mask != 0
+        }
+        // fn は左右が無いので、通常のフラグで見る。
+        return keyCode == 63 && flags.contains(.function)
+    }
+
+    /// 左右を区別するためのデバイス依存マスク。左右の無いキー（fn）は nil。
+    private static func deviceMask(for keyCode: UInt16) -> UInt? {
         switch keyCode {
-        case 58, 61: return flags.contains(.option)
-        case 54, 55: return flags.contains(.command)
-        case 59, 62: return flags.contains(.control)
-        case 63:     return flags.contains(.function)
-        default:     return false
+        case 59: return 0x0000_0001  // 左⌃
+        case 62: return 0x0000_2000  // 右⌃
+        case 55: return 0x0000_0008  // 左⌘
+        case 54: return 0x0000_0010  // 右⌘
+        case 58: return 0x0000_0020  // 左⌥
+        case 61: return 0x0000_0040  // 右⌥
+        default: return nil
+        }
+    }
+
+    /// そのキーが**単独で**押されているか（他の修飾キーが一緒に押されていない）。
+    ///
+    /// これを見ないと、⌥⌘→ でのタブ切替・⌥+ドラッグ・⌥e のような入力のたびに
+    /// 録音が開始／停止する。右⌥ をほとんど使わない環境でだけ成り立っていた（Issue #78）。
+    static func isSoloPress(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+        let own = ownFlag(for: keyCode)
+        let others: [NSEvent.ModifierFlags] = [.command, .option, .control, .shift, .function]
+        return !others.contains { $0 != own && flags.contains($0) }
+    }
+
+    /// そのキー自身が立てるフラグ（単独押下の判定で自分を除くために使う）。
+    private static func ownFlag(for keyCode: UInt16) -> NSEvent.ModifierFlags? {
+        switch keyCode {
+        case 58, 61: return .option
+        case 54, 55: return .command
+        case 59, 62: return .control
+        case 63:     return .function
+        default:     return nil
         }
     }
 }

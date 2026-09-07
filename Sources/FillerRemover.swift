@@ -17,13 +17,29 @@ struct FillerList: Codable, Equatable {
     var atBoundary: [String]
 
     static let `default` = FillerList(
-        anywhere: ["えっと", "えーっと", "えーと", "えーっ", "えー", "うーん", "んー",
-                   "なんか", "なんていうか", "っていうか", "ていうか"],
-        atBoundary: ["あのー", "あの", "まあ", "まぁ", "その", "で"]
+        // 他の語の一部になりにくい語だけを置く。「なんか」（＝何か・私なんか）や
+        // 「えー」（＝へえー）のように普通の語に含まれるものは境界側で扱う（Issue #82）。
+        anywhere: ["えっと", "えーっと", "えーと", "えーっ", "うーん", "んー",
+                   "なんていうか", "っていうか"],
+        atBoundary: ["あのー", "あの", "まあ", "まぁ", "その", "なんか", "えー", "ていうか", "で"]
     )
 }
 
 enum FillerRemover {
+
+    /// 「その」「あの」などの直後に来ると**連語・指示語**になるひらがな。
+    ///
+    /// これが続くときは文頭でも消さない。無いと「そのため」→「ため」、「そのまま」→「まま」、
+    /// 「あのひと」→「ひと」のように、普通の日本語の先頭が落ちる（Issue #82）。
+    /// フィラー除去は整形 LLM の前段で必ず走るので、消しすぎはそのままカーソルに入る。
+    /// 「なんか」に続く「あっ／あれ／ある」は「何かあったら」「何かあれば」の意味なので、
+    /// ここに入れて守る。読点があれば先に読点側の分岐で消えるため、
+    /// 「あの、ありがとう」のような本物のフィラーは取りこぼさない。
+    private static let keepSuffixes = [
+        "ため", "まま", "うち", "ほか", "あと", "とき", "ころ", "へん", "たび", "せつ",
+        "くらい", "ぐらい", "ひと", "かた", "とおり", "ばあい", "まあ", "ように", "ような",
+        "あっ", "あれ", "あり", "ある", "あたり",
+    ]
 
     /// フィラーを取り除き、残骸（連続する読点・文頭の読点・空文）を掃除したテキストを返す。
     static func apply(_ text: String, fillers: FillerList = .default) -> String {
@@ -41,13 +57,18 @@ enum FillerRemover {
         let longWords = fillers.atBoundary.filter { $0.count >= 2 }
         let shortWords = fillers.atBoundary.filter { $0.count == 1 }
         let sentenceStart = "(?:^|(?<=[。！？!?\\n]))[ \\u3000]*"
+        // 語の**左**も境界（文頭・読点・句点・空白）であることを求める。これが無いと
+        // 「問題はその。」が「問題は。」になる（Issue #82）。
+        let leftBoundary = "(?:^|(?<=[、,。！？!?\\n])|(?<=[ \\u3000]))"
+        // 連語になるひらがなを除外する先読み。
+        let notKeep = alternation(Self.keepSuffixes).map { "(?!\($0))" } ?? ""
         if let pattern = alternation(longWords) {
-            // 2a. 文頭で、直後が読点・空白・伸ばし棒・ひらがな。
-            s = replace(s, pattern: "\(sentenceStart)\(pattern)[ー〜]*(?:[、,][ \\u3000]*|[ \\u3000]+|(?=[\\u3041-\\u3096]))", with: "")
+            // 2a. 文頭で、直後が読点・空白・伸ばし棒・ひらがな（連語になるひらがなを除く）。
+            s = replace(s, pattern: "\(sentenceStart)\(pattern)[ー〜]*(?:[、,][ \\u3000]*|[ \\u3000]+|(?=\(notKeep)[\\u3041-\\u3096]))", with: "")
             // 2b. 読点の直後で、直後に読点か句点（「けど、まあ。全然」→「けど、全然」）。
             s = replace(s, pattern: "(?<=[、,])[ \\u3000]*\(pattern)[ー〜]*[、,。]", with: "")
-            // 2c. 文末に付いた語（「だったあの。」→「だった。」）。
-            s = replace(s, pattern: "\(pattern)[ー〜]*(?=[。！？!?]|$)", with: "")
+            // 2c. 文末に付いた語（「だった。あの。」→「だった。」）。左が境界のときだけ。
+            s = replace(s, pattern: "\(leftBoundary)\(pattern)[ー〜]*(?=[。！？!?]|$)", with: "")
         }
         if let pattern = alternation(shortWords) {
             s = replace(s, pattern: "\(sentenceStart)\(pattern)[、,][ \\u3000]*", with: "")

@@ -38,4 +38,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         self.window = window
         window.makeKeyAndOrderFront(nil)
     }
+
+    /// ウィンドウを閉じるときの後始末。
+    ///
+    /// `isReleasedWhenClosed = false` でウィンドウを使い回すため、閉じても SwiftUI の
+    /// ビュー階層は生きたままで `.onDisappear` が発火しない。ホットキー録りの監視を
+    /// ここで止めないと、次に ⌘C を押しただけで録音キーがそれに書き換わり、
+    /// 画面は閉じているので何も表示されない（Issue #78）。
+    func windowWillClose(_ notification: Notification) {
+        HotKeyCapture.shared.cancel()
+    }
 }
