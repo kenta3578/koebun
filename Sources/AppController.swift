@@ -147,12 +147,19 @@ final class AppController {
             return
         }
 
-        state.update(.loadingModel(step: "音声認識モデルを読み込み中…"))
-
         guard let (kind, engine) = resolveSpeechEngine() else {
             state.update(.failed(reason: "Apple 音声認識には \(EngineSupport.requiresMacOS26)"))
             return
         }
+
+        // WhisperKit は初回に約2.9GB を取りに行く。「読み込み中」とだけ出すと
+        // 回線次第で数十分固まったように見える（Issue #83）。
+        let isDownloading = kind == .whisperKit && !Transcriber.hasCachedModel
+        state.update(.loadingModel(
+            step: isDownloading
+                ? "音声認識モデルをダウンロード中…（約2.9GB）"
+                : "音声認識モデルを読み込み中…"
+        ))
 
         // 選ばれなかった方を降ろす（WhisperKit なら約2.9GB が返る）。
         if kind != .whisperKit { await whisperTranscriber.unload() }
@@ -162,7 +169,13 @@ final class AppController {
             try await engine.load()
             state.update(.idle)
         } catch {
-            state.update(.failed(reason: "モデル読込失敗: \(error.localizedDescription)"))
+            // WhisperKit の modelsUnavailable は生のまま出すと「Model file not found at
+            // .../MelSpectrogram.mlmodelc」で、何をすればいいか分からない（Issue #83）。
+            let reason = isDownloading
+                ? "音声認識モデルを取得できませんでした（ネットワークと空き容量を確認してください）"
+                : "モデル読込失敗: \(error.localizedDescription)"
+            NSLog("koebun: 音声認識モデルの読み込みに失敗しました: \(error)")
+            state.update(.failed(reason: reason))
         }
     }
 
