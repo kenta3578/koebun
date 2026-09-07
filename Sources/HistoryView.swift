@@ -2,6 +2,11 @@ import SwiftUI
 import AppKit
 import AVFoundation
 
+extension Notification.Name {
+    /// 履歴ウィンドウが閉じられた。再生中の音声を止めるために使う（Issue #84）。
+    static let historyWindowWillClose = Notification.Name("koebun.historyWindowWillClose")
+}
+
 /// 履歴ウィンドウ。メニューバーの「履歴…」から開く。
 ///
 /// 目的は**整形 AI の書き換えをユーザーが自力で検証できるようにすること**
@@ -39,6 +44,9 @@ struct HistoryView: View {
     @State private var isAddingRule = false
     @State private var newRuleFrom = ""
     @State private var newRuleTo = ""
+    /// 削除の確認待ち。テキスト・送信プロンプト・録音がディスクごと消えて取り消せないので、
+    /// ワンクリックでは実行しない（しかもこのボタンの隣は「辞書に登録…」）。Issue #84。
+    @State private var pendingDeletion: HistoryEntry?
 
     private var selected: HistoryEntry? {
         store.entries.first { $0.id == selection }
@@ -59,6 +67,20 @@ struct HistoryView: View {
             }
         }
         .navigationTitle("履歴")
+        .confirmationDialog("この履歴を削除しますか？",
+                            isPresented: Binding(
+                                get: { pendingDeletion != nil },
+                                set: { if !$0 { pendingDeletion = nil } }
+                            ),
+                            titleVisibility: .visible) {
+            Button("削除", role: .destructive) {
+                if let entry = pendingDeletion { store.delete(entry) }
+                pendingDeletion = nil
+            }
+            Button("キャンセル", role: .cancel) { pendingDeletion = nil }
+        } message: {
+            Text("テキスト・送信プロンプト・録音が消えます。取り消せません。")
+        }
         .onAppear {
             store.reload()
             if selection == nil { selection = store.entries.first?.id }
@@ -90,7 +112,7 @@ struct HistoryView: View {
                         }
                         if entry.diff?.hasChanges == true {
                             Label("差分", systemImage: "exclamationmark.circle.fill")
-                                .foregroundStyle(.yellow)
+                                .foregroundStyle(.orange)
                         }
                     }
                     .font(.caption2)
@@ -114,6 +136,10 @@ struct HistoryView: View {
                 }
                 .buttonStyle(.borderless)
                 .help("一覧を再読み込み")
+                // .help は accessibility hint にしかならず、SF Symbols からラベルは
+                // 起こされない。VoiceOver では「ボタン」としか読まれず、隣の削除ボタンと
+                // 音声上まったく区別できなかった（Issue #84）。
+                .accessibilityLabel("一覧を再読み込み")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -135,6 +161,7 @@ struct HistoryView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                .accessibilityLabel("表示する内容")
 
                 textBox(entry)
 
@@ -158,6 +185,10 @@ struct HistoryView: View {
         }
         .onChange(of: entry.id) { _, _ in
             message = nil
+            stopPlayback()
+        }
+        // ウィンドウを閉じても .onDisappear は発火しないので、通知で止める（Issue #84）。
+        .onReceive(NotificationCenter.default.publisher(for: .historyWindowWillClose)) { _ in
             stopPlayback()
         }
     }
@@ -237,11 +268,12 @@ struct HistoryView: View {
             Spacer()
 
             Button(role: .destructive) {
-                store.delete(entry)
+                pendingDeletion = entry
             } label: {
                 Image(systemName: "trash")
             }
             .help("この履歴を削除")
+            .accessibilityLabel("この履歴を削除")
         }
     }
 
@@ -294,7 +326,7 @@ struct HistoryView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Label("整形で\(diff.shortSummary)があります", systemImage: "exclamationmark.circle.fill")
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(.orange)
 
                 ForEach(Array(diff.changes.enumerated()), id: \.offset) { _, change in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -321,8 +353,8 @@ struct HistoryView: View {
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color.yellow.opacity(0.10)))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.yellow.opacity(0.35)))
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.10)))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.orange.opacity(0.35)))
         } else if entry.diff != nil {
             Label("数値・URL・メールアドレスは整形前後で一致しています", systemImage: "checkmark.seal")
                 .font(.caption)
@@ -481,12 +513,21 @@ struct HistoryView: View {
 /// `.accessory` 常駐アプリなので SwiftUI の `Window` シーンは使わず、
 /// NSWindow を1枚だけ使い回して MenuBarExtra から直接開く。
 @MainActor
-final class HistoryWindowController {
+final class HistoryWindowController: NSObject, NSWindowDelegate {
     static let shared = HistoryWindowController()
 
     private var window: NSWindow?
 
-    private init() {}
+    private override init() { super.init() }
+
+    /// ウィンドウを閉じるときの後始末。
+    ///
+    /// `isReleasedWhenClosed = false` でウィンドウを使い回すため、閉じても SwiftUI の
+    /// `.onDisappear` は発火しない。止めないと `@State` の `AVAudioPlayer` が生き残り、
+    /// **自分の肉声が最後まで再生され続ける**（画面上に止める手段が無い）。Issue #84。
+    func windowWillClose(_ notification: Notification) {
+        NotificationCenter.default.post(name: .historyWindowWillClose, object: nil)
+    }
 
     func show() {
         HistoryStore.shared.reload()
@@ -510,6 +551,7 @@ final class HistoryWindowController {
         )
         window.title = "履歴"
         window.isReleasedWhenClosed = false
+        window.delegate = self
         window.contentView = NSHostingView(rootView: HistoryView())
         window.setFrameAutosaveName("koebun.history")
         window.center()
