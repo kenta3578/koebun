@@ -18,12 +18,57 @@ struct SettingsView: View {
 /// サウンド・ホットキーなど基本設定。
 struct GeneralSettingsView: View {
     @ObservedObject private var settings = SettingsStore.shared
+    @ObservedObject private var loginItem = LoginItem.shared
     /// ホットキーの録り中か（AppState の録音状態とは無関係）。
     @State private var isCapturingHotKey = false
     @State private var captureMonitors: [Any] = []
 
     var body: some View {
         Form {
+            Section("起動") {
+                Toggle("ログイン時に koebun を起動", isOn: Binding(
+                    get: { loginItem.isEnabled },
+                    set: { loginItem.setEnabled($0) }
+                ))
+
+                Text("ログイン時にメニューバーへ常駐します（Dock には出ません）。"
+                     + "この設定はシステム設定の「一般 > ログイン項目と機能拡張」と同じものなので、"
+                     + "そちらで切り替えても構いません。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if loginItem.requiresApproval {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("システム設定の「ログイン項目」でオフにされています。"
+                             + "アプリ側からは解除できません。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Button("ログイン項目を開く") { loginItem.openSystemSettings() }
+                            .buttonStyle(.link)
+                    }
+                }
+
+                if loginItem.isOutsideApplications {
+                    Text("いま動いている koebun が /Applications の外にあります"
+                         + "（\(Bundle.main.bundleURL.path)）。"
+                         + "ここで登録するとそのパスがログイン項目になるので、"
+                         + "scripts/install-local.sh で /Applications に入れてから設定してください。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let error = loginItem.lastError {
+                    Text("設定できませんでした: \(error)")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             Section("サウンド") {
                 soundRow("録音開始音", selection: $settings.startSound)
                 soundRow("録音停止音", selection: $settings.stopSound)
@@ -155,6 +200,8 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        // システム設定側で変えられている可能性があるので、開くたびに OS から読み直す。
+        .onAppear { loginItem.refresh() }
         .onDisappear { cancelHotKeyCapture() }
     }
 
