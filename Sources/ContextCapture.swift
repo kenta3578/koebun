@@ -25,6 +25,8 @@ struct CapturedContext: Sendable, Equatable {
     var clipboardText: String?
     /// 録音を開始した時刻。`【日時】` として渡す値であり、クリップボードの採用判定の基準でもある。
     var capturedAt: Date
+    /// 最前面アプリのプロセス ID。モードを決めたあとに AX を読み足すために持つ（Issue #80）。
+    var processIdentifier: pid_t?
 }
 
 // MARK: - プロンプトへの流し込み
@@ -84,8 +86,11 @@ enum ContextCapture {
     /// AX の応答待ちを打ち切る秒数。録音開始をここで待たせないための上限。
     private static let messagingTimeout: Float = 0.2
 
-    /// 録音開始時点のコンテキストを取る。クリップボードは停止時に `finalize` で足す。
-    static func captureAtRecordingStart() -> CapturedContext {
+    /// 最前面アプリだけを取る。**AX を使わない**ので軽く、権限も要らない。
+    ///
+    /// モードの判定（`appMatch`）に必要なのはここまで。挿入先が録音開始時と
+    /// 同じアプリかの照合（Issue #80）にも使うので、整形 OFF でも毎回取る。
+    static func captureApp() -> CapturedContext {
         var context = CapturedContext(capturedAt: Date())
 
         // HUD は `.nonactivatingPanel` なので、録音を始めても最前面アプリは相手のまま。
@@ -95,12 +100,24 @@ enum ContextCapture {
 
         context.appName = app.localizedName
         context.bundleId = app.bundleIdentifier
+        context.processIdentifier = app.processIdentifier
+        return context
+    }
 
+    /// モードが要求する項目だけを AX で読み足す。
+    ///
+    /// 以前は `windowTitle` と `selectedText` を無条件に読んでいたので、既定モード
+    /// （`ModeContext` が全 false）でも他アプリの選択テキストを毎回読んで捨てていた。
+    /// 取得範囲と用途が食い違っているのは、収集範囲の誤解を招くうえ、AX 同期 IPC
+    /// 2 本ぶん（最大 0.4 秒）の遅延を録音開始のホットパスに残す（Issue #80）。
+    static func addAXFields(to context: CapturedContext, for options: ModeContext) -> CapturedContext {
+        var context = context
+        guard options.windowTitle || options.selectedText else { return context }
         // 権限が無ければ AX は全部 nil を返す。無駄な IPC を投げずに諦める（アプリ名は取れている）。
-        guard AXIsProcessTrusted() else { return context }
+        guard AXIsProcessTrusted(), let pid = context.processIdentifier else { return context }
 
-        context.windowTitle = focusedWindowTitle(pid: app.processIdentifier)
-        context.selectedText = focusedSelectedText()
+        if options.windowTitle { context.windowTitle = focusedWindowTitle(pid: pid) }
+        if options.selectedText { context.selectedText = focusedSelectedText() }
         return context
     }
 
@@ -175,8 +192,11 @@ final class ClipboardWatcher {
     private var timer: Timer?
     private var lastChangeCount = NSPasteboard.general.changeCount
     private var lastChangeAt: Date?
-    /// この時刻まで、変化を「無かったこと」にする（自分の挿入でクリップボードを触る間）。
-    private var suppressedUntil: Date?
+    /// 自分が起こした変化の `changeCount`。ここに載っている変化は採用しない。
+    ///
+    /// 以前は「2秒間すべての変化を無視する」時間ベースだったので、その窓の中で
+    /// **ユーザーが**コピーしたものまで捨てていた（Issue #79）。
+    private var ignoredChangeCounts: Set<Int> = []
 
     private init() {}
 
@@ -197,17 +217,21 @@ final class ClipboardWatcher {
         timer?.invalidate()
         timer = nil
         lastChangeAt = nil
-        suppressedUntil = nil
+        ignoredChangeCounts.removeAll()
     }
 
-    /// 挿入処理がクリップボードを踏む間、その変化を採用しない。動いていなければ何もしない。
+    /// 自分が起こしたクリップボードの変化を採用対象から外す。
     ///
     /// これが無いと、連続で録音したとき**直前に自分が挿入した文章**が
     /// 「録音3秒前にコピーされた内容」として次の整形に混ざる。
-    func suppressChanges(for seconds: TimeInterval) {
-        guard timer != nil else { return }
-        poll()
-        suppressedUntil = Date().addingTimeInterval(seconds)
+    /// 見張っていないとき（整形 OFF）も記録しておく——途中で ON にしたときに
+    /// 古い自分の書き込みを拾わないようにするため。
+    func ignore(changeCount: Int) {
+        ignoredChangeCounts.insert(changeCount)
+        // 採用されずに積み上がる分を落とす（自分の書き込みは高々数個先までしか効かない）。
+        if ignoredChangeCounts.count > 8 {
+            ignoredChangeCounts = Set(ignoredChangeCounts.sorted().suffix(4))
+        }
     }
 
     /// 録音開始の `lookback` 秒前以降にコピーされていれば、その内容を返す。
@@ -216,7 +240,11 @@ final class ClipboardWatcher {
         guard let lastChangeAt,
               lastChangeAt >= recordingStartedAt.addingTimeInterval(-Self.lookback)
         else { return nil }
-        guard let text = NSPasteboard.general.string(forType: .string) else { return nil }
+        let pasteboard = NSPasteboard.general
+        // パスワードマネージャがコピーした内容は読まない。読むと整形プロンプトに載り、
+        // ~/koebun/history/*/meta.json に平文で残る（Issue #79）。
+        guard PasteboardPrivacy.isReadable(pasteboard) else { return nil }
+        guard let text = pasteboard.string(forType: .string) else { return nil }
         return ContextCapture.trimmed(text)
     }
 
@@ -224,8 +252,8 @@ final class ClipboardWatcher {
         let count = NSPasteboard.general.changeCount
         guard count != lastChangeCount else { return }
         lastChangeCount = count
-        // 抑止中の変化は時刻を更新しない＝採用対象にならない。
-        if let suppressedUntil, Date() < suppressedUntil { return }
+        // 自分が書いた変化は時刻を更新しない＝採用対象にならない。
+        if ignoredChangeCounts.remove(count) != nil { return }
         lastChangeAt = Date()
     }
 }

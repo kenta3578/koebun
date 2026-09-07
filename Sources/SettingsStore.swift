@@ -127,10 +127,17 @@ final class SettingsStore: ObservableObject {
     /// ホットパスから AX 同期 IPC と常駐タイマーを外す。
     var usesContext: Bool { formatterEnabled && contextInjectionEnabled }
 
-    /// 挿入できなかった結果がどこに残るか（メニューバーの文言に使う）。
+    /// 挿入できなかった・確認できなかった結果がどこに残るか（表示の文言に使う）。
+    ///
+    /// **実際に残る場所をすべて挙げる。** HUD に出すからといってクリップボードに
+    /// 残っていない訳ではなく、以前は「HUD」とだけ言って、クリップボードを踏んだまま
+    /// 戻していないことを隠していた（Issue #79）。
     var resultLocationDescription: String {
-        if showResultPanel { return "HUD" }
-        return keepResultOnClipboardWhenUnsure ? "クリップボードと履歴" : "履歴"
+        var places: [String] = []
+        if showResultPanel { places.append("HUD") }
+        if keepResultOnClipboardWhenUnsure { places.append("クリップボード") }
+        places.append("履歴")
+        return places.joined(separator: "・")
     }
 
     /// 履歴の保存期間の選択肢（日数 → 表示名）。0 = 無期限。

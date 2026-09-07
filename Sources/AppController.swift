@@ -255,12 +255,15 @@ final class AppController {
             // コンテキストは録音開始の**前**に取る。HUD を出したあとだと、
             // アプリによっては選択のハイライトが外れて選択テキストを読めなくなる。
             // 整形 OFF なら取らない（AX 同期 IPC で右⌥の反応が最大 400ms 遅れる。Issue #57）。
-            let context = SettingsStore.shared.usesContext
-                ? ContextCapture.captureAtRecordingStart() : nil
-            pending = PendingRecording(
-                context: context,
-                mode: ModeStore.shared.modeForRecording(context: context)
-            )
+            // アプリ情報だけは常に取る（NSWorkspace なので AX 不要・軽い）。挿入先が
+            // 録音開始時と同じかの照合に使うので、整形 OFF でも要る（Issue #80）。
+            var context = ContextCapture.captureApp()
+            let mode = ModeStore.shared.modeForRecording(context: context)
+            // モードが決まってから、そのモードが要求する項目だけを AX で読む（Issue #80）。
+            if SettingsStore.shared.usesContext {
+                context = ContextCapture.addAXFields(to: context, for: mode.context)
+            }
+            pending = PendingRecording(context: context, mode: mode)
 
             try recorder.start()
             state.update(.recording)
@@ -313,7 +316,10 @@ final class AppController {
                 let diff = inspectFormatting(before: replaced, after: formatting.result?.text)
 
                 // 挿入は成否を判定して返る。成功と確認できなければ結果を捨てない（Issue #13）。
-                let outcome: InsertionOutcome = text.isEmpty ? .succeeded : await TextInjector.insert(text)
+                // 録音を始めたアプリと違うところへ貼らないよう、照合用に渡す（Issue #80）。
+                let outcome: InsertionOutcome = text.isEmpty
+                    ? .succeeded
+                    : await TextInjector.insert(text, expectedBundleId: pending.context?.bundleId)
                 // 見せ方（メニューバーの状態と HUD の動き）は 1 か所で導出する（Issue #64）。
                 let presentation = InsertionPresentation.make(
                     outcome: outcome,
@@ -451,7 +457,8 @@ final class AppController {
     private func takePending() -> PendingRecording {
         var pending = self.pending ?? PendingRecording(context: nil, mode: ModeStore.shared.current)
         self.pending = nil
-        if let context = pending.context {
+        // クリップボードを足すのは整形で使うときだけ（読むこと自体を最小にする）。
+        if let context = pending.context, SettingsStore.shared.usesContext {
             pending.context = ContextCapture.finalize(context)
         }
         return pending

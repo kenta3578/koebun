@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon.HIToolbox
 
 /// 挿入の結果。**成功だと確信できたときだけ `.succeeded`** を返す。
 ///
@@ -53,10 +54,15 @@ enum InsertionOutcome: Equatable {
         return "\(headline)（\(detail)）"
     }
 
-    /// メニューバー側に出す文言。失敗のときだけ結果の在り処を案内する。
-    /// `location` は「HUD」「クリップボードと履歴」など、設定に応じた実際の残し先。
+    /// メニューバー側に出す文言。**結果を残したときはその在り処を案内する**。
+    ///
+    /// 案内が要らないのは成功したときだけ（クリップボードは元に戻してある）。
+    /// `.uncertain` はターミナルのように AX でテキストを読めないアプリでは毎回起きるので、
+    /// ここで案内しないと「クリップボードを踏んで、戻していない」ことが
+    /// ユーザーに一切伝わらない（Issue #79）。
+    /// `location` は「HUD・クリップボード・履歴」など、設定に応じた実際の残し先。
     func statusMessage(resultKeptIn location: String) -> String {
-        isFailure ? "\(headline)。結果は\(location)に残しています" : summary
+        isSucceeded ? summary : "\(summary)。結果は\(location)に残しています"
     }
 }
 
@@ -77,15 +83,37 @@ enum TextInjector {
     private static let restoreDelay: Duration = .milliseconds(250)
     // MARK: - 入口
 
-    static func insert(_ text: String) async -> InsertionOutcome {
+    /// - Parameter expectedBundleId: 録音を始めたときに前面だったアプリ。渡すと、挿入直前に
+    ///   前面が変わっていないかを照合する。nil なら照合しない（HUD・履歴からの再挿入）。
+    static func insert(_ text: String, expectedBundleId: String? = nil) async -> InsertionOutcome {
         guard !text.isEmpty else { return .succeeded }
 
         let settings = SettingsStore.shared
         let keepResult = settings.keepResultOnClipboardWhenUnsure
 
+        // 録音を始めたアプリと違うところへ貼らない（Issue #80）。
+        //
+        // 文字起こしと整形に数秒かかる間にアプリを切り替えると、⌘V はその時点の前面へ飛ぶ。
+        // しかも before / after は両方その新しい要素なので `CFEqual` が一致し、文字数も
+        // 増えるので **「成功」と判定されて誤爆が検知されなかった**。
+        if let expectedBundleId,
+           let current = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+           current != expectedBundleId {
+            if keepResult {
+                let written = writeToPasteboard(text)
+                ClipboardWatcher.shared.ignore(changeCount: written)
+            }
+            return .failed(reason: "録音したアプリが前面にないため挿入しませんでした")
+        }
+
         guard AXIsProcessTrusted() else {
             // CGEvent の送出自体ができない。結果だけでも拾えるようにしてから返す。
-            if keepResult { writeToPasteboard(text) }
+            if keepResult {
+                let written = writeToPasteboard(text)
+                // この経路は抑止の外にあったので、自分の書き込みを次の録音で
+                // 「録音3秒前のコピー」として拾っていた（Issue #79）。
+                ClipboardWatcher.shared.ignore(changeCount: written)
+            }
             return .failed(reason: "アクセシビリティ権限が無いため入力できません",
                            hint: .accessibilityPermission)
         }
@@ -99,13 +127,15 @@ enum TextInjector {
             return await verifyAfterSettle(text: text, before: before)
         }
 
-        // 挿入はクリップボードを踏む（⌘V 方式と復元）。その変化を「録音直前のコピー」と
-        // 誤認しないよう、この間の変化は採用しない。HUD・履歴からの再挿入も同じ入口を通る
-        // ので、ここに置けば経路ごとの漏れが起きない（Issue #63）。
-        ClipboardWatcher.shared.suppressChanges(for: 2)
         let pasteboard = NSPasteboard.general
-        let previous = pasteboard.string(forType: .string)
+        // **全 type** を退避する。プレーンテキストだけを覚えていると、スクショ・ファイル・
+        // 書式付きテキストを戻せず、復元のつもりでクリップボードを空にする（Issue #79）。
+        let previous = PasteboardSnapshot.capture(pasteboard)
         let writtenChangeCount = writeToPasteboard(text)
+        // 自分が書いた変化を「録音直前のコピー」と誤認しないようにする。時間ではなく
+        // changeCount で外すので、この直後に**ユーザーが**コピーした分は取りこぼさない
+        // （Issue #63 の抑止を Issue #79 で作り直したもの）。
+        ClipboardWatcher.shared.ignore(changeCount: writtenChangeCount)
 
         postPaste()
 
@@ -122,33 +152,66 @@ enum TextInjector {
 
     // MARK: - クリップボード
 
+    /// 口述テキストをクリップボードへ置く。**HUD と履歴の「コピー」もここを通す。**
+    ///
+    /// 経路を 1 つに寄せることで、機密の目印と `ignore` の登録が漏れないようにする。
+    /// 以前は HUD と履歴が `NSPasteboard` を直接叩いていたので、そこからコピーした
+    /// 直後に録音すると、自分のテキストが次の整形プロンプトに混ざっていた（Issue #79）。
+    static func copyToPasteboard(_ text: String) {
+        let written = writeToPasteboard(text)
+        ClipboardWatcher.shared.ignore(changeCount: written)
+    }
+
+    /// 結果をクリップボードへ書く。
+    ///
+    /// **機密の目印を立てる**ので、Maccy / Raycast / Paste のような常駐クリップボード
+    /// マネージャの DB に口述テキストが溜まらない。「音声を外部に出さない」と掲げながら
+    /// テキストが別アプリの永続ストアへ流れているのは筋が通らない（Issue #79）。
     @discardableResult
     private static func writeToPasteboard(_ text: String) -> Int {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        let item = NSPasteboardItem()
+        item.setString(text, forType: .string)
+        item.setString("", forType: PasteboardPrivacy.concealed)
+        pasteboard.writeObjects([item])
         return pasteboard.changeCount
     }
 
+    /// 復元待ちのスナップショット。終了・クラッシュで口述テキストをクリップボードに
+    /// 置き去りにしないため、`restorePendingClipboard()` から同期的に戻せるよう控えておく。
+    private static var pendingRestore: (snapshot: PasteboardSnapshot, changeCount: Int)?
+
     /// 復元までの間に他アプリ/ユーザーがクリップボードを書き換えていたら
     /// （changeCount が変化）、その内容を踏み潰さないよう復元しない。
-    private static func scheduleClipboardRestore(previous: String?, writtenChangeCount: Int) {
+    private static func scheduleClipboardRestore(previous: PasteboardSnapshot, writtenChangeCount: Int) {
+        pendingRestore = (previous, writtenChangeCount)
         Task { @MainActor in
             try? await Task.sleep(for: restoreDelay)
-            let pasteboard = NSPasteboard.general
-            guard pasteboard.changeCount == writtenChangeCount else { return }
-            pasteboard.clearContents()
-            if let previous {
-                pasteboard.setString(previous, forType: .string)
-            }
+            restoreClipboard(previous, writtenChangeCount: writtenChangeCount)
         }
+    }
+
+    /// アプリ終了時の取りこぼしを防ぐ。復元待ちが残っていれば同期的に戻す（Issue #79）。
+    static func restorePendingClipboard() {
+        guard let pending = pendingRestore else { return }
+        restoreClipboard(pending.snapshot, writtenChangeCount: pending.changeCount)
+    }
+
+    private static func restoreClipboard(_ snapshot: PasteboardSnapshot, writtenChangeCount: Int) {
+        pendingRestore = nil
+        let pasteboard = NSPasteboard.general
+        guard pasteboard.changeCount == writtenChangeCount else { return }
+        snapshot.restore(to: pasteboard)
+        // 復元も自分が起こした変化なので、次の録音のコンテキストに混ぜない。
+        ClipboardWatcher.shared.ignore(changeCount: pasteboard.changeCount)
     }
 
     // MARK: - イベント送出
 
     private static func postPaste() {
         let source = CGEventSource(stateID: .combinedSessionState)
-        let vKeyCode: CGKeyCode = 9 // 'v'
+        let vKeyCode = keyCode(for: "v") ?? 9
 
         let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true)
         keyDown?.flags = .maskCommand
@@ -157,6 +220,43 @@ enum TextInjector {
 
         keyDown?.post(tap: .cghidEventTap)
         keyUp?.post(tap: .cghidEventTap)
+    }
+
+    /// いまのキーボード配列でその文字を打つ仮想キーコード。引けなければ nil。
+    ///
+    /// キーコードは**物理キーの位置**なので、9 が 'v' になるのは QWERTY 系のときだけ。
+    /// Dvorak ではその位置が 'K' で、⌘V のつもりで **⌘K** を送ることになる
+    /// （Slack ならジャンプダイアログ、エディタなら行削除やリンク挿入）。
+    /// 貼られないだけでなく破壊的な操作が走るので、配列から引き直す（Issue #80）。
+    /// JIS 配列は英字のキーコードが ANSI と同じなので、これまでも問題は出ていなかった。
+    private static func keyCode(for character: Character) -> CGKeyCode? {
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
+        else { return nil }
+        let layoutData = Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue() as Data
+
+        return layoutData.withUnsafeBytes { raw -> CGKeyCode? in
+            guard let base = raw.baseAddress else { return nil }
+            let layout = base.assumingMemoryBound(to: UCKeyboardLayout.self)
+            let keyboardType = UInt32(LMGetKbdType())
+
+            for code in UInt16(0)..<128 {
+                var deadKeyState: UInt32 = 0
+                var chars = [UniChar](repeating: 0, count: 4)
+                var length = 0
+                let status = UCKeyTranslate(
+                    layout, code, UInt16(kUCKeyActionDown), 0, keyboardType,
+                    UInt32(kUCKeyTranslateNoDeadKeysBit),
+                    &deadKeyState, chars.count, &length, &chars
+                )
+                guard status == noErr, length == 1,
+                      let scalar = UnicodeScalar(chars[0]),
+                      Character(scalar) == character
+                else { continue }
+                return CGKeyCode(code)
+            }
+            return nil
+        }
     }
 
     /// 1文字ずつキーを送出する。`keyboardSetUnicodeString` を使うので
@@ -257,9 +357,18 @@ enum TextInjector {
         if let old = before.characterCount, let new = after.characterCount {
             // 選択範囲は置き換わるので、その分を差し引いた長さが基準。
             let base = old - selectionLength
-            // 増えていれば入った（text は空でないので、ぴったり一致もこれに含まれる。
-            // アプリ側が整形＝改行の正規化・自動補完などをした場合も同じ）。
-            if new > base { return .succeeded }
+            if new > base {
+                // **増えた量が挿入しようとした量と釣り合うときだけ**成功と断定する（Issue #80）。
+                // 「増えた＝成功」にしていたので、ターミナルで出力が流れている最中に口述すると
+                // ペーストの有無に関係なく文字数が増えて `.succeeded` になり、クリップボードも
+                // 復元され、HUD も成功表示で閉じていた（実際には貼られていない）。
+                //   下限: アプリ側の整形（改行の正規化）で多少縮むことがあるので半分まで許す
+                //   上限: 自律的にテキストが伸びるアプリを弾く
+                let delta = new - base
+                let expected = text.utf16.count
+                if delta * 2 >= expected, delta <= expected * 4 + 32 { return .succeeded }
+                return .uncertain(detail: "入力先の変化が挿入内容と一致しません")
+            }
             if new == old, before.caret == after.caret { return .unchanged }
             return .uncertain(detail: "結果を確認できません")
         }
