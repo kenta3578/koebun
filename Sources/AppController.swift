@@ -442,9 +442,11 @@ final class AppController {
                 failure: "Apple 整形には \(EngineSupport.requiresMacOS26)"
             )
         }
-        // モード指定のモデルがあればそれを、無ければ設定の既定を記録する
-        // （Apple 実装はモデルを選べないので、成功した結果の modelId で上書きされる）。
-        let modelId = mode.modelId ?? SettingsStore.shared.formatterModelId
+        // 整形が失敗したときに履歴へ残すモデル ID。成功時は結果の modelId で上書きされる
+        // （Apple 実装はモデルを選べないので固定の識別子を返す）。
+        // 以前はここで `mode.modelId` を優先していたが、そちらはロードに使われておらず、
+        // 失敗時だけ「使っていないモデル」が記録されて成功時と食い違っていた（Issue #87）。
+        let modelId = SettingsStore.shared.formatterModelId
 
         let timeout = Duration.seconds(SettingsStore.shared.formatTimeoutSeconds)
         do {

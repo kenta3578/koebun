@@ -112,6 +112,7 @@ actor AppleFormatter: FormattingEngine {
         // （小型モデルほど「整形しました」を付けてくるので、ここは省けない）。
         let cleaned = Formatter.clean(raw)
         guard !cleaned.isEmpty else { throw FormatterError.emptyOutput }
+        guard !Formatter.isUnclosedThinking(cleaned) else { throw FormatterError.thinkingLeftover }
         // 上限が 1,024 トークンなので、mlx 側より早く（入力 1,000 文字あたりで）当たる。
         guard FormattingLength.isPlausible(cleaned, for: text) else {
             throw FormatterError.truncated
