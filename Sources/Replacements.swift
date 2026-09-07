@@ -27,11 +27,18 @@ final class ReplacementStore: ObservableObject {
     static let shared = ReplacementStore()
 
     /// 記号は音声で入力しづらいので初期ルールとして同梱する。
+    ///
+    /// **語の一部で誤爆しないものだけを置く**（Issue #82）。`apply` は単語境界を見ない
+    /// 部分一致なので、同梱ルールが実在の語を壊すと出荷時のバグになる:
+    ///   - `シャープ` は「シャープペンシル」を「#ペンシル」にするので**入れない**
+    ///     （`#` が要る人は設定から自分で足す）
+    ///   - `スラッシュ` は「バックスラッシュ」を「バック/」にするので、
+    ///     より長い `バックスラッシュ` を一緒に置いて最長一致で守る
     static let defaultRules: [ReplacementRule] = [
         ReplacementRule(from: "アットマーク", to: "@"),
         ReplacementRule(from: "ドットコム", to: ".com"),
+        ReplacementRule(from: "バックスラッシュ", to: "\\"),
         ReplacementRule(from: "スラッシュ", to: "/"),
-        ReplacementRule(from: "シャープ", to: "#"),
         ReplacementRule(from: "アンダースコア", to: "_")
     ]
 

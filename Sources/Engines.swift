@@ -96,6 +96,24 @@ enum EngineSupport {
 
 // MARK: - 共通の型
 
+/// 整形結果が入力に対して短すぎないかの判定。
+///
+/// 出力トークンの上限に当たると末尾が生成されないまま返る。例外は飛ばないので、
+/// そのままだと**発話の後半が黙って消えたテキスト**がカーソルに入る（Issue #82）。
+/// 日本語はほぼ 1 文字 1 トークンなので、長い発話ほど当たりやすい。
+///
+/// 整形は要約ではないため、まともな結果は入力と同程度の長さになる。箇条書き化や
+/// フィラーの削除で多少は縮むので、半分を下回ったときだけ打ち切りとみなす。
+enum FormattingLength {
+    /// これより短い入力は比率が暴れる（「はい」→「はい。」など）ので見ない。
+    private static let minimumInputLength = 40
+
+    static func isPlausible(_ output: String, for input: String) -> Bool {
+        guard input.count >= minimumInputLength else { return true }
+        return output.count * 2 >= input.count
+    }
+}
+
 /// 整形エンジンの読み込み状態。UI にはこれを文字列化して出す。
 ///
 /// mlx 実装は数GB のダウンロードを伴うので `loading` が長く続く。

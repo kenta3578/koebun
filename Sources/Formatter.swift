@@ -12,6 +12,9 @@ enum FormatterError: LocalizedError {
     /// 整形エンジン自体が使えない（Apple Intelligence が無効・非対応など）。
     /// **無言で生テキストに落ちない**よう、理由をそのまま `AppStatus` に出す（Issue #27）。
     case unavailable(reason: String)
+    /// 出力トークンの上限に当たって末尾が生成されなかった（Issue #82）。
+    /// 途中で切れたテキストを挿入すると発話の後半が黙って消えるので、失敗として扱う。
+    case truncated
 
     var errorDescription: String? {
         switch self {
@@ -23,6 +26,8 @@ enum FormatterError: LocalizedError {
             return "整形結果が空でした"
         case .unavailable(let reason):
             return reason
+        case .truncated:
+            return "整形結果が途中で切れました"
         }
     }
 }
@@ -211,6 +216,9 @@ actor Formatter: FormattingEngine {
 
         let cleaned = Self.clean(raw)
         guard !cleaned.isEmpty else { throw FormatterError.emptyOutput }
+        guard FormattingLength.isPlausible(cleaned, for: text) else {
+            throw FormatterError.truncated
+        }
         return Result(text: cleaned, prompt: systemPrompt, modelId: loadedModelId)
     }
 
