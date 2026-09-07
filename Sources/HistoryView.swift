@@ -10,7 +10,7 @@ extension Notification.Name {
 /// 履歴ウィンドウ。メニューバーの「履歴…」から開く。
 ///
 /// 目的は**整形 AI の書き換えをユーザーが自力で検証できるようにすること**
-/// （`ai_docs/competitor-superwhisper.md` §8-6）。そのために
+/// （`ai_docs/design-rationale.md` §7）。そのために
 /// 生 / 置換後 / 整形後 のトグル表示・送信プロンプト全文・録音ファイルを1画面に置く。
 struct HistoryView: View {
     /// 表示するテキストの種類。
@@ -317,7 +317,7 @@ struct HistoryView: View {
 
     /// 整形が数値・URL 等を書き換えた疑いの一覧。
     ///
-    /// **ここが競合に無い部分**（`ai_docs/competitor-superwhisper.md` §4-2,3, §5）。
+    /// **整形を信用しない設計の芯**（`ai_docs/design-rationale.md` §2）。
     /// 整形 AI は請求額を 4,217 から 4,270 に静かに書き換える。見た目が自然なので、
     /// 突き合わせる場所が無ければ誰も気づけない。
     @ViewBuilder

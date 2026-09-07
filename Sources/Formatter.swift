@@ -206,7 +206,7 @@ actor Formatter: FormattingEngine {
             // 入力より極端に長い出力は整形ではなく暴走。入力長から上限を決めて頭打ちにする。
             maxTokens: Self.maxTokens(for: text),
             // 決定的にする。同じ発話が毎回違う結果になると、整形を疑う手がかりが消える
-            // （ai_docs/competitor-superwhisper.md §4-1 の「run ごとにブレる」がこれ）。
+            // （ai_docs/design-rationale.md §2 の「run ごとにブレる」がこれ）。
             temperature: 0
         )
         let seconds = timeout.inSeconds

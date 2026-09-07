@@ -5,7 +5,7 @@ import Foundation
 ///
 /// プロンプトを Git で育てられるよう JSON に外出しする。ただし**共通の禁止事項だけは
 /// JSON に置かず `Mode.commonRules` としてコード側に持ち、送信直前に必ず前置する**。
-/// 理由は `ai_docs/competitor-superwhisper.md` §4-2,3 の事故（請求額 4,217→4,270 の書き換え、
+/// 理由は `ai_docs/design-rationale.md` §2 の事故（請求額 4,217→4,270 の書き換え、
 /// 「チェックする前に」→「チェックせずに」の意味反転）で、どちらも警告が出ない。
 /// 禁止事項が JSON にあるとユーザーの編集ミス1つで安全弁が消えるため、そこだけは外に出さない。
 struct Mode: Codable, Identifiable, Equatable {
@@ -136,7 +136,7 @@ struct Mode: Codable, Identifiable, Equatable {
 
 /// 「どのコンテキストを整形プロンプトに載せるか」のモード別スイッチ（JSON の `context`）。
 ///
-/// **既定は全部 false**。`ai_docs/competitor-superwhisper.md` §3 のとおり、
+/// **既定は全部 false**。`ai_docs/design-rationale.md` §6 のとおり、
 /// コンテキストは入れすぎると整形品質が落ちる。既定モードでも必要な項目だけを個別に開ける。
 struct ModeContext: Codable, Equatable {
     /// 最前面アプリ名（例: `Slack`）。
@@ -205,7 +205,7 @@ extension Mode {
 extension Mode {
     /// 初回起動時に `~/koebun/modes/` へ書き出す既定セット。
     ///
-    /// **日本語専用に振り切る**（`ai_docs/competitor-superwhisper.md` §5 の差別化2本目）。
+    /// **日本語専用に振り切る**（`ai_docs/design-rationale.md` §3 の差別化2本目）。
     /// 多言語対応を捨てているので「英語だったら」の分岐をプロンプトに書かない。
     static let defaults: [(slug: String, mode: Mode)] = [
         (

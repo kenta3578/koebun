@@ -334,7 +334,7 @@ struct RecordingHUDView: View {
     }
 
     // 挿入できなかった／確認できなかった結果。ここからコピー・再挿入できる
-    // （`ai_docs/competitor-superwhisper.md` §8-3: 相手はペースト失敗時に結果をミニウィンドウに残す）。
+    // （`ai_docs/design-rationale.md` §4: 結果を失わせないことが表示の設定より優先）。
     //
     // **失敗と「確認できないだけ」で見せ方を変える**（Issue #34）。
     // 確認できないだけの状態は情報色で描き、数秒で自動的に閉じる。失敗は警告色のまま残す。
@@ -375,7 +375,7 @@ struct RecordingHUDView: View {
 
     // 整形が事実を書き換えた疑い。**挿入はすでに済んでいる**ので止めるための UI ではなく、
     // 「今の1発話を疑う理由がある」と気づかせて履歴へ送り込むための UI
-    // （`ai_docs/competitor-superwhisper.md` §4-2,3: 相手はこの警告を一切出さない）。
+    // （`ai_docs/design-rationale.md` §2）。
     private func warningContent(_ diff: FormatDiff) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
