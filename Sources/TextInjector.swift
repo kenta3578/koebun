@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon.HIToolbox
 
 /// 挿入の結果。**成功だと確信できたときだけ `.succeeded`** を返す。
 ///
@@ -82,11 +83,28 @@ enum TextInjector {
     private static let restoreDelay: Duration = .milliseconds(250)
     // MARK: - 入口
 
-    static func insert(_ text: String) async -> InsertionOutcome {
+    /// - Parameter expectedBundleId: 録音を始めたときに前面だったアプリ。渡すと、挿入直前に
+    ///   前面が変わっていないかを照合する。nil なら照合しない（HUD・履歴からの再挿入）。
+    static func insert(_ text: String, expectedBundleId: String? = nil) async -> InsertionOutcome {
         guard !text.isEmpty else { return .succeeded }
 
         let settings = SettingsStore.shared
         let keepResult = settings.keepResultOnClipboardWhenUnsure
+
+        // 録音を始めたアプリと違うところへ貼らない（Issue #80）。
+        //
+        // 文字起こしと整形に数秒かかる間にアプリを切り替えると、⌘V はその時点の前面へ飛ぶ。
+        // しかも before / after は両方その新しい要素なので `CFEqual` が一致し、文字数も
+        // 増えるので **「成功」と判定されて誤爆が検知されなかった**。
+        if let expectedBundleId,
+           let current = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+           current != expectedBundleId {
+            if keepResult {
+                let written = writeToPasteboard(text)
+                ClipboardWatcher.shared.ignore(changeCount: written)
+            }
+            return .failed(reason: "録音したアプリが前面にないため挿入しませんでした")
+        }
 
         guard AXIsProcessTrusted() else {
             // CGEvent の送出自体ができない。結果だけでも拾えるようにしてから返す。
@@ -193,7 +211,7 @@ enum TextInjector {
 
     private static func postPaste() {
         let source = CGEventSource(stateID: .combinedSessionState)
-        let vKeyCode: CGKeyCode = 9 // 'v'
+        let vKeyCode = keyCode(for: "v") ?? 9
 
         let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true)
         keyDown?.flags = .maskCommand
@@ -202,6 +220,43 @@ enum TextInjector {
 
         keyDown?.post(tap: .cghidEventTap)
         keyUp?.post(tap: .cghidEventTap)
+    }
+
+    /// いまのキーボード配列でその文字を打つ仮想キーコード。引けなければ nil。
+    ///
+    /// キーコードは**物理キーの位置**なので、9 が 'v' になるのは QWERTY 系のときだけ。
+    /// Dvorak ではその位置が 'K' で、⌘V のつもりで **⌘K** を送ることになる
+    /// （Slack ならジャンプダイアログ、エディタなら行削除やリンク挿入）。
+    /// 貼られないだけでなく破壊的な操作が走るので、配列から引き直す（Issue #80）。
+    /// JIS 配列は英字のキーコードが ANSI と同じなので、これまでも問題は出ていなかった。
+    private static func keyCode(for character: Character) -> CGKeyCode? {
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
+        else { return nil }
+        let layoutData = Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue() as Data
+
+        return layoutData.withUnsafeBytes { raw -> CGKeyCode? in
+            guard let base = raw.baseAddress else { return nil }
+            let layout = base.assumingMemoryBound(to: UCKeyboardLayout.self)
+            let keyboardType = UInt32(LMGetKbdType())
+
+            for code in UInt16(0)..<128 {
+                var deadKeyState: UInt32 = 0
+                var chars = [UniChar](repeating: 0, count: 4)
+                var length = 0
+                let status = UCKeyTranslate(
+                    layout, code, UInt16(kUCKeyActionDown), 0, keyboardType,
+                    UInt32(kUCKeyTranslateNoDeadKeysBit),
+                    &deadKeyState, chars.count, &length, &chars
+                )
+                guard status == noErr, length == 1,
+                      let scalar = UnicodeScalar(chars[0]),
+                      Character(scalar) == character
+                else { continue }
+                return CGKeyCode(code)
+            }
+            return nil
+        }
     }
 
     /// 1文字ずつキーを送出する。`keyboardSetUnicodeString` を使うので
@@ -302,9 +357,18 @@ enum TextInjector {
         if let old = before.characterCount, let new = after.characterCount {
             // 選択範囲は置き換わるので、その分を差し引いた長さが基準。
             let base = old - selectionLength
-            // 増えていれば入った（text は空でないので、ぴったり一致もこれに含まれる。
-            // アプリ側が整形＝改行の正規化・自動補完などをした場合も同じ）。
-            if new > base { return .succeeded }
+            if new > base {
+                // **増えた量が挿入しようとした量と釣り合うときだけ**成功と断定する（Issue #80）。
+                // 「増えた＝成功」にしていたので、ターミナルで出力が流れている最中に口述すると
+                // ペーストの有無に関係なく文字数が増えて `.succeeded` になり、クリップボードも
+                // 復元され、HUD も成功表示で閉じていた（実際には貼られていない）。
+                //   下限: アプリ側の整形（改行の正規化）で多少縮むことがあるので半分まで許す
+                //   上限: 自律的にテキストが伸びるアプリを弾く
+                let delta = new - base
+                let expected = text.utf16.count
+                if delta * 2 >= expected, delta <= expected * 4 + 32 { return .succeeded }
+                return .uncertain(detail: "入力先の変化が挿入内容と一致しません")
+            }
             if new == old, before.caret == after.caret { return .unchanged }
             return .uncertain(detail: "結果を確認できません")
         }
