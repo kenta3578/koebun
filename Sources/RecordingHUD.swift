@@ -752,9 +752,7 @@ final class RecordingHUDController {
     private func copyResult() {
         guard let result = model.pendingResult else { return }
         keepResultOpen()
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(result.text, forType: .string)
+        TextInjector.copyToPasteboard(result.text)
         model.setResultNote("コピーしました")
     }
 

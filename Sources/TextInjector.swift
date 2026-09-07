@@ -53,10 +53,15 @@ enum InsertionOutcome: Equatable {
         return "\(headline)（\(detail)）"
     }
 
-    /// メニューバー側に出す文言。失敗のときだけ結果の在り処を案内する。
-    /// `location` は「HUD」「クリップボードと履歴」など、設定に応じた実際の残し先。
+    /// メニューバー側に出す文言。**結果を残したときはその在り処を案内する**。
+    ///
+    /// 案内が要らないのは成功したときだけ（クリップボードは元に戻してある）。
+    /// `.uncertain` はターミナルのように AX でテキストを読めないアプリでは毎回起きるので、
+    /// ここで案内しないと「クリップボードを踏んで、戻していない」ことが
+    /// ユーザーに一切伝わらない（Issue #79）。
+    /// `location` は「HUD・クリップボード・履歴」など、設定に応じた実際の残し先。
     func statusMessage(resultKeptIn location: String) -> String {
-        isFailure ? "\(headline)。結果は\(location)に残しています" : summary
+        isSucceeded ? summary : "\(summary)。結果は\(location)に残しています"
     }
 }
 
@@ -85,7 +90,12 @@ enum TextInjector {
 
         guard AXIsProcessTrusted() else {
             // CGEvent の送出自体ができない。結果だけでも拾えるようにしてから返す。
-            if keepResult { writeToPasteboard(text) }
+            if keepResult {
+                let written = writeToPasteboard(text)
+                // この経路は抑止の外にあったので、自分の書き込みを次の録音で
+                // 「録音3秒前のコピー」として拾っていた（Issue #79）。
+                ClipboardWatcher.shared.ignore(changeCount: written)
+            }
             return .failed(reason: "アクセシビリティ権限が無いため入力できません",
                            hint: .accessibilityPermission)
         }
@@ -99,13 +109,15 @@ enum TextInjector {
             return await verifyAfterSettle(text: text, before: before)
         }
 
-        // 挿入はクリップボードを踏む（⌘V 方式と復元）。その変化を「録音直前のコピー」と
-        // 誤認しないよう、この間の変化は採用しない。HUD・履歴からの再挿入も同じ入口を通る
-        // ので、ここに置けば経路ごとの漏れが起きない（Issue #63）。
-        ClipboardWatcher.shared.suppressChanges(for: 2)
         let pasteboard = NSPasteboard.general
-        let previous = pasteboard.string(forType: .string)
+        // **全 type** を退避する。プレーンテキストだけを覚えていると、スクショ・ファイル・
+        // 書式付きテキストを戻せず、復元のつもりでクリップボードを空にする（Issue #79）。
+        let previous = PasteboardSnapshot.capture(pasteboard)
         let writtenChangeCount = writeToPasteboard(text)
+        // 自分が書いた変化を「録音直前のコピー」と誤認しないようにする。時間ではなく
+        // changeCount で外すので、この直後に**ユーザーが**コピーした分は取りこぼさない
+        // （Issue #63 の抑止を Issue #79 で作り直したもの）。
+        ClipboardWatcher.shared.ignore(changeCount: writtenChangeCount)
 
         postPaste()
 
@@ -122,26 +134,59 @@ enum TextInjector {
 
     // MARK: - クリップボード
 
+    /// 口述テキストをクリップボードへ置く。**HUD と履歴の「コピー」もここを通す。**
+    ///
+    /// 経路を 1 つに寄せることで、機密の目印と `ignore` の登録が漏れないようにする。
+    /// 以前は HUD と履歴が `NSPasteboard` を直接叩いていたので、そこからコピーした
+    /// 直後に録音すると、自分のテキストが次の整形プロンプトに混ざっていた（Issue #79）。
+    static func copyToPasteboard(_ text: String) {
+        let written = writeToPasteboard(text)
+        ClipboardWatcher.shared.ignore(changeCount: written)
+    }
+
+    /// 結果をクリップボードへ書く。
+    ///
+    /// **機密の目印を立てる**ので、Maccy / Raycast / Paste のような常駐クリップボード
+    /// マネージャの DB に口述テキストが溜まらない。「音声を外部に出さない」と掲げながら
+    /// テキストが別アプリの永続ストアへ流れているのは筋が通らない（Issue #79）。
     @discardableResult
     private static func writeToPasteboard(_ text: String) -> Int {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        let item = NSPasteboardItem()
+        item.setString(text, forType: .string)
+        item.setString("", forType: PasteboardPrivacy.concealed)
+        pasteboard.writeObjects([item])
         return pasteboard.changeCount
     }
 
+    /// 復元待ちのスナップショット。終了・クラッシュで口述テキストをクリップボードに
+    /// 置き去りにしないため、`restorePendingClipboard()` から同期的に戻せるよう控えておく。
+    private static var pendingRestore: (snapshot: PasteboardSnapshot, changeCount: Int)?
+
     /// 復元までの間に他アプリ/ユーザーがクリップボードを書き換えていたら
     /// （changeCount が変化）、その内容を踏み潰さないよう復元しない。
-    private static func scheduleClipboardRestore(previous: String?, writtenChangeCount: Int) {
+    private static func scheduleClipboardRestore(previous: PasteboardSnapshot, writtenChangeCount: Int) {
+        pendingRestore = (previous, writtenChangeCount)
         Task { @MainActor in
             try? await Task.sleep(for: restoreDelay)
-            let pasteboard = NSPasteboard.general
-            guard pasteboard.changeCount == writtenChangeCount else { return }
-            pasteboard.clearContents()
-            if let previous {
-                pasteboard.setString(previous, forType: .string)
-            }
+            restoreClipboard(previous, writtenChangeCount: writtenChangeCount)
         }
+    }
+
+    /// アプリ終了時の取りこぼしを防ぐ。復元待ちが残っていれば同期的に戻す（Issue #79）。
+    static func restorePendingClipboard() {
+        guard let pending = pendingRestore else { return }
+        restoreClipboard(pending.snapshot, writtenChangeCount: pending.changeCount)
+    }
+
+    private static func restoreClipboard(_ snapshot: PasteboardSnapshot, writtenChangeCount: Int) {
+        pendingRestore = nil
+        let pasteboard = NSPasteboard.general
+        guard pasteboard.changeCount == writtenChangeCount else { return }
+        snapshot.restore(to: pasteboard)
+        // 復元も自分が起こした変化なので、次の録音のコンテキストに混ぜない。
+        ClipboardWatcher.shared.ignore(changeCount: pasteboard.changeCount)
     }
 
     // MARK: - イベント送出

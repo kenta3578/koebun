@@ -46,7 +46,10 @@ struct InsertionPresentation {
         } else if let diff, diff.hasChanges {
             status = .warned(message: "挿入しました ✓ \(diff.shortSummary)")
         } else {
-            status = .done(message: outcome.isSucceeded ? "挿入しました ✓" : outcome.summary)
+            // 成功でないなら、結果をどこに残したか（＝クリップボードを戻していないか）を出す。
+            status = .done(message: outcome.isSucceeded
+                           ? "挿入しました ✓"
+                           : outcome.statusMessage(resultKeptIn: resultLocation))
         }
 
         let hud: HUDAction

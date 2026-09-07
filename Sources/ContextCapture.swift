@@ -175,8 +175,11 @@ final class ClipboardWatcher {
     private var timer: Timer?
     private var lastChangeCount = NSPasteboard.general.changeCount
     private var lastChangeAt: Date?
-    /// この時刻まで、変化を「無かったこと」にする（自分の挿入でクリップボードを触る間）。
-    private var suppressedUntil: Date?
+    /// 自分が起こした変化の `changeCount`。ここに載っている変化は採用しない。
+    ///
+    /// 以前は「2秒間すべての変化を無視する」時間ベースだったので、その窓の中で
+    /// **ユーザーが**コピーしたものまで捨てていた（Issue #79）。
+    private var ignoredChangeCounts: Set<Int> = []
 
     private init() {}
 
@@ -197,17 +200,21 @@ final class ClipboardWatcher {
         timer?.invalidate()
         timer = nil
         lastChangeAt = nil
-        suppressedUntil = nil
+        ignoredChangeCounts.removeAll()
     }
 
-    /// 挿入処理がクリップボードを踏む間、その変化を採用しない。動いていなければ何もしない。
+    /// 自分が起こしたクリップボードの変化を採用対象から外す。
     ///
     /// これが無いと、連続で録音したとき**直前に自分が挿入した文章**が
     /// 「録音3秒前にコピーされた内容」として次の整形に混ざる。
-    func suppressChanges(for seconds: TimeInterval) {
-        guard timer != nil else { return }
-        poll()
-        suppressedUntil = Date().addingTimeInterval(seconds)
+    /// 見張っていないとき（整形 OFF）も記録しておく——途中で ON にしたときに
+    /// 古い自分の書き込みを拾わないようにするため。
+    func ignore(changeCount: Int) {
+        ignoredChangeCounts.insert(changeCount)
+        // 採用されずに積み上がる分を落とす（自分の書き込みは高々数個先までしか効かない）。
+        if ignoredChangeCounts.count > 8 {
+            ignoredChangeCounts = Set(ignoredChangeCounts.sorted().suffix(4))
+        }
     }
 
     /// 録音開始の `lookback` 秒前以降にコピーされていれば、その内容を返す。
@@ -216,7 +223,11 @@ final class ClipboardWatcher {
         guard let lastChangeAt,
               lastChangeAt >= recordingStartedAt.addingTimeInterval(-Self.lookback)
         else { return nil }
-        guard let text = NSPasteboard.general.string(forType: .string) else { return nil }
+        let pasteboard = NSPasteboard.general
+        // パスワードマネージャがコピーした内容は読まない。読むと整形プロンプトに載り、
+        // ~/koebun/history/*/meta.json に平文で残る（Issue #79）。
+        guard PasteboardPrivacy.isReadable(pasteboard) else { return nil }
+        guard let text = pasteboard.string(forType: .string) else { return nil }
         return ContextCapture.trimmed(text)
     }
 
@@ -224,8 +235,8 @@ final class ClipboardWatcher {
         let count = NSPasteboard.general.changeCount
         guard count != lastChangeCount else { return }
         lastChangeCount = count
-        // 抑止中の変化は時刻を更新しない＝採用対象にならない。
-        if let suppressedUntil, Date() < suppressedUntil { return }
+        // 自分が書いた変化は時刻を更新しない＝採用対象にならない。
+        if ignoredChangeCounts.remove(count) != nil { return }
         lastChangeAt = Date()
     }
 }

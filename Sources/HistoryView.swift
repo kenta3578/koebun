@@ -414,9 +414,7 @@ struct HistoryView: View {
 
     private func copy(_ entry: HistoryEntry) {
         guard let text = variant.text(of: entry), !text.isEmpty else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        TextInjector.copyToPasteboard(text)
         message = "「\(variant.label)」をコピーしました。"
     }
 
