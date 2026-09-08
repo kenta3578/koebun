@@ -33,18 +33,33 @@ enum AppStatus: Equatable {
         }
     }
 
+    /// 表示文の前に「どの発話の話か」を付ける（例: 以前の発話）。追い越された発話の結果を
+    /// 後から出すとき、いま喋った内容の失敗と誤読させない（Issue #100）。
+    func prefixed(_ label: String) -> AppStatus {
+        switch self {
+        case .done(let message):           return .done(message: "\(label): \(message)")
+        case .warned(let message):         return .warned(message: "\(label): \(message)")
+        case .failed(let reason, let hint): return .failed(reason: "\(label): \(reason)", hint: hint)
+        case .idle, .loadingModel, .recording, .processing: return self
+        }
+    }
+
     /// 失敗表示か。原因を残したいので、他の表示で上書きしてよいかの判断に使う。
     var isFailed: Bool {
         if case .failed = self { return true }
         return false
     }
 
-    /// 音声認識エンジンを載せ替えてよい状態か。
+    /// **表示状態から見て**音声認識エンジンを載せ替えてよいか。
     ///
-    /// 録音中・文字起こし中に載せ替えると、マイクが開いたまま状態だけが上書きされて
-    /// **録音を止める手段が無くなる**（`isRecording` が false になるので右⌥ で止められず、
-    /// `canStartRecording` も false なので始められない）。Issue #77。
+    /// 録音中に載せ替えると `.loadingModel` に上書きされ、マイクが開いたまま
+    /// `isRecording` が false になって**右⌥で録音を止める手段が無くなる**（Issue #77）。
+    /// 処理中は、その発話の文字起こしが載せ替え中のエンジンに当たるので見送る。
     /// 起動時は `.loadingModel` から読み込むので、そこは通す。
+    ///
+    /// ただし Issue #97 以降、追い越されたパイプラインは状態を通らずに裏で動くので、
+    /// これだけでは「裏で文字起こしが動いていない」ことは保証できない。
+    /// 実際の判定は `AppState.canSwitchEngine`（進行中パイプライン数も見る）を使う。
     var canSwitchEngine: Bool {
         switch self {
         case .recording, .processing: return false
@@ -241,6 +256,17 @@ final class AppState: ObservableObject {
 
     /// `.recording` の別名。状態は status に一本化しているので保存しない。
     var isRecording: Bool { status == .recording }
+
+    /// 停止後のパイプライン（文字起こし→整形→挿入）が何本動いているか。
+    /// 追い越されたパイプラインは `status` に現れないので、別に数える（Issue #97 / #101）。
+    @Published private(set) var inFlightPipelines = 0
+
+    func pipelineStarted() { inFlightPipelines += 1 }
+    func pipelineFinished() { inFlightPipelines = max(0, inFlightPipelines - 1) }
+
+    /// 音声認識エンジンを載せ替えてよいか。表示状態に加えて、裏で動くパイプラインが
+    /// 無いことも見る。載せ替え中に `unload()` されたエンジンへ文字起こしが当たらないように。
+    var canSwitchEngine: Bool { status.canSwitchEngine && inFlightPipelines == 0 }
 
     private var doneResetTask: Task<Void, Never>?
 

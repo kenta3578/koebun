@@ -99,9 +99,9 @@ struct GeneralSettingsView: View {
                     AppController.shared.loadSpeechEngine()
                 }
                 // 録音中・文字起こし中の載せ替えはマイクを開いたままにする（Issue #77）。
-                .disabled(!appState.status.canSwitchEngine)
+                .disabled(!appState.canSwitchEngine)
 
-                if !appState.status.canSwitchEngine {
+                if !appState.canSwitchEngine {
                     Text("録音・処理が終わるまでエンジンは切り替えられません。")
                         .font(.caption)
                         .foregroundStyle(.secondary)

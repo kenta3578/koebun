@@ -83,9 +83,26 @@ enum TextInjector {
     private static let restoreDelay: Duration = .milliseconds(250)
     // MARK: - 入口
 
+    /// 直前の挿入。`insert` はこれを待ってから始める。
+    ///
+    /// 挿入は settle/recheck の待ち（0.35〜0.8 秒）を挟むので、その間に別の挿入が入ると
+    /// `NSPasteboard.general` と `pendingRestore` を取り合って貼る内容が入れ替わる。
+    /// 呼び出し元は録音パイプラインだけでなく HUD・履歴の再挿入もあるので、入口で直列化する（Issue #99）。
+    private static var lastInsertion: Task<Void, Never>?
+
     /// - Parameter expectedBundleId: 録音を始めたときに前面だったアプリ。渡すと、挿入直前に
     ///   前面が変わっていないかを照合する。nil なら照合しない（HUD・履歴からの再挿入）。
     static func insert(_ text: String, expectedBundleId: String? = nil) async -> InsertionOutcome {
+        let previous = lastInsertion
+        let current = Task { @MainActor in
+            await previous?.value
+            return await performInsert(text, expectedBundleId: expectedBundleId)
+        }
+        lastInsertion = Task { _ = await current.value }
+        return await current.value
+    }
+
+    private static func performInsert(_ text: String, expectedBundleId: String?) async -> InsertionOutcome {
         guard !text.isEmpty else { return .succeeded }
 
         let settings = SettingsStore.shared
