@@ -22,12 +22,14 @@ enum AppStatus: Equatable {
     /// `hint` は「設定で直せる失敗」のときだけ付き、HUD がそこへ飛ぶボタンを出す。
     case failed(reason: String, hint: FailureHint? = nil)
 
-    /// 右⌥で録音を始めてよい状態か。モデル読込中・録音中・処理中は始めない。
+    /// 右⌥で録音を始めてよい状態か。モデル読込中・録音中は始めない。
     /// 失敗表示中は始めてよい（挿入に失敗しただけで、次の発話は受け付ける）。
+    /// **処理中も始めてよい**。停止直後の言い残しを押した瞬間から録り始めるため（Issue #97）。
+    /// 先行パイプラインが後から状態・HUD を潰さないことは `AppController` が世代番号で守る。
     var canStartRecording: Bool {
         switch self {
-        case .idle, .done, .warned, .failed: return true
-        case .loadingModel, .recording, .processing: return false
+        case .idle, .done, .warned, .failed, .processing: return true
+        case .loadingModel, .recording: return false
         }
     }
 
