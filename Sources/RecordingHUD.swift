@@ -503,6 +503,9 @@ final class RecordingHUDController {
     var onStop: (() -> Void)?
     /// キャンセル確定（確認が要る場合は確認後に呼ばれる）。
     var onCancel: (() -> Void)?
+    /// 残していた結果（挿入できなかった／確認できなかった）をユーザーが閉じた、または
+    /// 再挿入で片付いたときに呼ぶ。控えている次の結果があれば呼び出し側がここで出す（Issue #100）。
+    var onResultDismissed: (() -> Void)?
 
     private let model = RecordingHUDModel()
     private var panel: NSPanel?
@@ -712,7 +715,10 @@ final class RecordingHUDController {
     ///
     /// 失敗は原因を読ませる必要があるので残す。**確認できなかっただけなら数秒で閉じる**
     /// （Issue #34: 毎回出る警告は読まれなくなる）。閉じても結果はクリップボードと履歴に残る。
-    func presentResult(_ text: String, outcome: InsertionOutcome) {
+    ///
+    /// `label` は「どの発話の結果か」の前置き（例: 前の発話）。追い越された発話の結果を
+    /// 後から出すとき、いま喋った内容の失敗と誤読させないために付ける（Issue #100）。
+    func presentResult(_ text: String, outcome: InsertionOutcome, label: String? = nil) {
         cancelAutoHide()
         stopTicking()
         // Esc で消えると結果を失う。結果を残している間は Esc 監視を張らない。
@@ -720,7 +726,7 @@ final class RecordingHUDController {
         startedAt = nil
 
         model.pendingResult = .init(text: text,
-                                    title: outcome.headline,
+                                    title: label.map { "\($0): \(outcome.headline)" } ?? outcome.headline,
                                     detail: outcome.detail,
                                     isFailure: outcome.isFailure,
                                     note: nil,
@@ -768,6 +774,7 @@ final class RecordingHUDController {
             if outcome.isSucceeded {
                 AppState.shared.update(.done(message: "挿入しました ✓"))
                 finish()  // 残していた結果を片付けて閉じる
+                onResultDismissed?()
             } else {
                 model.setResultNote(outcome.summary)
             }
@@ -778,6 +785,7 @@ final class RecordingHUDController {
         // ユーザーが結果を見た上で閉じたので、エラー表示のまま残さず待機へ戻す。
         AppState.shared.update(.idle)
         hide()
+        onResultDismissed?()
     }
 
     /// 表示中の内容と設定に合わせてパネルの大きさを切り替える。
