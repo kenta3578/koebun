@@ -40,25 +40,21 @@ final class AppController {
     /// 成功の完了表示は控えない（挿入された文字が見えているので失われるものが無い）。
     private struct DeferredPresentation {
         var status: AppStatus
+        /// 結果パネルに残す内容。nil なら状態表示だけ（文字起こし失敗・結果パネル OFF の挿入失敗）。
         var result: (text: String, outcome: InsertionOutcome)?
     }
     /// 控えた結果は古い順に並べ、1 件ずつ出す（Issue #100）。上書きしない。
     /// 追い越しが 3 世代重なっても前の失敗が消えず、結果パネルを閉じるたびに次が出る。
     private var deferred: [DeferredPresentation] = []
+    /// 控えた結果に付ける前置き。複数たまっても順に出すので「前の」ではなく「以前の」。
+    private static let deferredLabel = "以前の発話"
 
-    /// 直前に停止した発話の「挿入が終わった」合図。停止順に並ぶ挿入の番待ちに使う（Issue #99）。
+    /// 直前に停止した発話のパイプライン。挿入の前にこれを待って、発話順に貼る（Issue #99）。
     ///
-    /// 文字起こし・整形は並行してよいが、挿入だけは発話順に直列化する。整形の長さが
-    /// 違うと後の発話が先に貼られて文が入れ替わり、挿入確認待ち（`TextInjector` の
-    /// settle/recheck）にもう一方の挿入が重なるとクリップボードを取り合う。
-    private var lastInsertionFinished: Task<Void, Never>?
-
-    /// 「終わった」を後から知らせられる Task を作る。`finish()` を呼ぶと `task` が完了する。
-    private static func makeInsertionSignal() -> (task: Task<Void, Never>, finish: () -> Void) {
-        let (stream, continuation) = AsyncStream<Void>.makeStream()
-        let task = Task { for await _ in stream {} }
-        return (task, { continuation.finish() })
-    }
+    /// 文字起こし・整形は並行してよいが、貼る順番は発話順でないと文が入れ替わる。
+    /// 停止時（同期部）にここから取るので順序は停止順に決まる。挿入そのものの
+    /// 取り合い（クリップボード）は `TextInjector.insert` 側で全呼び出し元をまとめて直列化する。
+    private var lastPipeline: Task<Void, Never>?
 
     // MARK: - エンジン（Issue #27）
 
@@ -339,16 +335,11 @@ final class AppController {
         let deviceChanged = audioDeviceChangedDuringRecording
         audioDeviceChangedDuringRecording = false
         // 挿入の順番待ちはここ（同期部）で並ぶ。文字起こしの await の後で並ぶと順序が入れ替わる（Issue #99）。
-        let previousInsertion = lastInsertionFinished
-        let insertion = Self.makeInsertionSignal()
-        lastInsertionFinished = insertion.task
+        let previousPipeline = lastPipeline
         state.pipelineStarted()
-        Task { @MainActor in
-            // どの経路で抜けても次の発話の挿入を待たせ続けず、進行中の数も戻す。
-            defer {
-                insertion.finish()
-                state.pipelineFinished()
-            }
+        lastPipeline = Task { @MainActor in
+            // どの経路で抜けても進行中の数を戻す（次の発話の挿入待ちは Task の完了で解ける）。
+            defer { state.pipelineFinished() }
             do {
                 guard let (speechKind, speechEngine) = resolveSpeechEngine() else {
                     state.update(.failed(reason: "Apple 音声認識には \(EngineSupport.requiresMacOS26)"))
@@ -374,8 +365,8 @@ final class AppController {
                 // 正規表現数本ぶんなので挿入の前に済ませられる。**挿入はブロックしない**。
                 let diff = inspectFormatting(before: replaced, after: formatting.result?.text)
 
-                // 前の発話の挿入が終わるまで待つ。発話順を守り、クリップボードを取り合わない（Issue #99）。
-                await previousInsertion?.value
+                // 前の発話のパイプラインが終わるまで待つ。貼る順番を発話順に揃える（Issue #99）。
+                await previousPipeline?.value
                 // 挿入は成否を判定して返る。成功と確認できなければ結果を捨てない（Issue #13）。
                 // 録音を始めたアプリと違うところへ貼らないよう、照合用に渡す（Issue #80）。
                 let outcome: InsertionOutcome = text.isEmpty
@@ -400,7 +391,10 @@ final class AppController {
                         state.update(.warned(message: "録音デバイスが変わったため、切り替え前までの音声で処理しました"))
                     }
                 } else if presentation.hud == .keepResult {
-                    deferred.append(DeferredPresentation(status: presentation.status, result: (text, outcome)))
+                    enqueueDeferred(status: presentation.status, result: (text, outcome))
+                } else if presentation.status.isFailed {
+                    // 結果パネル OFF の挿入失敗。結果は履歴にあるので状態だけ控える。
+                    enqueueDeferred(status: presentation.status, result: nil)
                 }
                 let inserted = !text.isEmpty && outcome.isSucceeded
 
@@ -444,7 +438,7 @@ final class AppController {
                 let status = AppStatus.failed(reason: "文字起こし失敗: \(error.localizedDescription)")
                 // 次の録音に追い越されていたら、その HUD を潰さず控える（Issue #97）。
                 guard generation == recordingGeneration else {
-                    deferred.append(DeferredPresentation(status: status, result: nil))
+                    enqueueDeferred(status: status, result: nil)
                     return
                 }
                 // 失敗は自動で閉じない。HUD に原因を残す。
@@ -567,19 +561,28 @@ final class AppController {
         return pending
     }
 
+    /// 追い越されたパイプラインの見せ損ねた結果を控える。
+    /// 状態文には「以前の発話」と前置きし、メニューバー・HUD のどちらで見ても今の発話と混ざらない。
+    /// 新しい録音がもう終わっていて待機中なら（キャンセル後など）、拾う機会が無いのでその場で出す。
+    private func enqueueDeferred(status: AppStatus, result: (text: String, outcome: InsertionOutcome)?) {
+        deferred.append(DeferredPresentation(status: status.prefixed(Self.deferredLabel), result: result))
+        presentNextDeferredIfIdle()
+    }
+
     /// 控えた結果を古い順に 1 件取り出す。
     private func takeDeferred() -> DeferredPresentation? {
         deferred.isEmpty ? nil : deferred.removeFirst()
     }
 
-    /// 追い越されたパイプラインが見せ損ねた結果を出す。
-    /// 呼ぶ時点で HUD は直前の録音で表示中（`show()` 済み・自動クローズ未予約）なので、
-    /// 状態を差し替えればそのまま失敗表示になる。結果があるときは「前の発話」と前置きして
-    /// 結果パネルで残す（いま喋った内容の失敗と誤読させない。Issue #100）。
+    /// 追い越されたパイプラインが見せ損ねた結果を出す（Issue #100）。
+    /// 結果があれば結果パネルで残す。無ければ状態表示（失敗の原因）を HUD に前面で出す。
+    /// HUD が閉じていても出す。閉じたまま状態だけ変えるとメニューバーの色しか変わらず原因が読めない。
     private func showDeferred(_ deferred: DeferredPresentation) {
         state.update(deferred.status)
         if let result = deferred.result {
-            hud.presentResult(result.text, outcome: result.outcome, label: "前の発話")
+            hud.presentResult(result.text, outcome: result.outcome, label: Self.deferredLabel)
+        } else {
+            hud.presentStatus()
         }
     }
 

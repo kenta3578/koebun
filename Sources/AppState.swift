@@ -33,6 +33,17 @@ enum AppStatus: Equatable {
         }
     }
 
+    /// 表示文の前に「どの発話の話か」を付ける（例: 以前の発話）。追い越された発話の結果を
+    /// 後から出すとき、いま喋った内容の失敗と誤読させない（Issue #100）。
+    func prefixed(_ label: String) -> AppStatus {
+        switch self {
+        case .done(let message):           return .done(message: "\(label): \(message)")
+        case .warned(let message):         return .warned(message: "\(label): \(message)")
+        case .failed(let reason, let hint): return .failed(reason: "\(label): \(reason)", hint: hint)
+        case .idle, .loadingModel, .recording, .processing: return self
+        }
+    }
+
     /// 失敗表示か。原因を残したいので、他の表示で上書きしてよいかの判断に使う。
     var isFailed: Bool {
         if case .failed = self { return true }

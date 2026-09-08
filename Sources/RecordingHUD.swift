@@ -788,6 +788,26 @@ final class RecordingHUDController {
         onResultDismissed?()
     }
 
+    /// 結果パネル無しの失敗表示（文字起こし失敗など）の「閉じる」。
+    /// 控えている次の結果があれば呼び出し側がここで出す（Issue #100）。
+    private func dismissFailure() {
+        hide()
+        onResultDismissed?()
+    }
+
+    /// 状態から導出される表示（失敗の原因など）を、録音のタイマーや自動クローズ無しで前面に出す。
+    /// 追い越された発話の失敗を後から出すときに使う。HUD が閉じていても出す（結果を失わせない）。
+    func presentStatus() {
+        cancelAutoHide()
+        resultAutoHides = false
+        stopTicking()
+        removeEscapeMonitors()
+        startedAt = nil
+        model.pendingResult = nil
+        model.warning = nil
+        presentPanel()
+    }
+
     /// 表示中の内容と設定に合わせてパネルの大きさを切り替える。
     private func applyPanelSize() {
         guard let panel else { return }
@@ -845,7 +865,7 @@ final class RecordingHUDController {
             onRequestCancel: { [weak self] in self?.requestCancel() },
             onKeepRecording: { [weak self] in self?.keepRecording() },
             onConfirmCancel: { [weak self] in self?.onCancel?() },
-            onDismiss: { [weak self] in self?.hide() },
+            onDismiss: { [weak self] in self?.dismissFailure() },
             onCopyResult: { [weak self] in self?.copyResult() },
             onRetryInsert: { [weak self] in self?.retryInsert() },
             onDismissResult: { [weak self] in self?.dismissResult() },
