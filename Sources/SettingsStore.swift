@@ -35,8 +35,20 @@ final class SettingsStore: ObservableObject {
     @Published var showResultPanel: Bool {
         didSet { UserDefaults.standard.set(showResultPanel, forKey: "showResultPanel") }
     }
+    /// 録音トリガーの修飾キー（keyCode）。既定は右⌥。
     @Published var hotKeyCode: UInt16 {
         didSet { UserDefaults.standard.set(Int(hotKeyCode), forKey: "hotKeyCode") }
+    }
+    /// 修飾キーと組み合わせる通常キー（Issue #112）。nil なら修飾キー単独で録音する。
+    @Published var hotKeyExtra: HotKeyExtra? {
+        didSet {
+            UserDefaults.standard.set(hotKeyExtra.map { Int($0.keyCode) } ?? 0, forKey: "hotKeyExtraKeyCode")
+            UserDefaults.standard.set(hotKeyExtra?.label ?? "", forKey: "hotKeyExtraLabel")
+        }
+    }
+    /// 「右⌥ + S」のような表示名。待機表示・設定画面・HUD で共通に使う。
+    var hotKeyDisplayName: String {
+        Self.hotKeyDisplayName(modifier: hotKeyCode, extra: hotKeyExtra)
     }
     /// 履歴の保存日数。0 = 無期限。
     @Published var historyRetentionDays: Int {
@@ -168,6 +180,11 @@ final class SettingsStore: ObservableObject {
         showResultPanel = UserDefaults.standard.object(forKey: "showResultPanel") as? Bool ?? true
         let stored = UserDefaults.standard.integer(forKey: "hotKeyCode")
         hotKeyCode = stored > 0 ? UInt16(stored) : 61
+        let extraCode = UserDefaults.standard.integer(forKey: "hotKeyExtraKeyCode")
+        hotKeyExtra = extraCode > 0
+            ? HotKeyExtra(keyCode: UInt16(extraCode),
+                          label: UserDefaults.standard.string(forKey: "hotKeyExtraLabel") ?? "")
+            : nil
         // 0（無期限）と未設定を区別するため object で取り出す。
         historyRetentionDays = UserDefaults.standard.object(forKey: "historyRetentionDays") as? Int ?? 30
         saveAudio = UserDefaults.standard.object(forKey: "saveAudio") as? Bool ?? true
@@ -246,6 +263,11 @@ final class SettingsStore: ObservableObject {
         return defaults.first(where: isSupported) ?? defaults[defaults.count - 1]
     }
 
+    static func hotKeyDisplayName(modifier: UInt16, extra: HotKeyExtra?) -> String {
+        guard let extra else { return keyName(for: modifier) }
+        return "\(keyName(for: modifier)) + \(extra.displayLabel)"
+    }
+
     static func keyName(for code: UInt16) -> String {
         switch code {
         case 61: return "右⌥"
@@ -306,4 +328,36 @@ final class SettingsStore: ObservableObject {
         default:     return nil
         }
     }
+}
+
+/// 録音トリガーの修飾キーに組み合わせる通常キー（Issue #112）。
+///
+/// 一致判定は物理キー（keyCode）で行い、`label` は録ったときのキーボード配列で
+/// 出た文字を表示用に持つだけ（配列を変えると表示と実際のキーがずれ得るが、判定は変わらない）。
+struct HotKeyExtra: Equatable {
+    let keyCode: UInt16
+    let label: String
+
+    var displayLabel: String {
+        label.isEmpty ? "key(\(keyCode))" : label
+    }
+
+    /// 押されたキーの表示名。文字が出るキーはその大文字、出ないキーは keyCode から名前を引く。
+    static func label(keyCode: UInt16, characters: String?) -> String {
+        if let named = Self.specialKeyNames[keyCode] { return named }
+        if let characters,
+           let scalar = characters.unicodeScalars.first,
+           !CharacterSet.controlCharacters.contains(scalar),
+           !CharacterSet.whitespaces.contains(scalar) {
+            return characters.uppercased()
+        }
+        return ""
+    }
+
+    private static let specialKeyNames: [UInt16: String] = [
+        49: "Space", 36: "Return", 48: "Tab", 51: "Delete", 53: "Esc",
+        123: "←", 124: "→", 125: "↓", 126: "↑",
+        122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6",
+        98: "F7", 100: "F8", 101: "F9", 109: "F10", 103: "F11", 111: "F12",
+    ]
 }

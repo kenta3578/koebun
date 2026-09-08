@@ -179,13 +179,18 @@ struct GeneralSettingsView: View {
                     Text("録音トリガー")
                     Spacer()
                     Text(hotKeyCapture.isCapturing
-                         ? "modifier キーを押してください…"
-                         : SettingsStore.keyName(for: settings.hotKeyCode))
+                         ? "修飾キーを押してください…"
+                         : settings.hotKeyDisplayName)
                         .foregroundStyle(hotKeyCapture.isCapturing ? .secondary : .primary)
                     Button(hotKeyCapture.isCapturing ? "キャンセル" : "変更") {
                         hotKeyCapture.isCapturing ? hotKeyCapture.cancel() : hotKeyCapture.start()
                     }
                 }
+                Text("修飾キー（右⌥ など）を押したまま別のキーを押すと「右⌥ + S」のような組み合わせに、"
+                     + "押さずに離すと修飾キー単独になります。組み合わせのときは、そのキー入力はアプリに届きません。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section("履歴") {
