@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 
 /// 設定の永続化（UserDefaults）と共有状態。
 @MainActor
@@ -40,15 +41,19 @@ final class SettingsStore: ObservableObject {
         didSet { UserDefaults.standard.set(Int(hotKeyCode), forKey: "hotKeyCode") }
     }
     /// 修飾キーと組み合わせる通常キー（Issue #112）。nil なら修飾キー単独で録音する。
-    @Published var hotKeyExtra: HotKeyExtra? {
+    /// keyCode 0 は A なので、0 を「無し」の番兵にせず nil はキーごと消す。
+    @Published var hotKeyExtraKeyCode: UInt16? {
         didSet {
-            UserDefaults.standard.set(hotKeyExtra.map { Int($0.keyCode) } ?? 0, forKey: "hotKeyExtraKeyCode")
-            UserDefaults.standard.set(hotKeyExtra?.label ?? "", forKey: "hotKeyExtraLabel")
+            if let code = hotKeyExtraKeyCode {
+                UserDefaults.standard.set(Int(code), forKey: "hotKeyExtraKeyCode")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "hotKeyExtraKeyCode")
+            }
         }
     }
     /// 「右⌥ + S」のような表示名。待機表示・設定画面・HUD で共通に使う。
     var hotKeyDisplayName: String {
-        Self.hotKeyDisplayName(modifier: hotKeyCode, extra: hotKeyExtra)
+        Self.hotKeyDisplayName(modifier: hotKeyCode, extraKeyCode: hotKeyExtraKeyCode)
     }
     /// 履歴の保存日数。0 = 無期限。
     @Published var historyRetentionDays: Int {
@@ -180,11 +185,7 @@ final class SettingsStore: ObservableObject {
         showResultPanel = UserDefaults.standard.object(forKey: "showResultPanel") as? Bool ?? true
         let stored = UserDefaults.standard.integer(forKey: "hotKeyCode")
         hotKeyCode = stored > 0 ? UInt16(stored) : 61
-        let extraCode = UserDefaults.standard.integer(forKey: "hotKeyExtraKeyCode")
-        hotKeyExtra = extraCode > 0
-            ? HotKeyExtra(keyCode: UInt16(extraCode),
-                          label: UserDefaults.standard.string(forKey: "hotKeyExtraLabel") ?? "")
-            : nil
+        hotKeyExtraKeyCode = (UserDefaults.standard.object(forKey: "hotKeyExtraKeyCode") as? Int).map(UInt16.init)
         // 0（無期限）と未設定を区別するため object で取り出す。
         historyRetentionDays = UserDefaults.standard.object(forKey: "historyRetentionDays") as? Int ?? 30
         saveAudio = UserDefaults.standard.object(forKey: "saveAudio") as? Bool ?? true
@@ -263,9 +264,9 @@ final class SettingsStore: ObservableObject {
         return defaults.first(where: isSupported) ?? defaults[defaults.count - 1]
     }
 
-    static func hotKeyDisplayName(modifier: UInt16, extra: HotKeyExtra?) -> String {
-        guard let extra else { return keyName(for: modifier) }
-        return "\(keyName(for: modifier)) + \(extra.displayLabel)"
+    static func hotKeyDisplayName(modifier: UInt16, extraKeyCode: UInt16?) -> String {
+        guard let extraKeyCode else { return keyName(for: modifier) }
+        return "\(keyName(for: modifier)) + \(HotKeyExtraKey.label(for: extraKeyCode))"
     }
 
     static func keyName(for code: UInt16) -> String {
@@ -283,11 +284,12 @@ final class SettingsStore: ObservableObject {
 
     /// keyCode が押下状態かを modifier flags で判定。
     /// その修飾キーが押されているか。**左右を区別する**。
+    /// 純関数なので nonisolated（イベントタップのスレッドからも呼ぶ。Issue #112）。
     ///
     /// `NSEvent.ModifierFlags` は左右を持たないので、生の rawValue にあるデバイス依存マスク
     /// （NX_DEVICE*KEYMASK）を見る。区別しないと、左⌥ を押したまま右⌥ を離したときに
     /// 「まだ押されている」と誤判定し、`isDown` が固着して次の録音が始まらない（Issue #78）。
-    static func isKeyDown(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+    nonisolated static func isKeyDown(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
         if let mask = deviceMask(for: keyCode) {
             return flags.rawValue & mask != 0
         }
@@ -296,7 +298,7 @@ final class SettingsStore: ObservableObject {
     }
 
     /// 左右を区別するためのデバイス依存マスク。左右の無いキー（fn）は nil。
-    private static func deviceMask(for keyCode: UInt16) -> UInt? {
+    private nonisolated static func deviceMask(for keyCode: UInt16) -> UInt? {
         switch keyCode {
         case 59: return 0x0000_0001  // 左⌃
         case 62: return 0x0000_2000  // 右⌃
@@ -312,14 +314,18 @@ final class SettingsStore: ObservableObject {
     ///
     /// これを見ないと、⌥⌘→ でのタブ切替・⌥+ドラッグ・⌥e のような入力のたびに
     /// 録音が開始／停止する。右⌥ をほとんど使わない環境でだけ成り立っていた（Issue #78）。
-    static func isSoloPress(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+    ///
+    /// `ignoringFunction` は修飾キー＋通常キーの組み合わせ用。矢印・F キーは押すだけで
+    /// `.function` が立つので、それを「別の修飾キー」と数えると 右⌥+← が永遠に反応しない（Issue #112）。
+    nonisolated static func isSoloPress(keyCode: UInt16, flags: NSEvent.ModifierFlags, ignoringFunction: Bool = false) -> Bool {
         let own = ownFlag(for: keyCode)
-        let others: [NSEvent.ModifierFlags] = [.command, .option, .control, .shift, .function]
+        var others: [NSEvent.ModifierFlags] = [.command, .option, .control, .shift, .function]
+        if ignoringFunction { others.removeAll { $0 == .function } }
         return !others.contains { $0 != own && flags.contains($0) }
     }
 
     /// そのキー自身が立てるフラグ（単独押下の判定で自分を除くために使う）。
-    private static func ownFlag(for keyCode: UInt16) -> NSEvent.ModifierFlags? {
+    private nonisolated static func ownFlag(for keyCode: UInt16) -> NSEvent.ModifierFlags? {
         switch keyCode {
         case 58, 61: return .option
         case 54, 55: return .command
@@ -330,34 +336,52 @@ final class SettingsStore: ObservableObject {
     }
 }
 
-/// 録音トリガーの修飾キーに組み合わせる通常キー（Issue #112）。
+/// 録音トリガーの修飾キーに組み合わせる通常キーの表示名（Issue #112）。
 ///
-/// 一致判定は物理キー（keyCode）で行い、`label` は録ったときのキーボード配列で
-/// 出た文字を表示用に持つだけ（配列を変えると表示と実際のキーがずれ得るが、判定は変わらない）。
-struct HotKeyExtra: Equatable {
-    let keyCode: UInt16
-    let label: String
-
-    var displayLabel: String {
-        label.isEmpty ? "key(\(keyCode))" : label
+/// 一致判定は物理キー（keyCode）で行い、表示名は**表示するたびに**今のキーボード配列から引く。
+/// 録ったときの文字を保存すると、配列を変えたときに表示と実際のキーがずれる。
+enum HotKeyExtraKey {
+    static func label(for keyCode: UInt16) -> String {
+        if let named = specialKeyNames[keyCode] { return named }
+        if let character = character(for: keyCode) { return character.uppercased() }
+        return "key(\(keyCode))"
     }
 
-    /// 押されたキーの表示名。文字が出るキーはその大文字、出ないキーは keyCode から名前を引く。
-    static func label(keyCode: UInt16, characters: String?) -> String {
-        if let named = Self.specialKeyNames[keyCode] { return named }
-        if let characters,
-           let scalar = characters.unicodeScalars.first,
-           !CharacterSet.controlCharacters.contains(scalar),
-           !CharacterSet.whitespaces.contains(scalar) {
-            return characters.uppercased()
+    /// 今の配列でそのキーが出す文字（修飾なし・デッドキーは無視）。文字を出さないキーは nil。
+    private static func character(for keyCode: UInt16) -> String? {
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
+        else { return nil }
+        let layoutData = Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue() as Data
+        return layoutData.withUnsafeBytes { raw -> String? in
+            guard let base = raw.baseAddress else { return nil }
+            let layout = base.assumingMemoryBound(to: UCKeyboardLayout.self)
+            var deadKeyState: UInt32 = 0
+            var chars = [UniChar](repeating: 0, count: 4)
+            var length = 0
+            let status = UCKeyTranslate(
+                layout, keyCode, UInt16(kUCKeyActionDown), 0, UInt32(LMGetKbdType()),
+                UInt32(kUCKeyTranslateNoDeadKeysBit),
+                &deadKeyState, chars.count, &length, &chars
+            )
+            guard status == noErr, length > 0 else { return nil }
+            let text = String(utf16CodeUnits: chars, count: length)
+            guard let scalar = text.unicodeScalars.first,
+                  !CharacterSet.controlCharacters.contains(scalar),
+                  !CharacterSet.whitespaces.contains(scalar),
+                  // 文字を出さないキーは私用領域（U+F700〜）のグリフになる。
+                  !(0xF700...0xF8FF).contains(scalar.value)
+            else { return nil }
+            return text
         }
-        return ""
     }
 
     private static let specialKeyNames: [UInt16: String] = [
-        49: "Space", 36: "Return", 48: "Tab", 51: "Delete", 53: "Esc",
+        49: "Space", 36: "Return", 76: "Enter", 48: "Tab", 51: "Delete", 117: "⌦", 53: "Esc",
         123: "←", 124: "→", 125: "↓", 126: "↑",
+        115: "Home", 119: "End", 116: "PageUp", 121: "PageDown",
         122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6",
         98: "F7", 100: "F8", 101: "F9", 109: "F10", 103: "F11", 111: "F12",
+        105: "F13", 107: "F14", 113: "F15", 106: "F16", 64: "F17", 79: "F18", 80: "F19", 90: "F20",
     ]
 }

@@ -48,4 +48,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         HotKeyCapture.shared.cancel()
     }
+
+    /// 別アプリに切り替えたら録りをやめる。続けると、別アプリで押した修飾キーで
+    /// 設定が書き換わる（Issue #112）。
+    func windowDidResignKey(_ notification: Notification) {
+        HotKeyCapture.shared.cancel()
+    }
 }
