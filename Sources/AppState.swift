@@ -149,7 +149,7 @@ enum AppStatus: Equatable {
 
     @MainActor
     private static var hotKeyName: String {
-        SettingsStore.keyName(for: SettingsStore.shared.hotKeyCode)
+        SettingsStore.shared.hotKeyDisplayName
     }
 }
 
