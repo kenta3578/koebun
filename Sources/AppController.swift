@@ -44,6 +44,20 @@ final class AppController {
     }
     private var deferred: DeferredPresentation?
 
+    /// 直前に停止した発話の「挿入が終わった」合図。停止順に並ぶ挿入の番待ちに使う（Issue #99）。
+    ///
+    /// 文字起こし・整形は並行してよいが、挿入だけは発話順に直列化する。整形の長さが
+    /// 違うと後の発話が先に貼られて文が入れ替わり、挿入確認待ち（`TextInjector` の
+    /// settle/recheck）にもう一方の挿入が重なるとクリップボードを取り合う。
+    private var lastInsertionFinished: Task<Void, Never>?
+
+    /// 「終わった」を後から知らせられる Task を作る。`finish()` を呼ぶと `task` が完了する。
+    private static func makeInsertionSignal() -> (task: Task<Void, Never>, finish: () -> Void) {
+        let (stream, continuation) = AsyncStream<Void>.makeStream()
+        let task = Task { for await _ in stream {} }
+        return (task, { continuation.finish() })
+    }
+
     // MARK: - エンジン（Issue #27）
 
     /// 実装は差し替え可能で、**いったん作ったものは使い回す**。
@@ -320,7 +334,13 @@ final class AppController {
         // ここで読んで戻す（この録音ぶんの事情なので、次の録音へ持ち越さない）。
         let deviceChanged = audioDeviceChangedDuringRecording
         audioDeviceChangedDuringRecording = false
+        // 挿入の順番待ちはここ（同期部）で並ぶ。文字起こしの await の後で並ぶと順序が入れ替わる（Issue #99）。
+        let previousInsertion = lastInsertionFinished
+        let insertion = Self.makeInsertionSignal()
+        lastInsertionFinished = insertion.task
         Task { @MainActor in
+            // どの経路で抜けても次の発話の挿入を待たせ続けない。
+            defer { insertion.finish() }
             do {
                 guard let (speechKind, speechEngine) = resolveSpeechEngine() else {
                     state.update(.failed(reason: "Apple 音声認識には \(EngineSupport.requiresMacOS26)"))
@@ -346,6 +366,8 @@ final class AppController {
                 // 正規表現数本ぶんなので挿入の前に済ませられる。**挿入はブロックしない**。
                 let diff = inspectFormatting(before: replaced, after: formatting.result?.text)
 
+                // 前の発話の挿入が終わるまで待つ。発話順を守り、クリップボードを取り合わない（Issue #99）。
+                await previousInsertion?.value
                 // 挿入は成否を判定して返る。成功と確認できなければ結果を捨てない（Issue #13）。
                 // 録音を始めたアプリと違うところへ貼らないよう、照合用に渡す（Issue #80）。
                 let outcome: InsertionOutcome = text.isEmpty
