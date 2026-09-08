@@ -29,6 +29,10 @@ final class AppController {
     /// 変わった時点でエンジンは止まり、以降の発話はサンプルに入らないので、
     /// 「途中までで処理した」ことを結果表示に必ず出す。停止処理で読んで false に戻す。
     private var audioDeviceChangedDuringRecording = false
+    /// 処理中（停止直後）に右⌥が来たら、捨てずに控えておいて処理完了と同時に録音を始める。
+    /// 停止→言い残しに気づいて即再開、を一度の押下で通すため（Issue #95）。
+    /// 処理中にもう一度押されたら取り消す（トグルの意味を保つ）。
+    private var startRequestedWhileProcessing = false
 
     // MARK: - エンジン（Issue #27）
 
@@ -263,8 +267,16 @@ final class AppController {
     }
 
     private func startRecording() {
-        // 読込中・処理中は始めない（処理中に始めると旧パイプラインの完了表示が新しい表示を潰す。Issue #57）。
+        // 処理中は始めない（始めると旧パイプラインの完了表示が新しい表示を潰す。Issue #57）が、
+        // 押下は捨てずに予約する。停止直後の窓（文字起こし＋挿入確認で 0.5〜1 秒）で押しても
+        // 「反応しない→もう一回押す」にならないように（Issue #95）。
+        if case .processing = state.status {
+            startRequestedWhileProcessing.toggle()
+            return
+        }
+        // 読込中は始めない。
         guard state.status.canStartRecording else { return }
+        startRequestedWhileProcessing = false
         do {
             // コンテキストは録音開始の**前**に取る。HUD を出したあとだと、
             // アプリによっては選択のハイライトが外れて選択テキストを読めなくなる。
@@ -293,6 +305,7 @@ final class AppController {
     private func stopRecording() {
         guard state.isRecording else { return }
         state.update(.processing)
+        startRequestedWhileProcessing = false
 
         // クリップボードは「録音中にコピーしたもの」も拾うので、停止のこの時点で確定させる。
         let pending = takePending()
@@ -373,6 +386,13 @@ final class AppController {
                     inserted: inserted
                 )
 
+                // 処理中に右⌥が予約されていれば、完了表示を挟まずそのまま次の録音へ（Issue #95）。
+                // 挿入できなかった／確認できなかった結果を残す表示のときは予約を捨てる。
+                // 結果がどこにあるか分からないまま次の録音に入るのは避ける。
+                if takeStartRequest(), presentation.hud != .keepResult {
+                    startRecording()
+                    return
+                }
                 // 履歴を書き出してから HUD を動かす（完了表示を一瞬見せる／結果を残す／閉じる）。
                 switch presentation.hud {
                 case .finish(let warning): hud.finish(warning: warning)
@@ -380,7 +400,8 @@ final class AppController {
                 case .hide:                hud.hide()
                 }
             } catch {
-                // 失敗は自動で閉じない。HUD に原因を残す。
+                // 失敗は自動で閉じない。HUD に原因を残す。予約した再開も捨てる。
+                _ = takeStartRequest()
                 state.update(.failed(reason: "文字起こし失敗: \(error.localizedDescription)"))
             }
         }
@@ -498,6 +519,12 @@ final class AppController {
             pending.context = ContextCapture.finalize(context)
         }
         return pending
+    }
+
+    /// 処理中に予約された再開を取り出して消す。
+    private func takeStartRequest() -> Bool {
+        defer { startRequestedWhileProcessing = false }
+        return startRequestedWhileProcessing
     }
 
     /// 録音を破棄する。文字起こしも挿入も行わない（履歴にも残さない）。
