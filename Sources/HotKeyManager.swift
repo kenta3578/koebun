@@ -282,7 +282,9 @@ final class HotKeyCapture: ObservableObject {
     }
 
     /// 監視のコールバック中に監視を外さないよう、確定は次のターンで行う。
+    /// 待ちだけは即座に消す（組み合わせ確定の直後に来る修飾キーの解放で単独に上書きしない）。
     private func commit(modifier: UInt16, extra: HotKeyExtra?) {
+        pendingModifier = nil
         Task { @MainActor in
             SettingsStore.shared.hotKeyCode = modifier
             SettingsStore.shared.hotKeyExtra = extra
