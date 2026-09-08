@@ -172,8 +172,9 @@ final class AppController {
     private func reloadSpeechEngine() async {
         // 録音中・文字起こし中に載せ替えると、マイクが開いたまま状態だけが上書きされて
         // 録音を止める手段が無くなり、次の録音でクラッシュする（Issue #77）。
+        // 裏で動く追い越されたパイプラインも数に入れる（Issue #101）。
         // UI 側でも切り替えを無効にしてあるが、経路を 1 つに絞れないのでここでも守る。
-        guard state.status.canSwitchEngine else {
+        guard state.canSwitchEngine else {
             NSLog("koebun: 録音・処理中のため音声認識エンジンの切り替えを見送りました")
             return
         }
@@ -341,9 +342,13 @@ final class AppController {
         let previousInsertion = lastInsertionFinished
         let insertion = Self.makeInsertionSignal()
         lastInsertionFinished = insertion.task
+        state.pipelineStarted()
         Task { @MainActor in
-            // どの経路で抜けても次の発話の挿入を待たせ続けない。
-            defer { insertion.finish() }
+            // どの経路で抜けても次の発話の挿入を待たせ続けず、進行中の数も戻す。
+            defer {
+                insertion.finish()
+                state.pipelineFinished()
+            }
             do {
                 guard let (speechKind, speechEngine) = resolveSpeechEngine() else {
                     state.update(.failed(reason: "Apple 音声認識には \(EngineSupport.requiresMacOS26)"))
@@ -426,7 +431,7 @@ final class AppController {
                 // 追い越された前のパイプラインが結果を見せ損ねていれば、自分の完了表示の代わりに出す。
                 // 自分も結果を残す表示なら自分を先に出し、控えた分は結果パネルを閉じたときに続けて出す。
                 if presentation.hud != .keepResult, let deferred = takeDeferred() {
-                    present(deferred)
+                    showDeferred(deferred)
                     return
                 }
                 // 履歴を書き出してから HUD を動かす（完了表示を一瞬見せる／結果を残す／閉じる）。
@@ -571,7 +576,7 @@ final class AppController {
     /// 呼ぶ時点で HUD は直前の録音で表示中（`show()` 済み・自動クローズ未予約）なので、
     /// 状態を差し替えればそのまま失敗表示になる。結果があるときは「前の発話」と前置きして
     /// 結果パネルで残す（いま喋った内容の失敗と誤読させない。Issue #100）。
-    private func present(_ deferred: DeferredPresentation) {
+    private func showDeferred(_ deferred: DeferredPresentation) {
         state.update(deferred.status)
         if let result = deferred.result {
             hud.presentResult(result.text, outcome: result.outcome, label: "前の発話")
@@ -586,7 +591,7 @@ final class AppController {
         case .idle, .done, .warned, .failed: break
         }
         guard let next = takeDeferred() else { return }
-        present(next)
+        showDeferred(next)
     }
 
     /// 録音を破棄する。文字起こしも挿入も行わない（履歴にも残さない）。
@@ -597,7 +602,7 @@ final class AppController {
         audioDeviceChangedDuringRecording = false
         // 追い越された前の発話が結果を見せ損ねていれば、閉じる代わりにそれを出す（Issue #97）。
         if let deferred = takeDeferred() {
-            present(deferred)
+            showDeferred(deferred)
             return
         }
         hud.hide()
