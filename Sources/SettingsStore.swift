@@ -184,14 +184,16 @@ final class SettingsStore: ObservableObject {
         keepResultOnClipboardWhenUnsure =
             UserDefaults.standard.object(forKey: "keepResultOnClipboardWhenUnsure") as? Bool ?? true
         showResultPanel = UserDefaults.standard.object(forKey: "showResultPanel") as? Bool ?? true
-        if let codes = UserDefaults.standard.array(forKey: "hotKeyModifierCodes") as? [Int], !codes.isEmpty {
-            hotKeyModifiers = codes.map(UInt16.init)
+        let storedExtra = (UserDefaults.standard.object(forKey: "hotKeyExtraKeyCode") as? Int).flatMap(UInt16.init(exactly:))
+        let storedModifiers = Self.storedHotKeyModifiers()
+        // 手で書かれた・古いビルドが残した「成立しない組み合わせ」は既定に戻す（誤爆・永久に反応しない を防ぐ）。
+        if Self.hotKeyProblem(modifiers: storedModifiers, extraKeyCode: storedExtra) == nil {
+            hotKeyModifiers = storedModifiers
+            hotKeyExtraKeyCode = storedExtra
         } else {
-            // #115 より前は修飾キー 1 つ（hotKeyCode）だった。読み替える。
-            let legacy = UserDefaults.standard.integer(forKey: "hotKeyCode")
-            hotKeyModifiers = [legacy > 0 ? UInt16(legacy) : 61]
+            hotKeyModifiers = [61]
+            hotKeyExtraKeyCode = nil
         }
-        hotKeyExtraKeyCode = (UserDefaults.standard.object(forKey: "hotKeyExtraKeyCode") as? Int).map(UInt16.init)
         // 0（無期限）と未設定を区別するため object で取り出す。
         historyRetentionDays = UserDefaults.standard.object(forKey: "historyRetentionDays") as? Int ?? 30
         saveAudio = UserDefaults.standard.object(forKey: "saveAudio") as? Bool ?? true
@@ -247,6 +249,23 @@ final class SettingsStore: ObservableObject {
             ? .hidden
             : .normal
         defaults.set(migrated.rawValue, forKey: "hudSize")
+        return migrated
+    }
+
+    /// 保存されている修飾キーの集合を読む。
+    ///
+    /// #115 より前は修飾キー 1 つ（`hotKeyCode`）だった。旧キーは読み替えて一度だけ新キーへ書き出し、
+    /// 旧キーは消す（2 つの真実を残さない）。範囲外の値は捨て、空なら既定の右⌥。
+    private static func storedHotKeyModifiers() -> [UInt16] {
+        let defaults = UserDefaults.standard
+        if let codes = defaults.array(forKey: "hotKeyModifierCodes") as? [Int] {
+            let valid = canonicalModifiers(codes.compactMap(UInt16.init(exactly:)))
+            if !valid.isEmpty { return valid }
+        }
+        let legacy = (defaults.object(forKey: "hotKeyCode") as? Int).flatMap(UInt16.init(exactly:))
+        let migrated: [UInt16] = legacy.map { [$0] } ?? [61]
+        defaults.set(migrated.map(Int.init), forKey: "hotKeyModifierCodes")
+        defaults.removeObject(forKey: "hotKeyCode")
         return migrated
     }
 
@@ -321,23 +340,62 @@ final class SettingsStore: ObservableObject {
         }
     }
 
-    /// その修飾キー（の集合）**だけ**が押されているか（他の修飾キーが一緒に押されていない）。
+    /// その修飾キーの集合が**ちょうど**押されているか（全部押されていて、それ以外の修飾キーは押されていない）。
     ///
-    /// これを見ないと、⌥⌘→ でのタブ切替・⌥+ドラッグ・⌥e のような入力のたびに
+    /// 「それ以外が無い」を見ないと、⌥⌘→ でのタブ切替・⌥+ドラッグ・⌥e のような入力のたびに
     /// 録音が開始／停止する。右⌥ をほとんど使わない環境でだけ成り立っていた（Issue #78）。
+    /// 判定はここ 1 か所に寄せる（監視・タップ・設定画面の録りが同じ条件で動くように。Issue #115）。
     ///
     /// `ignoringFunction` は修飾キー＋通常キーの組み合わせ用。矢印・F キーは押すだけで
     /// `.function` が立つので、それを「別の修飾キー」と数えると 右⌥+← が永遠に反応しない（Issue #112）。
-    nonisolated static func isSoloPress(modifiers: [UInt16], flags: NSEvent.ModifierFlags, ignoringFunction: Bool = false) -> Bool {
+    nonisolated static func isExactlyPressed(_ modifiers: [UInt16], flags: NSEvent.ModifierFlags, ignoringFunction: Bool = false) -> Bool {
+        guard allKeysDown(modifiers, flags: flags) else { return false }
         let own = modifiers.compactMap(ownFlag(for:))
         var others: [NSEvent.ModifierFlags] = [.command, .option, .control, .shift, .function]
         if ignoringFunction { others.removeAll { $0 == .function } }
         return !others.contains { flag in !own.contains(flag) && flags.contains(flag) }
     }
 
-    /// 集合の全キーが押されているか。
+    /// 集合の全キーが押されているか（他のキーは問わない）。
     nonisolated static func allKeysDown(_ modifiers: [UInt16], flags: NSEvent.ModifierFlags) -> Bool {
         !modifiers.isEmpty && modifiers.allSatisfy { isKeyDown(keyCode: $0, flags: flags) }
+    }
+
+    /// 集合のどれか 1 つでも押されているか（録りで「全部離した」を見るのに使う）。
+    nonisolated static func anyKeyDown(_ modifiers: [UInt16], flags: NSEvent.ModifierFlags) -> Bool {
+        modifiers.contains { isKeyDown(keyCode: $0, flags: flags) }
+    }
+
+    /// 修飾キーの並びを macOS の慣例（⌃ ⌥ ⇧ ⌘ fn）に揃える。押した順で保存すると
+    /// 同じ組み合わせが別の値・別の表示になり、監視の張り直しまで起きる。
+    nonisolated static func canonicalModifiers(_ modifiers: [UInt16]) -> [UInt16] {
+        let rank: [UInt16: Int] = [59: 0, 62: 1, 58: 2, 61: 3, 56: 4, 60: 5, 55: 6, 54: 7, 63: 8]
+        var seen: Set<UInt16> = []
+        return modifiers
+            .filter { rank[$0] != nil && seen.insert($0).inserted }
+            .sorted { rank[$0]! < rank[$1]! }
+    }
+
+    /// その組み合わせが録音トリガーとして成立しないなら、その理由（設定画面に出す文言）。
+    ///
+    /// - ⇧ を含む・修飾キーが複数、なのに通常キーが無い: 押した瞬間に反応する方式なので、
+    ///   大文字のタイプや ⇧⌘S のようなショートカットの前半で必ず誤爆する
+    /// - fn と、押すだけで `.function` が立つキー（矢印・F・Home 等）の組み合わせ: fn を押していなくても
+    ///   押したように見えるので、fn 無しで反応してしまう
+    nonisolated static func hotKeyProblem(modifiers: [UInt16], extraKeyCode: UInt16?) -> String? {
+        guard !modifiers.isEmpty else { return "修飾キーがありません" }
+        if extraKeyCode == nil {
+            if modifiers.contains(where: { $0 == 56 || $0 == 60 }) {
+                return "⇧ は通常キーと組み合わせてください（例: 左⇧ + 左⌘ + 0）"
+            }
+            if modifiers.count > 1 {
+                return "複数の修飾キーは通常キーと組み合わせてください（例: 左⇧ + 左⌘ + 0）"
+            }
+        }
+        if let extraKeyCode, modifiers.contains(63), HotKeyExtraKey.setsFunctionFlag(extraKeyCode) {
+            return "fn は矢印・F キーとは組み合わせられません"
+        }
+        return nil
     }
 
     /// そのキー自身が立てるフラグ（単独押下の判定で自分を除くために使う）。
@@ -392,6 +450,17 @@ enum HotKeyExtraKey {
             return text
         }
     }
+
+    /// 押すだけで `.function` フラグが立つキー（矢印・F・Home/End/Page・⌦）。
+    nonisolated static func setsFunctionFlag(_ keyCode: UInt16) -> Bool {
+        functionFlagKeys.contains(keyCode)
+    }
+
+    private static let functionFlagKeys: Set<UInt16> = [
+        117, 123, 124, 125, 126, 115, 119, 116, 121,
+        122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,
+        105, 107, 113, 106, 64, 79, 80, 90,
+    ]
 
     private static let specialKeyNames: [UInt16: String] = [
         49: "Space", 36: "Return", 76: "Enter", 48: "Tab", 51: "Delete", 117: "⌦", 53: "Esc",

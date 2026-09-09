@@ -106,24 +106,23 @@ final class HotKeyManager {
         // global monitor にイベントが配送されない。local も張らないと
         // 「ウィンドウを開いていると右⌥ が効かない」ことになる（Issue #78）。
         if let local = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged], handler: { [weak self] event in
-            self?.handle(keyCode: event.keyCode, flags: event.modifierFlags)
+            self?.handle(flags: event.modifierFlags)
             return event
         }) {
             monitors.append(local)
         }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged], handler: { [weak self] event in
-            let keyCode = event.keyCode
             let flags = event.modifierFlags
             Task { @MainActor [weak self] in
-                self?.handle(keyCode: keyCode, flags: flags)
+                self?.handle(flags: flags)
             }
         }) {
             monitors.append(global)
         }
     }
 
-    /// どの修飾キーの変化でも「集合が全部押されているか」で見る（keyCode は使わない）。
-    private func handle(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
+    /// どの修飾キーの変化でも「集合が全部押されているか」で見る。
+    private func handle(flags: NSEvent.ModifierFlags) {
         let modifiers = SettingsStore.shared.hotKeyModifiers
         let pressed = SettingsStore.allKeysDown(modifiers, flags: flags)
 
@@ -131,7 +130,7 @@ final class HotKeyManager {
             // どれかを離すまで再発火させないので、トグルしない場合でも押下は記録する。
             isDown = true
             // 他の修飾キーと一緒なら、ショートカット操作なので録音しない（Issue #78）。
-            guard SettingsStore.isSoloPress(modifiers: modifiers, flags: flags) else { return }
+            guard SettingsStore.isExactlyPressed(modifiers, flags: flags) else { return }
             onToggle?()
         } else if !pressed {
             isDown = false
@@ -203,7 +202,7 @@ final class HotKeyManager {
 /// `@unchecked Sendable` の理由: 可変状態はすべて `lock` 経由でしか触らない。
 private final class HotKeyTapState: @unchecked Sendable {
     private struct Inner {
-        var modifiers: [UInt16] = [61]
+        var modifiers: [UInt16] = []
         var extraKeyCode: UInt16?
         var onMatch: (@Sendable () -> Void)?
         var tap: CFMachPort?
@@ -269,8 +268,7 @@ private final class HotKeyTapState: @unchecked Sendable {
             let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
             let onMatch: (@Sendable () -> Void)? = lock.withLock { inner in
                 guard !inner.stopped, keyCode == inner.extraKeyCode,
-                      SettingsStore.allKeysDown(inner.modifiers, flags: flags),
-                      SettingsStore.isSoloPress(modifiers: inner.modifiers, flags: flags, ignoringFunction: true)
+                      SettingsStore.isExactlyPressed(inner.modifiers, flags: flags, ignoringFunction: true)
                 else { return nil }
                 inner.swallowedKeyCode = keyCode
                 // 押しっぱなしのオートリピートでは 1 回だけ（飲み込みは続ける）。
@@ -318,6 +316,8 @@ final class HotKeyCapture: ObservableObject {
     static let shared = HotKeyCapture()
 
     @Published private(set) var isCapturing = false
+    /// 成立しない組み合わせを押したときの理由。次に録り始めるか確定したら消える。
+    @Published private(set) var problem: String?
     private var monitors: [Any] = []
     /// 押されたまま離されていない修飾キー（押した順）。これらを押したまま通常キーを押せば
     /// 組み合わせ、押さずにどれかを離せば修飾キーだけで確定する（Issue #112 / #115）。
@@ -334,6 +334,7 @@ final class HotKeyCapture: ObservableObject {
     func start() {
         cancel()
         isCapturing = true
+        problem = nil
         pendingModifiers = []
 
         // 修飾キーの押下・解放。戻り値は「飲み込むか」。
@@ -345,7 +346,10 @@ final class HotKeyCapture: ObservableObject {
                 self.pendingModifiers.append(code)
                 return true
             }
-            if !pressed, self.pendingModifiers.contains(code) {
+            // 溜めたキーを**全部**離したら修飾キーだけで確定する。1 つ離しただけで確定すると、
+            // 3 キーの組み合わせを押す途中で指がずれたときに通常キーが落ちる。
+            if !pressed, self.pendingModifiers.contains(code),
+               !SettingsStore.anyKeyDown(self.pendingModifiers, flags: event.modifierFlags) {
                 self.commit(modifiers: self.pendingModifiers, extraKeyCode: nil)
                 return true
             }
@@ -361,8 +365,7 @@ final class HotKeyCapture: ObservableObject {
                 return true
             }
             let modifiers = self.pendingModifiers
-            guard SettingsStore.allKeysDown(modifiers, flags: event.modifierFlags),
-                  SettingsStore.isSoloPress(modifiers: modifiers, flags: event.modifierFlags, ignoringFunction: true)
+            guard SettingsStore.isExactlyPressed(modifiers, flags: event.modifierFlags, ignoringFunction: true)
             else { return false }
             self.commit(modifiers: modifiers, extraKeyCode: event.keyCode)
             return true
@@ -384,8 +387,15 @@ final class HotKeyCapture: ObservableObject {
 
     /// 監視のコールバック中に監視を外さないよう、確定は次のターンで行う。
     /// 待ちだけは即座に消す（組み合わせ確定の直後に来る修飾キーの解放で単独に上書きしない）。
+    /// 成立しない組み合わせは保存せず、理由を出して録り続ける（押し直せる）。
     private func commit(modifiers: [UInt16], extraKeyCode: UInt16?) {
         pendingModifiers = []
+        let modifiers = SettingsStore.canonicalModifiers(modifiers)
+        if let problem = SettingsStore.hotKeyProblem(modifiers: modifiers, extraKeyCode: extraKeyCode) {
+            self.problem = problem
+            return
+        }
+        problem = nil
         Task { @MainActor in
             SettingsStore.shared.hotKeyModifiers = modifiers
             SettingsStore.shared.hotKeyExtraKeyCode = extraKeyCode
