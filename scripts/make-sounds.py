@@ -9,6 +9,18 @@
 
 生成した音は設定 →「録音開始音」「録音停止音」の「自分の音」に出る。
 気に入らなければ下の PRESETS の周波数・長さを変えて作り直す。
+
+## 開始音と停止音を聞き分けられるようにする（Issue #121）
+
+同じ素材を少しだけ変えたペアは、小音量だと同じ音に聞こえる。ペアを作るときは
+次の3つを**同時に**変える（1つだけだと区別がつかない）。
+
+1. **向き** — 開始は上昇、停止は下降
+2. **音域** — 開始は明るい高域、停止は低域。上下の音域は重ねない
+3. **語尾** — 最後に鳴る音を別物にする（人は語尾で判断する）。停止は少し長く残す
+
+ペアは classic-start/stop・chime-open/close・marimba-high/low・koebun-up/down。
+pop-like / purr-like は macOS 純正音の再現なので、この規則の対象外。
 """
 import argparse, math, os, struct, wave
 
@@ -63,8 +75,11 @@ def purr_burst(freqs, seconds, *, mod_hz, decay, level=1.0):
         out.append(v * am * env * level)
     return out
 
-def knock(seconds=0.09, *, body=190.0, sub=45.0, level=1.0, seed=1):
-    """木を軽く叩いた「コツッ」。短い雑音のアタック＋ body Hz の胴鳴り＋ sub Hz の低い響き。"""
+def knock(seconds=0.09, *, body=190.0, sub=45.0, level=1.0, seed=1, ring=1.0):
+    """木を軽く叩いた「コツッ」。短い雑音のアタック＋ body Hz の胴鳴り＋ sub Hz の低い響き。
+
+    body を上げると硬く明るい板、下げると太く鈍い板になる。ring は響きの長さの倍率。
+    """
     import random
     rnd = random.Random(seed)
     n = int(RATE * seconds)
@@ -72,8 +87,8 @@ def knock(seconds=0.09, *, body=190.0, sub=45.0, level=1.0, seed=1):
     for i in range(n):
         t = i / RATE
         click = (rnd.random() * 2 - 1) * math.exp(-t / 0.002) * 0.35
-        tone_ = math.sin(2 * math.pi * body * t) * math.exp(-t / 0.02)
-        low = math.sin(2 * math.pi * sub * t) * math.exp(-t / 0.026) * 1.2
+        tone_ = math.sin(2 * math.pi * body * t) * math.exp(-t / (0.02 * ring))
+        low = math.sin(2 * math.pi * sub * t) * math.exp(-t / (0.026 * ring)) * 1.2
         env = min(1.0, t / 0.0015)
         out.append((click + tone_ + low) * env * level)
     return out
@@ -106,22 +121,37 @@ def overlay(a, b, offset=0.0):
     for i, v in enumerate(b): out[start + i] += v
     return out
 
+def compose(*items):
+    """(開始秒, 波形) を並べて 1 つに重ねる（overlay の入れ子より読みやすい）。"""
+    n = max(int(RATE * off) + len(seg) for off, seg in items)
+    out = [0.0] * n
+    for off, seg in items:
+        start = int(RATE * off)
+        for i, v in enumerate(seg): out[start + i] += v
+    return out
+
 # 名前 → 波形。開始音は上向き・明るめ、停止音は下向き・落ち着いた音。
 PRESETS = {
-    # 2 音の上昇ブリップ（開始向き）
-    "koebun-up":     lambda: mix(tone(660, 0.07), tone(990, 0.09), gap=0.01),
-    # 2 音の下降ブリップ（停止向き）
-    "koebun-down":   lambda: mix(tone(990, 0.07), tone(660, 0.09), gap=0.01),
-    # 木琴風の 1 打（開始向き。短い減衰）
-    "marimba-high":  lambda: tone(880, 0.35, wave_fn="marimba", decay=0.09),
-    # 木琴風の低い 1 打（停止向き）
-    "marimba-low":   lambda: tone(440, 0.40, wave_fn="marimba", decay=0.12),
+    # 2 音の上昇ブリップ（開始）。E5 → C6 で高く終わる
+    "koebun-up":     lambda: mix(tone(659, 0.06), tone(1046, 0.10), gap=0.012),
+    # 2 音の下降ブリップ（停止）。G5 → E4 と落ち、語尾だけ余韻を付けて長く残す
+    "koebun-down":   lambda: mix(tone(784, 0.06), tone(330, 0.26, decay=0.09, level=0.95), gap=0.012),
+    # 木琴風の 1 打（開始）。B5 の高い 1 打だけ、短く切る
+    "marimba-high":  lambda: tone(988, 0.30, wave_fn="marimba", decay=0.075),
+    # 木琴風の 2 打（停止）。G4 → C4 と落ちる。打数・音域・長さの 3 つで開始と違う
+    "marimba-low":   lambda: compose(
+                         (0.0,  tone(392, 0.35, wave_fn="marimba", decay=0.10)),
+                         (0.10, tone(262, 0.50, wave_fn="marimba", decay=0.17))),
     # ごく短いティック（主張しない。どちらにも）
     "tick":          lambda: tone(1400, 0.03, wave_fn="triangle", decay=0.008),
-    # 柔らかい 2 音の和音（開始向き）
-    "chime-open":    lambda: overlay(tone(523, 0.30, decay=0.10), tone(784, 0.30, decay=0.10), 0.0),
-    # 柔らかい下降の和音（停止向き）
-    "chime-close":   lambda: overlay(tone(784, 0.30, decay=0.10), tone(523, 0.30, decay=0.10), 0.03),
+    # 柔らかい上昇の 2 音（開始）。D5 → A5、後の音を長く残して高く終わる
+    "chime-open":    lambda: compose(
+                         (0.0,   tone(587, 0.20, decay=0.075)),
+                         (0.085, tone(880, 0.34, decay=0.115))),
+    # 柔らかい下降の 2 音（停止）。E5 → E4 と 1 オクターブ落ち、開始より長く残る
+    "chime-close":   lambda: compose(
+                         (0.0,   tone(659, 0.18, decay=0.07, level=0.9)),
+                         (0.085, tone(330, 0.46, decay=0.17))),
     # macOS の Pop 風: 700→480Hz を 15ms で急降下する「ポッ」＋ 70ms 後の小さな反響
     # （実物を解析: 本体 5〜15ms・約 600〜700Hz、反響 70ms・135ms）
     "pop-like":      lambda: overlay(
@@ -134,15 +164,17 @@ PRESETS = {
                          overlay(purr_burst([(520, 1.0), (1040, 0.3)], 0.045, mod_hz=28, decay=0.014),
                                  purr_burst([(790, 1.0), (1580, 0.3)], 0.045, mod_hz=28, decay=0.012, level=1.1), 0.026),
                          purr_burst([(780, 1.0), (1560, 0.3)], 0.04, mod_hz=28, decay=0.012, level=0.28), 0.135),
-    # 「クラシック」風の開始音: 木のノック → 100ms 後に C5（522Hz）のビープ 55ms → 薄い残響
-    # （実物を解析: ノック 25〜65ms は 190Hz ＋ 40Hz 台、ビープ 150〜210ms、残響 275〜320ms）
-    "classic-start": lambda: overlay(
-                         overlay(knock(level=1.0),
-                                 beep(522, 0.065, attack=0.006, release=0.02, level=0.9), 0.125),
-                         beep(522, 0.045, attack=0.01, release=0.03, level=0.18), 0.25),
-    # 「クラシック」風の停止音: 木のノックだけ。150ms 後にごく小さな 2 打目
-    "classic-stop":  lambda: overlay(knock(level=1.15, seed=2),
-                                     knock(0.06, body=250, sub=60, level=0.22, seed=3), 0.125),
+    # 「クラシック」風の開始音: 硬く明るい木のノック（280Hz の板・響き短め）
+    # → 80ms 後に E5 → B5 の上昇ビープ。高く終わる
+    "classic-start": lambda: compose(
+                         (0.0,   knock(0.07, body=280, sub=90, ring=0.6, level=1.0)),
+                         (0.080, beep(659, 0.050, attack=0.005, release=0.018, level=0.85)),
+                         (0.140, beep(988, 0.070, attack=0.005, release=0.030, level=0.95))),
+    # 「クラシック」風の停止音: 太く鈍い木のノック（120Hz の板・響き長め）＋
+    # 330 → 165Hz へ落ちる 1 本のグライド。開始の「カッ・ピッ・ピッ」と鳴りの数から違う
+    "classic-stop":  lambda: compose(
+                         (0.0,   knock(0.20, body=120, sub=33, ring=2.2, level=1.1, seed=2)),
+                         (0.055, glide(330, 165, 0.34, decay=0.11, level=0.85, attack=0.008))),
 }
 
 def write_wav(path, samples, gain):
