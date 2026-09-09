@@ -478,20 +478,6 @@ struct FormatterSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("コンテキスト") {
-                Toggle("整形プロンプトにコンテキストを渡す", isOn: $settings.contextInjectionEnabled)
-                    .onChange(of: settings.contextInjectionEnabled) { _, _ in
-                        AppController.shared.updateClipboardWatcher()
-                    }
-                Text("録音開始時の最前面アプリ名・ウィンドウタイトル・選択テキストと、"
-                     + "録音の直前〜録音中にコピーした内容を整形の参考情報として渡します。"
-                     + "どの項目を使うかはモードの JSON の context で決まり、既定はアプリ名だけです"
-                     + "（入れすぎると整形の精度が落ちるため）。渡した内容は履歴の送信プロンプトに残ります。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
             Section("モード定義") {
                 HStack {
                     Text("保存先")

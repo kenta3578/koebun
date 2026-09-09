@@ -14,10 +14,11 @@ final class AppController {
 
     /// 録音1回ぶんの、開始時に決まる情報（コンテキストとモード）。
     ///
-    /// **モードもコンテキストも録音開始時に確定させる**。停止時に取り直すと、
-    /// 喋っている間にアプリを切り替えただけで別モードの整形になり、選択テキストも失われる。
+    /// **モードも挿入先も録音開始時に確定させる**。停止時に取り直すと、
+    /// 喋っている間にアプリを切り替えただけで別モードの整形になる。
     private struct PendingRecording {
-        var context: CapturedContext?
+        /// 録音を始めた時点の最前面アプリ。挿入直前の照合に使う（Issue #80）。
+        var expectedBundleId: String?
         var mode: Mode
     }
     private var pending: PendingRecording?
@@ -125,10 +126,6 @@ final class AppController {
         // いなかったので、常駐したままだと「7日」と表示しながら消えなかった（Issue #81）。
         HistoryStore.shared.start()
 
-        // クリップボードは「録音開始の3秒前」まで遡って採用するので、使うときは常時見張る。
-        // 整形 OFF（既定）なら消費先が無いので回さない（Issue #57）。
-        updateClipboardWatcher()
-
         // 録音レベルは HUD の波形にだけ流す（AppState を毎フレーム更新しない）。
         recorder.onLevel = { [hud] level in
             Task { @MainActor in hud.push(level: level) }
@@ -209,18 +206,8 @@ final class AppController {
 
     // MARK: - 整形モデル
 
-    /// コンテキストを使う設定のときだけクリップボードを見張る。設定変更時にも呼ぶ。
-    func updateClipboardWatcher() {
-        if SettingsStore.shared.usesContext {
-            ClipboardWatcher.shared.start()
-        } else {
-            ClipboardWatcher.shared.stop()
-        }
-    }
-
     /// 整形 LLM を常駐させる。録音はロードの完了を待たない（間に合わなければ整形を飛ばす）。
     func loadFormatter() {
-        updateClipboardWatcher()
         guard SettingsStore.shared.formatterEnabled else {
             Task { [mlxFormatter, appleFormatter] in
                 await mlxFormatter.unload()
@@ -296,18 +283,9 @@ final class AppController {
         guard state.status.canStartRecording else { return }
         recordingGeneration &+= 1
         do {
-            // コンテキストは録音開始の**前**に取る。HUD を出したあとだと、
-            // アプリによっては選択のハイライトが外れて選択テキストを読めなくなる。
-            // 整形 OFF なら取らない（AX 同期 IPC で右⌥の反応が最大 400ms 遅れる。Issue #57）。
-            // アプリ情報だけは常に取る（NSWorkspace なので AX 不要・軽い）。挿入先が
-            // 録音開始時と同じかの照合に使うので、整形 OFF でも要る（Issue #80）。
-            var context = ContextCapture.captureApp()
-            let mode = ModeStore.shared.current
-            // モードが決まってから、そのモードが要求する項目だけを AX で読む（Issue #80）。
-            if SettingsStore.shared.usesContext {
-                context = ContextCapture.addAXFields(to: context, for: mode.context)
-            }
-            pending = PendingRecording(context: context, mode: mode)
+            // 挿入先は録音開始の**前**に控える。NSWorkspace だけなので AX 権限も要らず軽い。
+            pending = PendingRecording(expectedBundleId: TextInjector.frontmostBundleId(),
+                                       mode: ModeStore.shared.current)
 
             try recorder.start()
             state.update(.recording)
@@ -367,7 +345,7 @@ final class AppController {
                 // 録音を始めたアプリと違うところへ貼らないよう、照合用に渡す（Issue #80）。
                 let outcome: InsertionOutcome = text.isEmpty
                     ? .succeeded
-                    : await TextInjector.insert(text, expectedBundleId: pending.context?.bundleId)
+                    : await TextInjector.insert(text, expectedBundleId: pending.expectedBundleId)
                 // 見せ方（メニューバーの状態と HUD の動き）は 1 か所で導出する（Issue #64）。
                 let presentation = InsertionPresentation.make(
                     outcome: outcome,
@@ -459,40 +437,19 @@ final class AppController {
         var promptForHistory: String? = nil
     }
 
-    /// 履歴に残すプロンプトを作る。
-    ///
-    /// 送信プロンプトをそのまま残すと、`【選択テキスト】` `【クリップボード】` の中身
-    /// （開いている `.env`・API キー・顧客データ）が `~/koebun/history/*/meta.json` に
-    /// 平文で保存期間ぶん残る。ユーザーが「発話の履歴」と認識している場所に、
-    /// 発話していないものが入るのはプライバシーの約束を破る（Issue #81）。
-    /// ルール部分は残すので、プロンプト改善のループは従来どおり回せる。
-    private static func promptForHistory(_ prompt: String?, contextBlock: String?) -> String? {
-        guard let prompt else { return nil }
-        guard let contextBlock, !contextBlock.isEmpty else { return prompt }
-        return prompt.replacingOccurrences(
-            of: contextBlock,
-            with: "（コンテキストは履歴に残していません）"
-        )
-    }
-
     /// 置換後テキストを現在のモードで整形する。**例外を外に出さない**。
     ///
     /// `そのまま` モードは LLM を一切呼ばない最速パス。モデル未ロード・タイムアウト・
     /// 空出力はすべて「整形なし」に落とし、理由を `failure` で持ち帰る。
     private func format(_ text: String, pending: PendingRecording) async -> FormatOutcome {
         let mode = pending.mode
-        // 整形が OFF なら**エンジンに触れない**（Issue #31）。ここを通さないと、
-        // アプリ別の自動切替が `usesLLM` のモードを選んだときに整形エンジンの生成・
-        // 呼び出しまで進んでしまい、「整形は OFF なのに準備できていません」と出る。
+        // 整形が OFF なら**エンジンに触れない**（Issue #31）。
         guard SettingsStore.shared.formatterEnabled else {
             return FormatOutcome(modeName: mode.name, result: nil, attempted: false, failure: nil)
         }
         guard mode.usesLLM, !text.isEmpty else {
             return FormatOutcome(modeName: mode.name, result: nil, attempted: false, failure: nil)
         }
-
-        // コンテキストが1つも取れなくてもここは nil になるだけで、整形は普通に走る。
-        let contextBlock = mode.context.isEnabled ? pending.context?.promptBlock(for: mode.context) : nil
 
         guard let (engineKind, engine) = resolveFormattingEngine() else {
             return FormatOutcome(
@@ -508,13 +465,11 @@ final class AppController {
 
         let timeout = Duration.seconds(SettingsStore.shared.formatTimeoutSeconds)
         do {
-            let result = try await engine.format(
-                text, mode: mode, contextBlock: contextBlock, timeout: timeout
-            )
+            let result = try await engine.format(text, mode: mode, timeout: timeout)
             return FormatOutcome(
                 modeName: mode.name, result: result, attempted: true, failure: nil,
                 engineKind: engineKind, modelId: result.modelId,
-                promptForHistory: Self.promptForHistory(result.prompt, contextBlock: contextBlock)
+                promptForHistory: result.prompt
             )
         } catch {
             // Apple Intelligence が無効・非対応のときもここ。理由は `AppStatus` に出る
@@ -532,16 +487,13 @@ final class AppController {
         Int((end.timeIntervalSince(start) * 1000).rounded())
     }
 
-    /// 録音開始時に確定した情報を取り出し、クリップボードだけ停止時点で足す。
+    /// 録音開始時に確定した情報を取り出す。
     ///
     /// 開始時の取得が丸ごと失敗していても、モードだけは必ず決まる（フォールバックは現在のモード）。
     private func takePending() -> PendingRecording {
-        var pending = self.pending ?? PendingRecording(context: nil, mode: ModeStore.shared.current)
+        let pending = self.pending ?? PendingRecording(expectedBundleId: nil,
+                                                       mode: ModeStore.shared.current)
         self.pending = nil
-        // クリップボードを足すのは整形で使うときだけ（読むこと自体を最小にする）。
-        if let context = pending.context, SettingsStore.shared.usesContext {
-            pending.context = ContextCapture.finalize(context)
-        }
         return pending
     }
 

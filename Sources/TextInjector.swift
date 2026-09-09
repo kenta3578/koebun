@@ -92,6 +92,18 @@ enum TextInjector {
 
     /// - Parameter expectedBundleId: 録音を始めたときに前面だったアプリ。渡すと、挿入直前に
     ///   前面が変わっていないかを照合する。nil なら照合しない（HUD・履歴からの再挿入）。
+    /// 最前面アプリのバンドル ID。**自分自身は除く**（HUD は `.nonactivatingPanel` なので
+    /// 通常は前面に出ないが、設定ウィンドウを開いていると自分が前面になりうる）。
+    ///
+    /// 録音開始時にこれを控え、挿入直前に同じ値かを見る（Issue #80）。**取る側と比べる側を
+    /// 同じ場所に置く**ことで、片方だけ条件が変わる事故を防ぐ。
+    static func frontmostBundleId() -> String? {
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              app.bundleIdentifier != Bundle.main.bundleIdentifier
+        else { return nil }
+        return app.bundleIdentifier
+    }
+
     static func insert(_ text: String, expectedBundleId: String? = nil) async -> InsertionOutcome {
         let previous = lastInsertion
         let current = Task { @MainActor in
@@ -114,11 +126,10 @@ enum TextInjector {
         // しかも before / after は両方その新しい要素なので `CFEqual` が一致し、文字数も
         // 増えるので **「成功」と判定されて誤爆が検知されなかった**。
         if let expectedBundleId,
-           let current = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+           let current = Self.frontmostBundleId(),
            current != expectedBundleId {
             if keepResult {
-                let written = writeToPasteboard(text)
-                ClipboardWatcher.shared.ignore(changeCount: written)
+                _ = writeToPasteboard(text)
             }
             return .failed(reason: "録音したアプリが前面にないため挿入しませんでした")
         }
@@ -126,10 +137,7 @@ enum TextInjector {
         guard AXIsProcessTrusted() else {
             // CGEvent の送出自体ができない。結果だけでも拾えるようにしてから返す。
             if keepResult {
-                let written = writeToPasteboard(text)
-                // この経路は抑止の外にあったので、自分の書き込みを次の録音で
-                // 「録音3秒前のコピー」として拾っていた（Issue #79）。
-                ClipboardWatcher.shared.ignore(changeCount: written)
+                _ = writeToPasteboard(text)
             }
             return .failed(reason: "アクセシビリティ権限が無いため入力できません",
                            hint: .accessibilityPermission)
@@ -152,7 +160,6 @@ enum TextInjector {
         // 自分が書いた変化を「録音直前のコピー」と誤認しないようにする。時間ではなく
         // changeCount で外すので、この直後に**ユーザーが**コピーした分は取りこぼさない
         // （Issue #63 の抑止を Issue #79 で作り直したもの）。
-        ClipboardWatcher.shared.ignore(changeCount: writtenChangeCount)
 
         postPaste()
 
@@ -176,7 +183,6 @@ enum TextInjector {
     /// 直後に録音すると、自分のテキストが次の整形プロンプトに混ざっていた（Issue #79）。
     static func copyToPasteboard(_ text: String) {
         let written = writeToPasteboard(text)
-        ClipboardWatcher.shared.ignore(changeCount: written)
     }
 
     /// 結果をクリップボードへ書く。
@@ -221,7 +227,6 @@ enum TextInjector {
         guard pasteboard.changeCount == writtenChangeCount else { return }
         snapshot.restore(to: pasteboard)
         // 復元も自分が起こした変化なので、次の録音のコンテキストに混ぜない。
-        ClipboardWatcher.shared.ignore(changeCount: pasteboard.changeCount)
     }
 
     // MARK: - イベント送出

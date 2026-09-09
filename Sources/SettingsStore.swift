@@ -93,12 +93,6 @@ final class SettingsStore: ObservableObject {
     @Published var modeName: String {
         didSet { UserDefaults.standard.set(modeName, forKey: "modeName") }
     }
-    /// 整形プロンプトにコンテキスト（アプリ名・選択テキスト・クリップボード・日時）を載せるか。
-    /// OFF なら取得自体を行わない。**整形が OFF のときも取得しない**（消費先が無いのに
-    /// 録音開始前の AX 同期 IPC で右⌥の反応を遅らせていた。Issue #57）。`usesContext` を見る。
-    @Published var contextInjectionEnabled: Bool {
-        didSet { UserDefaults.standard.set(contextInjectionEnabled, forKey: "contextInjectionEnabled") }
-    }
     /// 整形 LLM を常駐させるか。**既定は OFF**（Issue #31）。OFF なら数GB のモデルを一切読まない
     /// ——ロードもダウンロードも走らせず、整形そのものを飛ばして置換後テキストを挿入する。
     @Published var formatterEnabled: Bool {
@@ -117,11 +111,6 @@ final class SettingsStore: ObservableObject {
     static let formatTimeoutOptions: [(seconds: Double, label: String)] = [
         (3, "3秒"), (5, "5秒"), (8, "8秒"), (15, "15秒"), (30, "30秒")
     ]
-
-    /// 録音開始時にコンテキストを取り、クリップボードを見張るか。
-    /// 整形 LLM が ON で、かつコンテキスト注入が ON のときだけ。どちらかが OFF なら
-    /// ホットパスから AX 同期 IPC と常駐タイマーを外す。
-    var usesContext: Bool { formatterEnabled && contextInjectionEnabled }
 
     /// 挿入できなかった・確認できなかった結果がどこに残るか（表示の文言に使う）。
     ///
@@ -189,8 +178,6 @@ final class SettingsStore: ObservableObject {
         // 整形は使いたい人が設定で ON にする（そのとき初めてモデルの取得が走る）。
         modeName = UserDefaults.standard.string(forKey: "modeName") ?? Mode.plainName
         formatterEnabled = UserDefaults.standard.object(forKey: "formatterEnabled") as? Bool ?? false
-        contextInjectionEnabled =
-            UserDefaults.standard.object(forKey: "contextInjectionEnabled") as? Bool ?? true
         formatterModelId = UserDefaults.standard.string(forKey: "formatterModelId")
             ?? Formatter.defaultModelId
         let timeout = UserDefaults.standard.double(forKey: "formatTimeoutSeconds")
