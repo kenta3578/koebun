@@ -88,8 +88,8 @@ enum ContextCapture {
 
     /// 最前面アプリだけを取る。**AX を使わない**ので軽く、権限も要らない。
     ///
-    /// モードの判定（`appMatch`）に必要なのはここまで。挿入先が録音開始時と
-    /// 同じアプリかの照合（Issue #80）にも使うので、整形 OFF でも毎回取る。
+    /// 挿入先が録音開始時と同じアプリかの照合（Issue #80）に使うので、
+    /// 整形 OFF でも毎回取る。
     static func captureApp() -> CapturedContext {
         var context = CapturedContext(capturedAt: Date())
 

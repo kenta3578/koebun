@@ -91,21 +91,13 @@ final class SettingsStore: ObservableObject {
     /// UI から選び直したことを `ModeStore` に伝える（`didSet` は `init` では走らないので、
     /// 起動時の読み込みは手動選択として数えられない）。次の録音1回だけ自動切替に優先する。
     @Published var modeName: String {
-        didSet {
-            UserDefaults.standard.set(modeName, forKey: "modeName")
-            guard modeName != oldValue else { return }
-            ModeStore.shared.noteManualSelection()
-        }
+        didSet { UserDefaults.standard.set(modeName, forKey: "modeName") }
     }
     /// 整形プロンプトにコンテキスト（アプリ名・選択テキスト・クリップボード・日時）を載せるか。
     /// OFF なら取得自体を行わない。**整形が OFF のときも取得しない**（消費先が無いのに
     /// 録音開始前の AX 同期 IPC で右⌥の反応を遅らせていた。Issue #57）。`usesContext` を見る。
     @Published var contextInjectionEnabled: Bool {
         didSet { UserDefaults.standard.set(contextInjectionEnabled, forKey: "contextInjectionEnabled") }
-    }
-    /// 録音開始時の最前面アプリでモードを自動的に選ぶか（モードの `appMatch` を使う）。
-    @Published var autoModeSwitchEnabled: Bool {
-        didSet { UserDefaults.standard.set(autoModeSwitchEnabled, forKey: "autoModeSwitchEnabled") }
     }
     /// 整形 LLM を常駐させるか。**既定は OFF**（Issue #31）。OFF なら数GB のモデルを一切読まない
     /// ——ロードもダウンロードも走らせず、整形そのものを飛ばして置換後テキストを挿入する。
@@ -199,8 +191,6 @@ final class SettingsStore: ObservableObject {
         formatterEnabled = UserDefaults.standard.object(forKey: "formatterEnabled") as? Bool ?? false
         contextInjectionEnabled =
             UserDefaults.standard.object(forKey: "contextInjectionEnabled") as? Bool ?? true
-        autoModeSwitchEnabled =
-            UserDefaults.standard.object(forKey: "autoModeSwitchEnabled") as? Bool ?? true
         formatterModelId = UserDefaults.standard.string(forKey: "formatterModelId")
             ?? Formatter.defaultModelId
         let timeout = UserDefaults.standard.double(forKey: "formatTimeoutSeconds")

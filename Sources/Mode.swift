@@ -19,9 +19,6 @@ struct Mode: Codable, Identifiable, Equatable {
     var systemPrompt: String
     /// どのコンテキストをプロンプトに載せるか。**既定は最小**（`ModeContext` の項注参照）。
     var context: ModeContext = ModeContext()
-    /// このモードへ自動切替する対象アプリ。バンドル ID かアプリ名の**部分一致**（大小文字を区別しない）。
-    /// 例: `["com.tinyspeck.slackmacgap", "Discord"]`。空なら自動切替の対象にならない。
-    var appMatch: [String] = []
 
     var id: String { name }
 
@@ -31,7 +28,7 @@ struct Mode: Codable, Identifiable, Equatable {
         // 失敗したときの履歴にだけ「使ったモデル」として記録され、成功時と食い違って
         // エンジン比較の一次データを汚していたので外した（Issue #87）。
         // 既存の JSON に残っていても未知のキーとして無視されるだけで壊れない。
-        case name, order, usesLLM, systemPrompt, context, appMatch
+        case name, order, usesLLM, systemPrompt, context
     }
 
     /// 全モード共通の禁止事項。**JSON からは編集できない**。
@@ -183,7 +180,7 @@ struct ModeContext: Codable, Equatable {
 // MARK: - デコード
 
 extension Mode {
-    /// `context` / `appMatch` を後から足したので、**それらが無い JSON も読める**ようにする。
+    /// `context` を後から足したので、**それが無い JSON も読める**ようにする。
     ///
     /// `~/koebun/modes/*.json` はユーザーが育てるファイルで、
     /// アプリ側の都合で読めなくなると（＝モードが消えると）整形方針が丸ごと失われる。
@@ -195,7 +192,6 @@ extension Mode {
         usesLLM = try container.decodeIfPresent(Bool.self, forKey: .usesLLM) ?? true
         systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt) ?? ""
         context = try container.decodeIfPresent(ModeContext.self, forKey: .context) ?? ModeContext()
-        appMatch = try container.decodeIfPresent([String].self, forKey: .appMatch) ?? []
     }
 }
 
@@ -215,8 +211,7 @@ extension Mode {
                 usesLLM: false,
                 systemPrompt: "",
                 // LLM を通さないモードなので、コンテキストを取っても渡す先が無い。
-                context: ModeContext(),
-                appMatch: []
+                context: ModeContext()
             )
         ),
         (
@@ -232,16 +227,8 @@ extension Mode {
                     - 列挙になっている部分は「- 」の箇条書きにする。
                     - 宛名や「お疲れさまです」は入力に無ければ足さない。
                     """,
-                // アプリ名だけ。チャットは相手が誰かで文体が決まるので、
-                // 選択テキストやクリップボードまで足すと引用に引きずられやすい。
-                context: ModeContext(appName: true),
-                appMatch: [
-                    "com.tinyspeck.slackmacgap",
-                    "com.hnc.Discord",
-                    "ru.keepcoder.Telegram",
-                    "com.apple.MobileSMS",
-                    "com.apple.iChat",
-                ]
+                // アプリ名だけ。チャットは相手が誰かで文体が決まる。
+                context: ModeContext(appName: true)
             )
         ),
         (
@@ -257,13 +244,7 @@ extension Mode {
                     - 宛名・時候の挨拶・結びの句・署名は、入力に含まれていなければ足さない。
                     - 話題が変わるところで段落を分け、段落間に空行を入れる。
                     """,
-                context: ModeContext(appName: true),
-                appMatch: [
-                    "com.apple.mail",
-                    "com.microsoft.Outlook",
-                    "com.readdle.smartemail-Mac",
-                    "com.superhuman.electron",
-                ]
+                context: ModeContext(appName: true)
             )
         ),
         (
@@ -283,21 +264,7 @@ extension Mode {
                     """,
                 // コードだけ選択テキストを開ける。「この関数を〜」と喋るとき、
                 // 選択中の識別子が分かるだけで表記の再現度が変わる。
-                context: ModeContext(appName: true, selectedText: true),
-                appMatch: [
-                    "com.apple.Terminal",
-                    "com.googlecode.iterm2",
-                    "dev.warp.Warp-Stable",
-                    "com.microsoft.VSCode",
-                    "com.todesktop.230313mzl4w4u92",
-                    "com.apple.dt.Xcode",
-                    "com.jetbrains",
-                    "com.mitchellh.ghostty",
-                    // バンドル ID が不透明・不安定なものはアプリ名でも拾う
-                    // （Cursor の `com.todesktop.…` は将来変わりうる）。
-                    "Cursor",
-                    "Windsurf",
-                ]
+                context: ModeContext(appName: true, selectedText: true)
             )
         ),
         (
@@ -313,13 +280,7 @@ extension Mode {
                     - 要約しない。項目をまとめて減らさない。
                     - 日時・数値・人名はメモの用途上もっとも重要なので、とくに慎重にそのまま残す。
                     """,
-                context: ModeContext(appName: true),
-                appMatch: [
-                    "com.apple.Notes",
-                    "md.obsidian",
-                    "notion.id",
-                    "com.apple.TextEdit",
-                ]
+                context: ModeContext(appName: true)
             )
         ),
     ]
@@ -361,10 +322,10 @@ enum ModeFiles {
         }
     }
 
-    /// 既定モードのファイルに `context` / `appMatch` が無ければ、既定値だけを**足す**。
+    /// 既定モードのファイルに `context` が無ければ、既定値だけを**足す**。
     ///
-    /// この2つは後から増やしたキーなので、Issue #15 より前に書き出された JSON には存在しない。
-    /// 何もしないとコンテキスト注入も自動切替も既存ユーザーには効かないまま無言で終わる。
+    /// 後から増やしたキーなので、Issue #15 より前に書き出された JSON には存在しない。
+    /// 何もしないとコンテキスト注入が既存ユーザーには効かないまま無言で終わる。
     /// 既にあるキーには触らない（`systemPrompt` を育てていても潰さない）し、
     /// ファイルの `name` が既定と違う＝作り替えられているものは対象外にする。
     static func backfillMissingKeys() {
@@ -373,13 +334,11 @@ enum ModeFiles {
             guard let data = try? Data(contentsOf: url),
                   var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                   object["name"] as? String == mode.name,
-                  object["context"] == nil || object["appMatch"] == nil,
+                  object["context"] == nil,
                   let defaults = try? JSONSerialization.jsonObject(with: encoder.encode(mode)) as? [String: Any]
             else { continue }
 
-            for key in ["context", "appMatch"] where object[key] == nil {
-                object[key] = defaults[key]
-            }
+            object["context"] = defaults["context"]
             guard let merged = try? JSONSerialization.data(
                 withJSONObject: object,
                 options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -453,71 +412,5 @@ final class ModeStore: ObservableObject {
         if let mode = mode(named: SettingsStore.shared.modeName) { return mode }
         if let plain = mode(named: Mode.plainName) { return plain }
         return Mode.defaults[0].mode
-    }
-
-    // MARK: - アプリ別の自動切替
-
-    /// メニュー・設定から手動でモードを選んだ直後か。**次の録音1回だけ**自動切替に勝つ。
-    private var manualSelectionPending = false
-
-    /// `SettingsStore.modeName` が UI 経由で書き換わったときに呼ばれる。
-    func noteManualSelection() {
-        manualSelectionPending = true
-    }
-
-    /// 録音1回ぶんのモードを決める。優先順位はここが唯一の実装:
-    ///
-    /// 1. **手動で選び直した直後の1回**（`noteManualSelection`）
-    /// 2. 最前面アプリに一致する `appMatch` を持つモード（設定で自動切替が ON のとき）
-    /// 3. 設定に保存されている既定モード（`current`）
-    ///
-    /// 1 を挟むのは、「このメッセージだけメール調にしたい」という例外がたいてい1回きりで、
-    /// かつ手動選択が自動切替に毎回打ち消されると、モードを選ぶ操作自体が無意味に見えるため。
-    /// 恒久的に手動へ寄せたいときは設定の「アプリ別にモードを自動で切り替える」を OFF にする。
-    ///
-    /// 自動切替は**設定の既定モードを書き換えない**（その録音のモードを決めるだけ）。
-    /// アプリを移動しただけでユーザーの選択が黙って消えるのを避ける。
-    func modeForRecording(context: CapturedContext?) -> Mode {
-        let manual = current
-        if manualSelectionPending {
-            manualSelectionPending = false
-            return manual
-        }
-        guard SettingsStore.shared.autoModeSwitchEnabled, let context else { return manual }
-        return matchingMode(bundleId: context.bundleId, appName: context.appName) ?? manual
-    }
-
-    /// アプリに一致するモード。
-    func matchingMode(bundleId: String?, appName: String?) -> Mode? {
-        Mode.match(among: modes, bundleId: bundleId, appName: appName)
-    }
-}
-
-extension Mode {
-    /// `appMatch` でアプリに一致するモードを選ぶ。複数一致したら
-    /// **より具体的なルール（長い文字列）**を優先し、同点なら `order` の小さいモードを採る
-    /// （`com.apple.dt.Xcode` が `com.apple` に勝つ）。
-    ///
-    /// `ModeStore` から切り離してあるのは、この優先順位だけを単体で確かめられるようにするため。
-    static func match(among modes: [Mode], bundleId: String?, appName: String?) -> Mode? {
-        let haystacks = [bundleId, appName].compactMap { $0?.lowercased() }
-        guard !haystacks.isEmpty else { return nil }
-
-        var best: (mode: Mode, length: Int)?
-        for mode in modes {
-            for rule in mode.appMatch {
-                let needle = rule.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                guard !needle.isEmpty, haystacks.contains(where: { $0.contains(needle) }) else { continue }
-                guard let current = best else {
-                    best = (mode, needle.count)
-                    continue
-                }
-                if needle.count > current.length
-                    || (needle.count == current.length && mode.order < current.mode.order) {
-                    best = (mode, needle.count)
-                }
-            }
-        }
-        return best?.mode
     }
 }
