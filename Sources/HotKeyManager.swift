@@ -321,7 +321,15 @@ final class HotKeyCapture: ObservableObject {
     private var monitors: [Any] = []
     /// 押されたまま離されていない修飾キー（押した順）。これらを押したまま通常キーを押せば
     /// 組み合わせ、押さずにどれかを離せば修飾キーだけで確定する（Issue #112 / #115）。
-    private var pendingModifiers: [UInt16] = []
+    /// 設定画面に「いま何が押されていると認識しているか」を出すために公開する（Issue #118）。
+    @Published private(set) var pendingModifiers: [UInt16] = []
+
+    /// 録っている最中の表示。押すたびに増え、確定すると `SettingsStore.hotKeyDisplayName` に変わる。
+    var capturingText: String {
+        guard !pendingModifiers.isEmpty else { return "修飾キーを押してください…" }
+        let names = pendingModifiers.map(SettingsStore.keyName(for:)).joined(separator: " + ")
+        return "\(names) + …（通常キーを押すか、離して確定）"
+    }
 
     private init() {}
 
