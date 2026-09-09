@@ -179,7 +179,7 @@ struct GeneralSettingsView: View {
                     Text("録音トリガー")
                     Spacer()
                     Text(hotKeyCapture.isCapturing
-                         ? "修飾キーを押してください…"
+                         ? hotKeyCapture.capturingText
                          : settings.hotKeyDisplayName)
                         .foregroundStyle(hotKeyCapture.isCapturing ? .secondary : .primary)
                     Button(hotKeyCapture.isCapturing ? "キャンセル" : "変更") {
