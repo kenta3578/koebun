@@ -302,7 +302,7 @@ final class AppController {
             // アプリ情報だけは常に取る（NSWorkspace なので AX 不要・軽い）。挿入先が
             // 録音開始時と同じかの照合に使うので、整形 OFF でも要る（Issue #80）。
             var context = ContextCapture.captureApp()
-            let mode = ModeStore.shared.modeForRecording(context: context)
+            let mode = ModeStore.shared.current
             // モードが決まってから、そのモードが要求する項目だけを AX で読む（Issue #80）。
             if SettingsStore.shared.usesContext {
                 context = ContextCapture.addAXFields(to: context, for: mode.context)
