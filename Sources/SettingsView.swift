@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     var body: some View {
@@ -26,6 +27,11 @@ struct GeneralSettingsView: View {
     @ObservedObject private var hotKeyCapture = HotKeyCapture.shared
     /// 履歴の全削除は取り消せないので必ず確認する（Issue #81）。
     @State private var isConfirmingDeleteAll = false
+    /// 取り込んだ音の一覧（Issue #124）。取り込み・削除の直後に選択肢へ反映するため
+    /// ディレクトリを毎回読み直さず、ここに持って明示的に更新する。
+    @State private var customSounds: [String] = SoundPlayer.customSounds()
+    /// 取り込みに失敗したファイルの理由（成功したら消す）。
+    @State private var soundImportError: String?
 
     var body: some View {
         Form {
@@ -80,9 +86,52 @@ struct GeneralSettingsView: View {
             Section("サウンド") {
                 soundRow("録音開始音", selection: $settings.startSound)
                 soundRow("録音停止音", selection: $settings.stopSound)
+
+                HStack {
+                    Button("音を追加…") { importSounds() }
+                    Button("フォルダを開く") { SoundPlayer.revealCustomDirectory() }
+                    Spacer()
+                }
+
+                if !customSounds.isEmpty {
+                    DisclosureGroup("自分の音（\(customSounds.count)）") {
+                        ForEach(customSounds, id: \.self) { name in
+                            HStack {
+                                Text(name)
+                                Spacer()
+                                Button {
+                                    preview(name)
+                                } label: {
+                                    Image(systemName: "play.circle")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("試聴")
+                                .accessibilityLabel("\(name)を試聴")
+                                Button {
+                                    deleteSound(name)
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("ゴミ箱に入れる")
+                                .accessibilityLabel("\(name)を削除")
+                            }
+                        }
+                    }
+                }
+
+                if let soundImportError {
+                    Text(soundImportError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 Text("選び直すと鳴ります。試聴ボタンでいまの音を聞き直せます。"
-                     + "自分の音は \(SoundPlayer.customDirectory.path) に aiff / wav / mp3 / m4a を置くと出ます"
-                     + "（scripts/make-sounds.py で候補を作れます）。")
+                     + "「音を追加…」で選んだ音声ファイル（aiff / wav / mp3 / m4a / caf）は "
+                     + "\(SoundPlayer.customDirectory.path) にコピーされます"
+                     + "（scripts/make-sounds.py でも候補を作れます）。"
+                     + "削除はゴミ箱に入れるだけなので戻せます。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -245,6 +294,8 @@ struct GeneralSettingsView: View {
         // ビュー階層が生きたまま残るため）。実際の解除は SettingsWindowController の
         // windowWillClose が行う。ここは念のための保険（Issue #78）。
         .onDisappear { hotKeyCapture.cancel() }
+        // Finder で直接置いた音も、設定を開き直せば出るように読み直す（Issue #124）。
+        .onAppear { customSounds = SoundPlayer.customSounds() }
         .confirmationDialog("すべての履歴を削除しますか？",
                             isPresented: $isConfirmingDeleteAll,
                             titleVisibility: .visible) {
@@ -258,7 +309,7 @@ struct GeneralSettingsView: View {
     /// 音のピッカーと試聴ボタンの1行（Issue #48）。
     /// 選択肢は「なし」→ 自分の音（~/koebun/sounds/）→ システム音（Issue #71）。
     private func soundRow(_ title: String, selection: Binding<String>) -> some View {
-        let custom = SoundPlayer.customSounds()
+        let custom = customSounds
         return HStack {
             Picker(title, selection: selection) {
                 Text(SoundPlayer.none).tag(SoundPlayer.none)
@@ -286,6 +337,48 @@ struct GeneralSettingsView: View {
 
     private func preview(_ name: String) {
         SoundPlayer.play(name)
+    }
+
+    /// 選んだ音声ファイルを `~/koebun/sounds/` に取り込む（Issue #124）。
+    /// 複数選べるので、失敗したものだけ理由を並べて残し、成功した分はそのまま選べるようにする。
+    private func importSounds() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.audio]
+        panel.prompt = "追加"
+        panel.message = "録音の開始音・停止音に使う音声ファイルを選びます（aiff / wav / mp3 / m4a / caf）"
+        guard panel.runModal() == .OK else { return }
+
+        var failures: [String] = []
+        var lastImported: String?
+        for url in panel.urls {
+            do {
+                lastImported = try SoundPlayer.importSound(from: url)
+            } catch {
+                failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        customSounds = SoundPlayer.customSounds()
+        soundImportError = failures.isEmpty ? nil : failures.joined(separator: "\n")
+        // 取り込んだ音がその場で確かめられるように鳴らす。
+        if let lastImported { preview(lastImported) }
+    }
+
+    /// 取り込んだ音を消す。ゴミ箱に入れるだけなので Finder から戻せる（Issue #124）。
+    private func deleteSound(_ name: String) {
+        do {
+            try SoundPlayer.deleteCustomSound(name)
+        } catch {
+            soundImportError = "\(name) を削除できませんでした: \(error.localizedDescription)"
+            return
+        }
+        customSounds = SoundPlayer.customSounds()
+        soundImportError = nil
+        // 消した音を選んだままにすると鳴らない設定になるので「なし」へ戻す。
+        if settings.startSound == name { settings.startSound = SoundPlayer.none }
+        if settings.stopSound == name { settings.stopSound = SoundPlayer.none }
     }
 
 }
