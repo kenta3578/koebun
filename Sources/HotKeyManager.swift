@@ -106,31 +106,37 @@ final class HotKeyManager {
         // global monitor にイベントが配送されない。local も張らないと
         // 「ウィンドウを開いていると右⌥ が効かない」ことになる（Issue #78）。
         if let local = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged], handler: { [weak self] event in
-            self?.handle(flags: event.modifierFlags)
+            self?.handle(flags: event.modifierFlags, sideAgnostic: Self.isSynthetic(event))
             return event
         }) {
             monitors.append(local)
         }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged], handler: { [weak self] event in
             let flags = event.modifierFlags
+            let sideAgnostic = Self.isSynthetic(event)
             Task { @MainActor [weak self] in
-                self?.handle(flags: flags)
+                self?.handle(flags: flags, sideAgnostic: sideAgnostic)
             }
         }) {
             monitors.append(global)
         }
     }
 
+    /// 他プロセスが合成したイベント（キーマッパー）なら左右を問わない（Issue #120）。
+    private nonisolated static func isSynthetic(_ event: NSEvent) -> Bool {
+        event.cgEvent.map(SettingsStore.isSynthetic) ?? false
+    }
+
     /// どの修飾キーの変化でも「集合が全部押されているか」で見る。
-    private func handle(flags: NSEvent.ModifierFlags) {
+    private func handle(flags: NSEvent.ModifierFlags, sideAgnostic: Bool) {
         let modifiers = SettingsStore.shared.hotKeyModifiers
-        let pressed = SettingsStore.allKeysDown(modifiers, flags: flags)
+        let pressed = SettingsStore.allKeysDown(modifiers, flags: flags, sideAgnostic: sideAgnostic)
 
         if pressed && !isDown {
             // どれかを離すまで再発火させないので、トグルしない場合でも押下は記録する。
             isDown = true
             // 他の修飾キーと一緒なら、ショートカット操作なので録音しない（Issue #78）。
-            guard SettingsStore.isExactlyPressed(modifiers, flags: flags) else { return }
+            guard SettingsStore.isExactlyPressed(modifiers, flags: flags, sideAgnostic: sideAgnostic) else { return }
             onToggle?()
         } else if !pressed {
             isDown = false
@@ -266,9 +272,10 @@ private final class HotKeyTapState: @unchecked Sendable {
             // NSEvent.ModifierFlags は CGEventFlags と同じビット配置（左右のデバイスマスク込み）。
             let flags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
             let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+            let sideAgnostic = SettingsStore.isSynthetic(event)
             let onMatch: (@Sendable () -> Void)? = lock.withLock { inner in
                 guard !inner.stopped, keyCode == inner.extraKeyCode,
-                      SettingsStore.isExactlyPressed(inner.modifiers, flags: flags, ignoringFunction: true)
+                      SettingsStore.isExactlyPressed(inner.modifiers, flags: flags, ignoringFunction: true, sideAgnostic: sideAgnostic)
                 else { return nil }
                 inner.swallowedKeyCode = keyCode
                 // 押しっぱなしのオートリピートでは 1 回だけ（飲み込みは続ける）。

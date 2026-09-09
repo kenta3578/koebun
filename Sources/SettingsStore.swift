@@ -322,15 +322,24 @@ final class SettingsStore: ObservableObject {
     /// `CGEvent` に `maskShift` 等の汎用フラグだけを付けて送り、デバイス依存ビットを付けない。
     /// そのとき左右ビットだけを見ると常に「押されていない」になり、コントローラーからは永遠に反応しない。
     /// 実キーボードのイベントには必ず左右ビットが付くので、区別（Issue #78）はそのまま効く。
-    nonisolated static func isKeyDown(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+    ///
+    /// `sideAgnostic` は**他プロセスが合成したイベント**用（Issue #120）。JoyKeyMapper は修飾キー自体を
+    /// 左側の keyCode で送るので左ビットが付き、右⌥ 設定では反応しない。コントローラーに左右は無いので、
+    /// 合成イベントなら左右を問わず汎用フラグで見る。
+    nonisolated static func isKeyDown(keyCode: UInt16, flags: NSEvent.ModifierFlags, sideAgnostic: Bool = false) -> Bool {
         guard let own = ownFlag(for: keyCode) else { return false }
         // fn は左右が無いので、通常のフラグで見る。
-        guard let mask = deviceMask(for: keyCode) else { return flags.contains(own) }
+        guard !sideAgnostic, let mask = deviceMask(for: keyCode) else { return flags.contains(own) }
         let bothSides = devicePairMask(for: own)
         if flags.rawValue & bothSides != 0 {
             return flags.rawValue & mask != 0
         }
         return flags.contains(own)
+    }
+
+    /// そのイベントが他プロセスの `CGEvent.post` で作られたものか。実キーボード（HID）は 0 になる。
+    nonisolated static func isSynthetic(_ event: CGEvent) -> Bool {
+        event.getIntegerValueField(.eventSourceUnixProcessID) != 0
     }
 
     /// その修飾種の左右両方のデバイス依存ビット。
@@ -367,8 +376,8 @@ final class SettingsStore: ObservableObject {
     ///
     /// `ignoringFunction` は修飾キー＋通常キーの組み合わせ用。矢印・F キーは押すだけで
     /// `.function` が立つので、それを「別の修飾キー」と数えると 右⌥+← が永遠に反応しない（Issue #112）。
-    nonisolated static func isExactlyPressed(_ modifiers: [UInt16], flags: NSEvent.ModifierFlags, ignoringFunction: Bool = false) -> Bool {
-        guard allKeysDown(modifiers, flags: flags) else { return false }
+    nonisolated static func isExactlyPressed(_ modifiers: [UInt16], flags: NSEvent.ModifierFlags, ignoringFunction: Bool = false, sideAgnostic: Bool = false) -> Bool {
+        guard allKeysDown(modifiers, flags: flags, sideAgnostic: sideAgnostic) else { return false }
         let own = modifiers.compactMap(ownFlag(for:))
         var others: [NSEvent.ModifierFlags] = [.command, .option, .control, .shift, .function]
         if ignoringFunction { others.removeAll { $0 == .function } }
@@ -376,8 +385,8 @@ final class SettingsStore: ObservableObject {
     }
 
     /// 集合の全キーが押されているか（他のキーは問わない）。
-    nonisolated static func allKeysDown(_ modifiers: [UInt16], flags: NSEvent.ModifierFlags) -> Bool {
-        !modifiers.isEmpty && modifiers.allSatisfy { isKeyDown(keyCode: $0, flags: flags) }
+    nonisolated static func allKeysDown(_ modifiers: [UInt16], flags: NSEvent.ModifierFlags, sideAgnostic: Bool = false) -> Bool {
+        !modifiers.isEmpty && modifiers.allSatisfy { isKeyDown(keyCode: $0, flags: flags, sideAgnostic: sideAgnostic) }
     }
 
     /// 集合のどれか 1 つでも押されているか（録りで「全部離した」を見るのに使う）。
