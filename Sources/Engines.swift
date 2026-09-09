@@ -164,10 +164,5 @@ protocol FormattingEngine: Sendable {
     /// 常駐を解除してメモリを返す。
     func unload() async
     /// `text` を `mode` のプロンプトで整形する。`timeout` を超えたら投げる。
-    func format(
-        _ text: String,
-        mode: Mode,
-        contextBlock: String?,
-        timeout: Duration
-    ) async throws -> FormattedText
+    func format(_ text: String, mode: Mode, timeout: Duration) async throws -> FormattedText
 }

@@ -190,18 +190,11 @@ actor Formatter: FormattingEngine {
     /// `timeout` を超えたら `FormatterError.timedOut` を投げる。呼び出し側はこれを握って
     /// 置換後テキストをそのまま挿入する契約なので、**ここで握りつぶして生テキストを返さない**
     /// （整形されたのかされなかったのかが履歴から読めなくなる）。
-    /// `contextBlock` は `CapturedContext.promptBlock(for:)` が作るラベル付きの参考情報。
-    /// nil なら従来どおりコンテキスト無しで整形する。
-    func format(
-        _ text: String,
-        mode: Mode,
-        contextBlock: String? = nil,
-        timeout: Duration
-    ) async throws -> Result {
+    func format(_ text: String, mode: Mode, timeout: Duration) async throws -> Result {
         guard mode.usesLLM else { throw FormatterError.notReady }
         guard let container, let loadedModelId, isReady else { throw FormatterError.notReady }
 
-        let systemPrompt = mode.fullSystemPrompt(context: contextBlock)
+        let systemPrompt = mode.fullSystemPrompt()
         let parameters = GenerateParameters(
             // 入力より極端に長い出力は整形ではなく暴走。入力長から上限を決めて頭打ちにする。
             maxTokens: Self.maxTokens(for: text),

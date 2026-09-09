@@ -65,19 +65,14 @@ actor AppleFormatter: FormattingEngine {
 
     // MARK: - 整形
 
-    func format(
-        _ text: String,
-        mode: Mode,
-        contextBlock: String?,
-        timeout: Duration
-    ) async throws -> FormattedText {
+    func format(_ text: String, mode: Mode, timeout: Duration) async throws -> FormattedText {
         guard mode.usesLLM else { throw FormatterError.notReady }
         // 可用性は毎回見る。システム設定で Apple Intelligence を切られたら次の発話から効く。
         if let reason = AppleIntelligence.unavailableReason() {
             throw FormatterError.unavailable(reason: reason)
         }
 
-        let instructions = mode.compactSystemPrompt(context: contextBlock)
+        let instructions = mode.compactSystemPrompt()
         let options = GenerationOptions(
             // 決定的にする。mlx 側で temperature 0 にしているのと同じ理由——
             // 同じ発話が毎回違う結果になると、整形を疑う手がかりが履歴から消える。
