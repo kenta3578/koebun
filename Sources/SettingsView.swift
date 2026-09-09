@@ -186,8 +186,15 @@ struct GeneralSettingsView: View {
                         hotKeyCapture.isCapturing ? hotKeyCapture.cancel() : hotKeyCapture.start()
                     }
                 }
-                Text("修飾キー（右⌥ など）を押したまま別のキーを押すと「右⌥ + S」のような組み合わせに、"
-                     + "押さずに離すと修飾キー単独になります。組み合わせのときは、そのキー入力はアプリに届きません。")
+                if let problem = hotKeyCapture.problem {
+                    Text(problem)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("修飾キー（右⌥・⇧・⌘ など。複数可）を押したまま別のキーを押すと「左⇧ + 左⌘ + 0」のような組み合わせに、"
+                     + "押さずに離すと修飾キーだけになります。通常キー付きのときは、そのキー入力はアプリに届きません。"
+                     + "⇧ を含む組み合わせと複数の修飾キーは、通常キーと合わせたときだけ使えます。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
