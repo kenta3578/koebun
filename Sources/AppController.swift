@@ -361,10 +361,6 @@ final class AppController {
                 let formatEnd = Date()
                 let text = formatting.result?.text ?? replaced
 
-                // 整形が数値・URL・メールを書き換えていないか点検する（Issue #14）。
-                // 正規表現数本ぶんなので挿入の前に済ませられる。**挿入はブロックしない**。
-                let diff = inspectFormatting(before: replaced, after: formatting.result?.text)
-
                 // 前の発話のパイプラインが終わるまで待つ。貼る順番を発話順に揃える（Issue #99）。
                 await previousPipeline?.value
                 // 挿入は成否を判定して返る。成功と確認できなければ結果を捨てない（Issue #13）。
@@ -377,7 +373,6 @@ final class AppController {
                     outcome: outcome,
                     text: text,
                     formattingFailure: formatting.failure,
-                    diff: diff,
                     showResultPanel: SettingsStore.shared.showResultPanel,
                     resultLocation: SettingsStore.shared.resultLocationDescription)
                 // 処理中に次の録音が始まっていたら、状態と HUD はその録音のもの。触らない（Issue #97）。
@@ -417,7 +412,6 @@ final class AppController {
                         formatMs: formatting.attempted
                             ? Self.milliseconds(from: replaceEnd, to: formatEnd) : nil
                     ),
-                    diff: diff,
                     inserted: inserted
                 )
 
@@ -430,7 +424,7 @@ final class AppController {
                 }
                 // 履歴を書き出してから HUD を動かす（完了表示を一瞬見せる／結果を残す／閉じる）。
                 switch presentation.hud {
-                case .finish(let warning): hud.finish(warning: warning)
+                case .finish: hud.finish()
                 case .keepResult:          hud.presentResult(text, outcome: outcome)
                 case .hide:                hud.hide()
                 }
@@ -445,16 +439,6 @@ final class AppController {
                 state.update(status)
             }
         }
-    }
-
-    /// 整形前後で数値・URL・メールアドレス等が変わっていないか点検する（Issue #14）。
-    ///
-    /// 整形を通していない発話（`そのまま` モード・整形失敗）は比べる相手が無いので nil。
-    /// 検出しても**挿入は止めない**。止めると作業が止まり、結局ガードごと切られる。
-    private func inspectFormatting(before: String, after: String?) -> FormatDiff? {
-        let kinds = SettingsStore.shared.diffGuardKinds
-        guard !kinds.isEmpty, let after, after != before else { return nil }
-        return FormatGuard.check(before: before, after: after, kinds: kinds)
     }
 
     /// 整形の結果。**整形は落ちても発話を落とさない**ので、成否は `result` の有無で表す。

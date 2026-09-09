@@ -25,7 +25,6 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     }
 
     /// meta.json のスキーマ版。整形 LLM を足したあとも古い履歴を読み分けられるようにする。
-    /// 2 = 整形ガードの検出結果（`diff`）を追加（Issue #14）。
     /// 3 = 使用したエンジン（`speechEngine` / `formattingEngine` / `formattingModelId`）を追加（Issue #27）。
     var version: Int = HistoryFiles.schemaVersion
     var createdAt: Date
@@ -44,7 +43,7 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     /// 文字起こしに使ったエンジン（`SpeechEngineKind.rawValue`）。v2 以前の履歴は nil。
     ///
     /// **エンジン比較の一次データはここ**（Issue #27）。同じ発話を両エンジンに通したとき、
-    /// 生テキスト・整形後・所要時間・`diff` の警告をどちらの結果として読めばいいかが
+    /// 生テキスト・整形後・所要時間をどちらの結果として読めばいいかが
     /// これが無いと分からなくなる。
     var speechEngine: String?
     /// 整形に使ったエンジン（`FormattingEngineKind.rawValue`）。
@@ -53,10 +52,6 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     /// 整形に使ったモデルの識別子。mlx なら HuggingFace の repo id、Apple なら固定の識別子。
     /// 同じ mlx でも 4B と 32B では比較の意味が変わるので、エンジン名とは別に残す。
     var formattingModelId: String?
-    /// 整形ガード（Issue #14）の検出結果。点検しなかった発話（整形なし・ガード OFF）は nil。
-    /// **あとから傾向を見るために残す**——どのモードでどの種類が何件書き換わるかが分かれば、
-    /// 直すべきはプロンプトなのかモデルなのかを判断できる。
-    var diff: FormatDiff?
     var audio: Audio?
     /// 挿入まで到達したか（無音・挿入失敗と区別する）。
     var inserted: Bool
@@ -66,7 +61,7 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case version, createdAt, rawText, replacedText, formattedText, modeName, prompt, durations
-        case speechEngine, formattingEngine, formattingModelId, diff, audio, inserted
+        case speechEngine, formattingEngine, formattingModelId, audio, inserted
     }
 
     /// 履歴に出す音声認識エンジン名。v2 以前の履歴（エンジンが1つしか無かった頃）は nil。
@@ -372,7 +367,6 @@ final class HistoryStore: ObservableObject {
     ///   - speechEngine: 文字起こしに使ったエンジン（`SpeechEngineKind.rawValue`）。
     ///   - formattingEngine: 整形に使ったエンジン。整形を試みなかったときは nil。
     ///   - formattingModelId: 整形に使ったモデルの識別子。
-    ///   - diff: 整形ガードの検出結果。点検しなかったときは nil。
     func record(
         samples: [Float],
         rawText: String,
@@ -384,7 +378,6 @@ final class HistoryStore: ObservableObject {
         formattingEngine: String? = nil,
         formattingModelId: String? = nil,
         durations: HistoryEntry.Durations,
-        diff: FormatDiff? = nil,
         inserted: Bool
     ) {
         // 無音（文字起こしが何も返さなかった）は残さない。誤爆した録音の WAV が
@@ -403,7 +396,6 @@ final class HistoryStore: ObservableObject {
             speechEngine: speechEngine,
             formattingEngine: formattingEngine,
             formattingModelId: formattingModelId,
-            diff: diff,
             audio: nil,
             inserted: inserted
         )

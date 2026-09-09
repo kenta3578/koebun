@@ -40,8 +40,8 @@ enum AppleIntelligence {
 ///   - 文脈長が 4096 トークンで、日本語はほぼ 1文字 = 1トークン。指示が長いほど本文を圧迫するので
 ///     `Mode.compactSystemPrompt` を使う（禁止事項は減らさず、形だけ命令形の箇条書きに詰めたもの）
 ///
-/// 3B が `Mode` の禁止事項を守れるかは怪しい。守れているかどうかは `FormatDiff` の警告発生率で
-/// 観測できるようにしてあり、それがこの Issue の計測項目そのもの。
+/// 3B が `Mode` の禁止事項を守れるかは怪しい（`ai_docs/engine-benchmark.md` §3 で
+/// 数値の表記変更・語の脱落・推測での修復を実測している）。
 @available(macOS 26.0, *)
 actor AppleFormatter: FormattingEngine {
     /// 履歴に残すモデル識別子。mlx の HuggingFace repo id と同じ欄に入るので区別できる名前にする。

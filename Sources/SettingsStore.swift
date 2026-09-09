@@ -121,26 +121,6 @@ final class SettingsStore: ObservableObject {
         didSet { UserDefaults.standard.set(formatTimeoutSeconds, forKey: "formatTimeoutSeconds") }
     }
 
-    // MARK: - 整形ガード（Issue #14）
-
-    /// 整形が数値・URL・メールアドレスを書き換えていないか点検する。
-    @Published var diffGuardEnabled: Bool {
-        didSet { UserDefaults.standard.set(diffGuardEnabled, forKey: "diffGuardEnabled") }
-    }
-    /// 固有名詞（カタカナ・漢字の連続）と識別子・型名まで点検対象に広げる。
-    /// 日本語は語形も表記も揺れるので誤検知が増える。**既定は OFF**。
-    @Published var diffGuardIncludesNames: Bool {
-        didSet { UserDefaults.standard.set(diffGuardIncludesNames, forKey: "diffGuardIncludesNames") }
-    }
-
-    /// 実際に点検する種類。
-    var diffGuardKinds: Set<FormatDiff.Kind> {
-        guard diffGuardEnabled else { return [] }
-        return diffGuardIncludesNames
-            ? FormatDiff.Kind.defaults.union(FormatDiff.Kind.optional)
-            : FormatDiff.Kind.defaults
-    }
-
     /// 整形の制限時間の選択肢。長いほど整形が通りやすく、外したときの待ち時間も伸びる。
     static let formatTimeoutOptions: [(seconds: Double, label: String)] = [
         (3, "3秒"), (5, "5秒"), (8, "8秒"), (15, "15秒"), (30, "30秒")
@@ -225,11 +205,6 @@ final class SettingsStore: ObservableObject {
             ?? Formatter.defaultModelId
         let timeout = UserDefaults.standard.double(forKey: "formatTimeoutSeconds")
         formatTimeoutSeconds = timeout > 0 ? timeout : 8
-
-        // 既定 ON。点検コストは正規表現数本ぶんで、挿入を待たせない。
-        diffGuardEnabled = UserDefaults.standard.object(forKey: "diffGuardEnabled") as? Bool ?? true
-        // 誤検知の多い警告は無視されるようになるので、名詞まで見るのは明示的な選択にする。
-        diffGuardIncludesNames = UserDefaults.standard.bool(forKey: "diffGuardIncludesNames")
     }
 
     /// HUD の大きさを読む。**旧「録音中に HUD を表示」トグル（`showRecordingHUD`）からの移行**を
