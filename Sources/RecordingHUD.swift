@@ -60,8 +60,6 @@ final class RecordingHUDModel: ObservableObject {
     @Published var isConfirmingCancel = false
     /// 挿入できなかった（または確認できなかった）結果。ここに残っている間は HUD を閉じない。
     @Published var pendingResult: PendingResult?
-    /// 整形が数値・URL 等を書き換えた疑い（Issue #14）。挿入は済んでいるので**閉じてよい**警告。
-    @Published var warning: FormatDiff?
     /// HUD にマウスが乗っているか。最小表示のとき、これで操作ボタンを出す（Issue #35）。
     @Published var isHovering = false
 
@@ -99,7 +97,6 @@ final class RecordingHUDModel: ObservableObject {
         pushCount = 0
         isConfirmingCancel = false
         pendingResult = nil
-        warning = nil
         isHovering = false
     }
 
@@ -126,11 +123,11 @@ final class RecordingHUDModel: ObservableObject {
 
     /// 最小表示（状態アイコンと経過時間だけの細いバー）で描くか。
     ///
-    /// 結果・整形警告・キャンセル確認は**読ませないと困る**内容なので、
+    /// 結果・キャンセル確認は**読ませないと困る**内容なので、
     /// 設定が「最小」でも通常の大きさで出す。
     var usesMinimalBar: Bool {
         guard SettingsStore.shared.hudSize == .minimal else { return false }
-        guard pendingResult == nil, warning?.hasChanges != true, !isConfirmingCancel else { return false }
+        guard pendingResult == nil, !isConfirmingCancel else { return false }
         // 失敗は原因を読ませて明示的に閉じさせる必要がある（細いバーには収まらない）。
         if case .failed = AppState.shared.status { return false }
         return true
@@ -140,7 +137,6 @@ final class RecordingHUDModel: ObservableObject {
     /// （2つがズレると、見えていない領域がクリックを食って背面アプリに届かなくなる）。
     var panelSize: CGSize {
         if pendingResult != nil { return RecordingHUDController.resultPanelSize }
-        if warning?.hasChanges == true { return RecordingHUDController.warningPanelSize }
         if usesMinimalBar {
             return isHovering
                 ? RecordingHUDController.minimalHoverPanelSize
@@ -169,8 +165,6 @@ struct RecordingHUDView: View {
     let onCopyResult: () -> Void
     let onRetryInsert: () -> Void
     let onDismissResult: () -> Void
-    let onOpenHistory: () -> Void
-    let onDismissWarning: () -> Void
 
     var body: some View {
         let size = model.panelSize
@@ -198,8 +192,6 @@ struct RecordingHUDView: View {
             resultContent(result)
         } else if model.isConfirmingCancel {
             cancelConfirmation
-        } else if let warning = model.warning, warning.hasChanges {
-            warningContent(warning)
         } else if model.usesMinimalBar {
             minimalContent
         } else {
@@ -373,48 +365,6 @@ struct RecordingHUDView: View {
         .padding(.vertical, 10)
     }
 
-    // 整形が事実を書き換えた疑い。**挿入はすでに済んでいる**ので止めるための UI ではなく、
-    // 「今の1発話を疑う理由がある」と気づかせて履歴へ送り込むための UI
-    // （`ai_docs/design-rationale.md` §2）。
-    private func warningContent(_ diff: FormatDiff) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.circle.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.orange)
-                Text("整形で\(diff.shortSummary)")
-                    .font(.system(size: 11, weight: .semibold))
-                    .lineLimit(1)
-                Spacer()
-                Button("履歴で確認", action: onOpenHistory)
-                    .controlSize(.small)
-                Button("閉じる", action: onDismissWarning)
-                    .controlSize(.small)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(diff.changes.prefix(3).enumerated()), id: \.offset) { _, change in
-                    HStack(spacing: 6) {
-                        Text(change.kind.label)
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                        Text(change.text)
-                            .font(.system(size: 11, design: .monospaced))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
-                if diff.changes.count > 3 {
-                    Text("ほか \(diff.changes.count - 3 + diff.omittedCount) 件")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, 8)
-    }
-
     private var statusIcon: some View { statusIcon(size: 13, width: 18) }
 
     /// 状態アイコン。メニューバーと同じシンボルと色で、**色と形の両方**で状態を示す。
@@ -493,8 +443,6 @@ final class RecordingHUDController {
     static let minimalHoverPanelSize = CGSize(width: 156, height: 28)
     /// 挿入結果を残しているときのサイズ（本文＋操作ボタンぶん高くする）。
     static let resultPanelSize = CGSize(width: 380, height: 160)
-    /// 整形の書き換え警告を出しているときのサイズ。
-    static let warningPanelSize = CGSize(width: 400, height: 108)
     /// 「挿入は済んだが確認できなかった」結果を出しておく時間（Issue #34）。
     /// 本文を読んでコピーに手を伸ばせる長さにする。失敗はこれで閉じない。
     static let uncertainResultDuration: Duration = .seconds(6)
@@ -659,10 +607,7 @@ final class RecordingHUDController {
 
     /// 完了表示を一瞬だけ見せてから自動的に閉じる（挿入できたことを HUD 側でも確認できる）。
     ///
-    /// `warning` に変化があれば、閉じる前に何が書き換わったかを見せて表示時間を延ばす。
-    /// **HUD を出していなければ警告も出さない**——挿入結果と違って失われるものは無く
-    /// （履歴に残る）、メニューバーの状態でも警告は読める。設定を尊重する。
-    func finish(warning: FormatDiff? = nil) {
+    func finish() {
         // 前回の挿入結果を残したままなら、今回の成功で役目を終える。
         if model.pendingResult != nil {
             model.pendingResult = nil
@@ -675,29 +620,12 @@ final class RecordingHUDController {
         startedAt = nil
         guard isVisible else { return }
 
-        let hasWarning = warning?.hasChanges == true
-        model.warning = hasWarning ? warning : nil
-        applyPanelSize()
-
         cancelAutoHide()
         autoHideTask = Task { [weak self] in
-            try? await Task.sleep(for: hasWarning
-                                  ? AppStatus.warnedDisplayDuration
-                                  : AppStatus.doneDisplayDuration)
+            try? await Task.sleep(for: AppStatus.doneDisplayDuration)
             guard !Task.isCancelled else { return }
             self?.hide()
         }
-    }
-
-    /// 警告から履歴を開く。読んでいる途中に HUD が消えないよう自動クローズを止める。
-    private func openHistory() {
-        HistoryWindowController.shared.show()
-        hide()
-    }
-
-    private func dismissWarning() {
-        AppState.shared.update(.idle)
-        hide()
     }
 
     /// 録音レベル（0…1）を波形へ流す。
@@ -804,7 +732,6 @@ final class RecordingHUDController {
         removeEscapeMonitors()
         startedAt = nil
         model.pendingResult = nil
-        model.warning = nil
         presentPanel()
     }
 
@@ -868,9 +795,7 @@ final class RecordingHUDController {
             onDismiss: { [weak self] in self?.dismissFailure() },
             onCopyResult: { [weak self] in self?.copyResult() },
             onRetryInsert: { [weak self] in self?.retryInsert() },
-            onDismissResult: { [weak self] in self?.dismissResult() },
-            onOpenHistory: { [weak self] in self?.openHistory() },
-            onDismissWarning: { [weak self] in self?.dismissWarning() }
+            onDismissResult: { [weak self] in self?.dismissResult() }
         )
 
         let panel = HUDPanel(

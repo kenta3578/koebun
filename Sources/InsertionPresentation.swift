@@ -8,8 +8,8 @@ import Foundation
 struct InsertionPresentation {
     /// HUD に何をさせるか。
     enum HUDAction: Equatable {
-        /// 完了表示を一瞬見せて閉じる。`warning` があれば閉じる前に差分を見せる。
-        case finish(warning: FormatDiff?)
+        /// 完了表示を一瞬見せて閉じる。
+        case finish
         /// 結果テキストを HUD に残す（コピー・もう一度挿入ができる）。
         case keepResult
         /// 即座に閉じる（結果はパネルに出さない設定で、失敗の原因はメニューバーに残る）。
@@ -23,17 +23,15 @@ struct InsertionPresentation {
     ///   - outcome: 挿入の結果。
     ///   - text: 挿入しようとしたテキスト。空なら「無音」。
     ///   - formattingFailure: 整形を試みて外れた理由。整形しなかった／成功したなら nil。
-    ///   - diff: 整形ガードの検出結果。
     ///   - showResultPanel: 非成功の結果を HUD に残す設定。
     ///   - resultLocation: 結果の残し先の文言（メニューバーの失敗表示に使う）。
     static func make(outcome: InsertionOutcome,
                      text: String,
                      formattingFailure: String?,
-                     diff: FormatDiff?,
                      showResultPanel: Bool,
                      resultLocation: String) -> InsertionPresentation {
         if text.isEmpty {
-            return .init(status: .done(message: "（無音）"), hud: .finish(warning: nil))
+            return .init(status: .done(message: "（無音）"), hud: .finish)
         }
 
         let status: AppStatus
@@ -43,8 +41,6 @@ struct InsertionPresentation {
         } else if let formattingFailure {
             // 整形を外したことは必ず見せる（無言で生テキストに落ちない）。
             status = .done(message: "整形なしで挿入 ✓（\(formattingFailure)）")
-        } else if let diff, diff.hasChanges {
-            status = .warned(message: "挿入しました ✓ \(diff.shortSummary)")
         } else {
             // 成功でないなら、結果をどこに残したか（＝クリップボードを戻していないか）を出す。
             status = .done(message: outcome.isSucceeded
@@ -54,7 +50,7 @@ struct InsertionPresentation {
 
         let hud: HUDAction
         if outcome.isSucceeded {
-            hud = .finish(warning: diff)
+            hud = .finish
         } else if showResultPanel {
             // 挿入できなかった／確認できなかった結果は HUD に残す（確認できないだけなら数秒で閉じる）。
             hud = .keepResult
@@ -63,7 +59,7 @@ struct InsertionPresentation {
             hud = .hide
         } else {
             // 確認できなかっただけなら、成功と同じく一瞬見せて閉じる。
-            hud = .finish(warning: diff)
+            hud = .finish
         }
         return .init(status: status, hud: hud)
     }

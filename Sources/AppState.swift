@@ -106,7 +106,7 @@ enum AppStatus: Equatable {
         case .recording:    return "koebun: 録音中"
         case .processing:   return "koebun: 文字起こし中"
         case .done:         return "koebun: 完了"
-        case .warned:       return "koebun: 完了（整形の差分に注意）"
+        case .warned:       return "koebun: 完了（注意あり）"
         case .failed:       return "koebun: エラー"
         }
     }

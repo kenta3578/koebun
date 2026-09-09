@@ -116,7 +116,6 @@ struct Mode: Codable, Identifiable, Equatable {
     ///   1. 文脈長が 4096 トークンしかなく、日本語はほぼ 1文字 = 1トークン。
     ///      指示が長いほど整形対象の本文と出力を圧迫する
     ///   2. 3B は長い散文の指示を取りこぼす。命令形の短い箇条書きの方が追従する
-    /// 守れているかは `FormatDiff` の警告発生率で観測する（それがこの Issue の計測項目）。
     func compactSystemPrompt(context contextBlock: String? = nil) -> String {
         assemble(rules: Self.compactRules, contextRules: Self.compactContextRules, context: contextBlock)
     }
