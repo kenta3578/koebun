@@ -317,12 +317,31 @@ final class SettingsStore: ObservableObject {
     /// `NSEvent.ModifierFlags` は左右を持たないので、生の rawValue にあるデバイス依存マスク
     /// （NX_DEVICE*KEYMASK）を見る。区別しないと、左⌥ を押したまま右⌥ を離したときに
     /// 「まだ押されている」と誤判定し、`isDown` が固着して次の録音が始まらない（Issue #78）。
+    ///
+    /// **左右の情報が無いイベントは汎用フラグで見る**（Issue #117）。JoyKeyMapper のようなキーマッパーは
+    /// `CGEvent` に `maskShift` 等の汎用フラグだけを付けて送り、デバイス依存ビットを付けない。
+    /// そのとき左右ビットだけを見ると常に「押されていない」になり、コントローラーからは永遠に反応しない。
+    /// 実キーボードのイベントには必ず左右ビットが付くので、区別（Issue #78）はそのまま効く。
     nonisolated static func isKeyDown(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
-        if let mask = deviceMask(for: keyCode) {
+        guard let own = ownFlag(for: keyCode) else { return false }
+        // fn は左右が無いので、通常のフラグで見る。
+        guard let mask = deviceMask(for: keyCode) else { return flags.contains(own) }
+        let bothSides = devicePairMask(for: own)
+        if flags.rawValue & bothSides != 0 {
             return flags.rawValue & mask != 0
         }
-        // fn は左右が無いので、通常のフラグで見る。
-        return keyCode == 63 && flags.contains(.function)
+        return flags.contains(own)
+    }
+
+    /// その修飾種の左右両方のデバイス依存ビット。
+    private nonisolated static func devicePairMask(for flag: NSEvent.ModifierFlags) -> UInt {
+        switch flag {
+        case .control: return 0x0000_0001 | 0x0000_2000
+        case .shift:   return 0x0000_0002 | 0x0000_0004
+        case .command: return 0x0000_0008 | 0x0000_0010
+        case .option:  return 0x0000_0020 | 0x0000_0040
+        default:       return 0
+        }
     }
 
     /// 左右を区別するためのデバイス依存マスク。左右の無いキー（fn）は nil。
