@@ -36,11 +36,12 @@ final class SettingsStore: ObservableObject {
     @Published var showResultPanel: Bool {
         didSet { UserDefaults.standard.set(showResultPanel, forKey: "showResultPanel") }
     }
-    /// 録音トリガーの修飾キー（keyCode）。既定は右⌥。
-    @Published var hotKeyCode: UInt16 {
-        didSet { UserDefaults.standard.set(Int(hotKeyCode), forKey: "hotKeyCode") }
+    /// 録音トリガーの修飾キー（keyCode の配列。左右は区別し、押した順に並ぶ）。既定は右⌥。
+    /// 複数なら全部が押されたときに反応する（例: 左⇧ + 左⌘。Issue #115）。
+    @Published var hotKeyModifiers: [UInt16] {
+        didSet { UserDefaults.standard.set(hotKeyModifiers.map(Int.init), forKey: "hotKeyModifierCodes") }
     }
-    /// 修飾キーと組み合わせる通常キー（Issue #112）。nil なら修飾キー単独で録音する。
+    /// 修飾キーと組み合わせる通常キー（Issue #112）。nil なら修飾キーだけで録音する。
     /// keyCode 0 は A なので、0 を「無し」の番兵にせず nil はキーごと消す。
     @Published var hotKeyExtraKeyCode: UInt16? {
         didSet {
@@ -51,9 +52,9 @@ final class SettingsStore: ObservableObject {
             }
         }
     }
-    /// 「右⌥ + S」のような表示名。待機表示・設定画面・HUD で共通に使う。
+    /// 「左⇧ + 左⌘ + 0」のような表示名。待機表示・設定画面・HUD で共通に使う。
     var hotKeyDisplayName: String {
-        Self.hotKeyDisplayName(modifier: hotKeyCode, extraKeyCode: hotKeyExtraKeyCode)
+        Self.hotKeyDisplayName(modifiers: hotKeyModifiers, extraKeyCode: hotKeyExtraKeyCode)
     }
     /// 履歴の保存日数。0 = 無期限。
     @Published var historyRetentionDays: Int {
@@ -183,8 +184,13 @@ final class SettingsStore: ObservableObject {
         keepResultOnClipboardWhenUnsure =
             UserDefaults.standard.object(forKey: "keepResultOnClipboardWhenUnsure") as? Bool ?? true
         showResultPanel = UserDefaults.standard.object(forKey: "showResultPanel") as? Bool ?? true
-        let stored = UserDefaults.standard.integer(forKey: "hotKeyCode")
-        hotKeyCode = stored > 0 ? UInt16(stored) : 61
+        if let codes = UserDefaults.standard.array(forKey: "hotKeyModifierCodes") as? [Int], !codes.isEmpty {
+            hotKeyModifiers = codes.map(UInt16.init)
+        } else {
+            // #115 より前は修飾キー 1 つ（hotKeyCode）だった。読み替える。
+            let legacy = UserDefaults.standard.integer(forKey: "hotKeyCode")
+            hotKeyModifiers = [legacy > 0 ? UInt16(legacy) : 61]
+        }
         hotKeyExtraKeyCode = (UserDefaults.standard.object(forKey: "hotKeyExtraKeyCode") as? Int).map(UInt16.init)
         // 0（無期限）と未設定を区別するため object で取り出す。
         historyRetentionDays = UserDefaults.standard.object(forKey: "historyRetentionDays") as? Int ?? 30
@@ -264,9 +270,10 @@ final class SettingsStore: ObservableObject {
         return defaults.first(where: isSupported) ?? defaults[defaults.count - 1]
     }
 
-    static func hotKeyDisplayName(modifier: UInt16, extraKeyCode: UInt16?) -> String {
-        guard let extraKeyCode else { return keyName(for: modifier) }
-        return "\(keyName(for: modifier)) + \(HotKeyExtraKey.label(for: extraKeyCode))"
+    static func hotKeyDisplayName(modifiers: [UInt16], extraKeyCode: UInt16?) -> String {
+        var parts = modifiers.map(keyName(for:))
+        if let extraKeyCode { parts.append(HotKeyExtraKey.label(for: extraKeyCode)) }
+        return parts.joined(separator: " + ")
     }
 
     static func keyName(for code: UInt16) -> String {
@@ -277,6 +284,8 @@ final class SettingsStore: ObservableObject {
         case 55: return "左⌘"
         case 62: return "右⌃"
         case 59: return "左⌃"
+        case 60: return "右⇧"
+        case 56: return "左⇧"
         case 63: return "fn"
         default: return "key(\(code))"
         }
@@ -306,22 +315,29 @@ final class SettingsStore: ObservableObject {
         case 54: return 0x0000_0010  // 右⌘
         case 58: return 0x0000_0020  // 左⌥
         case 61: return 0x0000_0040  // 右⌥
+        case 56: return 0x0000_0002  // 左⇧
+        case 60: return 0x0000_0004  // 右⇧
         default: return nil
         }
     }
 
-    /// そのキーが**単独で**押されているか（他の修飾キーが一緒に押されていない）。
+    /// その修飾キー（の集合）**だけ**が押されているか（他の修飾キーが一緒に押されていない）。
     ///
     /// これを見ないと、⌥⌘→ でのタブ切替・⌥+ドラッグ・⌥e のような入力のたびに
     /// 録音が開始／停止する。右⌥ をほとんど使わない環境でだけ成り立っていた（Issue #78）。
     ///
     /// `ignoringFunction` は修飾キー＋通常キーの組み合わせ用。矢印・F キーは押すだけで
     /// `.function` が立つので、それを「別の修飾キー」と数えると 右⌥+← が永遠に反応しない（Issue #112）。
-    nonisolated static func isSoloPress(keyCode: UInt16, flags: NSEvent.ModifierFlags, ignoringFunction: Bool = false) -> Bool {
-        let own = ownFlag(for: keyCode)
+    nonisolated static func isSoloPress(modifiers: [UInt16], flags: NSEvent.ModifierFlags, ignoringFunction: Bool = false) -> Bool {
+        let own = modifiers.compactMap(ownFlag(for:))
         var others: [NSEvent.ModifierFlags] = [.command, .option, .control, .shift, .function]
         if ignoringFunction { others.removeAll { $0 == .function } }
-        return !others.contains { $0 != own && flags.contains($0) }
+        return !others.contains { flag in !own.contains(flag) && flags.contains(flag) }
+    }
+
+    /// 集合の全キーが押されているか。
+    nonisolated static func allKeysDown(_ modifiers: [UInt16], flags: NSEvent.ModifierFlags) -> Bool {
+        !modifiers.isEmpty && modifiers.allSatisfy { isKeyDown(keyCode: $0, flags: flags) }
     }
 
     /// そのキー自身が立てるフラグ（単独押下の判定で自分を除くために使う）。
@@ -330,6 +346,7 @@ final class SettingsStore: ObservableObject {
         case 58, 61: return .option
         case 54, 55: return .command
         case 59, 62: return .control
+        case 56, 60: return .shift
         case 63:     return .function
         default:     return nil
         }
