@@ -11,7 +11,7 @@ Mac（Apple Silicon / 実機は M5 Pro・48GB メモリ）で、音声 → 文�
 ## Tech Stack
 
 - **言語**: Swift / SwiftUI（メニューバー常駐アプリ）
-- **ASR**: WhisperKit（large-v3, 日本語）— Neural Engine 常駐
+- **ASR**: Apple SpeechAnalyzer（日本語・既定。OS 内蔵・DL 0・実測 292ms）／ WhisperKit large-v3（切替可。URL・メール・英数字が要るとき用）
 - **後処理**: 辞書置換（確定誤変換の機械置換）＋ フィラー除去（どちらも決定的な文字列処理）
 - **OS API**: AVFoundation（マイク）/ Accessibility API（テキスト直挿し）/ グローバルホットキー
 
