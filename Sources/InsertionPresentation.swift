@@ -23,11 +23,12 @@ struct InsertionPresentation {
     ///   - outcome: 挿入の結果。
     ///   - text: 挿入しようとしたテキスト。空なら「無音」。
     ///   - showResultPanel: 非成功の結果を HUD に残す設定。
-    ///   - resultLocation: 結果の残し先の文言（メニューバーの失敗表示に使う）。
+    ///   - resultLocation: 結果の残し先の文言を「本当に失敗したか」から導くもの。
+    ///     **`.uncertain` ではクリップボードに残らない**ので、種類ごとに文言が変わる（Issue #143）。
     static func make(outcome: InsertionOutcome,
                      text: String,
                      showResultPanel: Bool,
-                     resultLocation: String) -> InsertionPresentation {
+                     resultLocation: (_ isFailure: Bool) -> String) -> InsertionPresentation {
         if text.isEmpty {
             return .init(status: .done(message: "（無音）"), hud: .finish)
         }
@@ -35,12 +36,13 @@ struct InsertionPresentation {
         let status: AppStatus
         if outcome.isFailure {
             // 本当の失敗だけ警告色。「確認できなかっただけ」は失敗にしない（Issue #34）。
-            status = .failed(reason: outcome.statusMessage(resultKeptIn: resultLocation), hint: outcome.hint)
+            status = .failed(reason: outcome.statusMessage(resultKeptIn: resultLocation(true)),
+                             hint: outcome.hint)
         } else {
             // 成功でないなら、結果をどこに残したか（＝クリップボードを戻していないか）を出す。
             status = .done(message: outcome.isSucceeded
                            ? "挿入しました ✓"
-                           : outcome.statusMessage(resultKeptIn: resultLocation))
+                           : outcome.statusMessage(resultKeptIn: resultLocation(false)))
         }
 
         let hud: HUDAction
