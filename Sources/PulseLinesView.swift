@@ -17,6 +17,8 @@ import SwiftUI
 struct PulseLinesView: View {
     /// 直近の入力レベル（0…1）。
     let level: CGFloat
+    /// 最後に «喋っている» と見なせた時刻（Issue #162）。黙るほど波が凪ぐ。
+    var lastVoiceAt = Date()
     /// 挿入へ送り出した時刻。nil なら送り出していない（Issue #158）。
     var sendingStartedAt: Date?
     let color: Color
@@ -48,8 +50,15 @@ struct PulseLinesView: View {
     /// 下限を 0 にすると無音で直線になり «生きている» と分からない。
     private static let idleFloor: CGFloat = 0.28
     private static let idleCeiling: CGFloat = 0.58
-    /// 無音のときに振幅が脈打つ速さ（ラジアン/秒）。
+    /// 凪ぎ切ったときの範囲。**0 にしない**——止まると «落ちた» ように見える。
+    /// 小さく・ゆっくり «待っている» ところまで落とす（Issue #162）。
+    private static let calmFloor: CGFloat = 0.16
+    private static let calmCeiling: CGFloat = 0.30
+    /// 無音のときに振幅が脈打つ速さ（ラジアン/秒）。凪ぐと遅くなる。
     static let idlePulseSpeed: Double = 1.8
+    private static let calmPulseSpeed: Double = 0.85
+    /// 凪ぎ切ったときの波が流れる速さ。
+    private static let calmWaveSpeed: Double = 1.2
     /// 送り出しで右へ動かす距離（幅に対する比）。**画面の外まで飛ばさない**——
     /// 挿入できたと確認したわけではないので、«消えていった» 以上のことを言わせない。
     private static let sendTravel: CGFloat = 0.75
@@ -70,16 +79,18 @@ struct PulseLinesView: View {
                 // 送り出しの進み（0…1）。1 になったら何も描かない。
                 let sending = Self.sendProgress(from: sendingStartedAt, at: timeline.date)
                 guard sending < 1 else { return }
+                // 黙っている長さ（0…1）。喋った直後は 0、`calmDuration` 黙ると 1。
+                let calm = Self.calmProgress(since: lastVoiceAt, at: timeline.date)
                 // **先に動かし、あとから畳む。** 同時に始めると平らになるのが速すぎて
                 // «流れて出ていく» に見えず、その場でしぼんだようになる。
                 let travel = pow(sending, 0.55)            // 出だしを速く
                 let collapse = pow(sending, 1.7)           // 畳むのは後半で
-                let drive = Self.drive(level: level, at: time) * (1 - collapse)
+                let drive = Self.drive(level: level, calm: calm, at: time) * (1 - collapse)
                 let shift = size.width * Self.sendTravel * travel
                 let fade = 1 - pow(sending, 1.4)
                 context.translateBy(x: shift, y: 0)
                 for wave in Self.waves {
-                    let crest = Self.path(wave, drive: drive, in: size, at: time)
+                    let crest = Self.path(wave, drive: drive, calm: calm, in: size, at: time)
                     // **先に面、あとから稜線。** 逆にすると塗りが線を覆って輪郭がぼける。
                     // 下へフェードさせる。べた塗りだと下端が直線で切れて、
                     // ピルの中で «四角い塊» に見える（水面らしさが消える）。
@@ -106,14 +117,24 @@ struct PulseLinesView: View {
         return min(1, CGFloat(elapsed / RecordingHUDModel.sendDuration))
     }
 
-    /// 振幅の倍率。**無音のときは脈打ち、喋れば入力レベルが勝つ。**
-    static func drive(level: CGFloat, at time: TimeInterval) -> CGFloat {
-        let pulse = CGFloat((sin(time * idlePulseSpeed) + 1) / 2)
-        let idle = idleFloor + (idleCeiling - idleFloor) * pulse
-        return max(level, idle)
+    /// 黙っている長さ（0…1）。喋った直後は 0、`calmDuration` 黙ると 1。
+    static func calmProgress(since lastVoice: Date, at now: Date) -> CGFloat {
+        let quiet = now.timeIntervalSince(lastVoice)
+        guard quiet > 0 else { return 0 }
+        return min(1, CGFloat(quiet / RecordingHUDModel.calmDuration))
     }
 
-    private static func path(_ wave: Wave, drive: CGFloat,
+    /// 振幅の倍率。**無音のときは脈打ち、喋れば入力レベルが勝つ。**
+    /// 黙るほど脈の幅も速さも落ちて «待っている» 見え方になる（Issue #162）。
+    static func drive(level: CGFloat, calm: CGFloat, at time: TimeInterval) -> CGFloat {
+        let speed = idlePulseSpeed + (calmPulseSpeed - idlePulseSpeed) * Double(calm)
+        let pulse = CGFloat((sin(time * speed) + 1) / 2)
+        let floor = idleFloor + (calmFloor - idleFloor) * calm
+        let ceiling = idleCeiling + (calmCeiling - idleCeiling) * calm
+        return max(level, floor + (ceiling - floor) * pulse)
+    }
+
+    private static func path(_ wave: Wave, drive: CGFloat, calm: CGFloat,
                             in size: CGSize, at time: TimeInterval) -> Path {
         var path = Path()
         let mid = size.height / 2
@@ -121,7 +142,9 @@ struct PulseLinesView: View {
             let x = Double(step) / Double(samples)
             // 両端を窓で細くする。掛けないと端で線が唐突に切れて «帯» に見える。
             let envelope = sin(x * .pi)
-            let phase = time * wave.speed + x * 2 * .pi * wave.cycles + wave.phase
+            // 凪ぐと流れも遅くなる。振幅だけ落とすと «小さいまま急いでいる» ように見える。
+            let speed = wave.speed + (calmWaveSpeed * (wave.speed < 0 ? -1 : 1) - wave.speed) * Double(calm)
+            let phase = time * speed + x * 2 * .pi * wave.cycles + wave.phase
             let y = mid + wave.amplitude * drive * CGFloat(sin(phase) * envelope) * size.height / 2
             let point = CGPoint(x: CGFloat(x) * size.width, y: y)
             if step == 0 { path.move(to: point) } else { path.addLine(to: point) }

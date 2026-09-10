@@ -14,7 +14,7 @@ struct PulseLinesTests {
     private func idleRange() -> (min: CGFloat, max: CGFloat) {
         let samples = (0..<64).map { i -> CGFloat in
             let t = Double(i) / 64 * (2 * .pi / PulseLinesView.idlePulseSpeed)
-            return PulseLinesView.drive(level: 0, at: t)
+            return PulseLinesView.drive(level: 0, calm: 0, at: t)
         }
         return (samples.min()!, samples.max()!)
     }
@@ -42,9 +42,64 @@ struct PulseLinesTests {
         // 脈のどの時点でも入力が勝つこと。
         let ok = (0..<64).allSatisfy { i in
             let t = Double(i) / 64 * (2 * .pi / PulseLinesView.idlePulseSpeed)
-            return PulseLinesView.drive(level: level, at: t) == level
+            return PulseLinesView.drive(level: level, calm: 0, at: t) == level
         }
         #expect(ok)
+    }
+
+    // MARK: - 間を検知して凪ぐ（Issue #162）
+
+    private func calmRange(_ calm: CGFloat) -> (min: CGFloat, max: CGFloat) {
+        let samples = (0..<128).map { i -> CGFloat in
+            PulseLinesView.drive(level: 0, calm: calm, at: Double(i) / 128 * 8)
+        }
+        return (samples.min()!, samples.max()!)
+    }
+
+    /// 止めてしまうと «落ちた» ように見える。小さくても動き続けるのが «待っている»。
+    @Test("凪いでも波は止まらない")
+    func calmNeverStops() {
+        let calm = calmRange(1)
+        #expect(calm.min > 0.10)
+        #expect(calm.max - calm.min > 0.05, "幅が無いと «固まった» ように見える")
+    }
+
+    @Test("黙るほど小さくなる")
+    func calmerIsSmaller() {
+        #expect(calmRange(1).max < calmRange(0).max)
+        #expect(calmRange(0.5).max < calmRange(0).max)
+    }
+
+    @Test("凪いでいても喋れば入力レベルが勝つ")
+    func speechWinsEvenWhenCalm() {
+        let ok = (0..<64).allSatisfy { i in
+            PulseLinesView.drive(level: 0.65, calm: 1, at: Double(i) / 64 * 8) == 0.65
+        }
+        #expect(ok)
+    }
+
+    @Test("黙った長さは 0 から 1 へ進み、1 で止まる")
+    func calmProgresses() {
+        let voice = Date()
+        #expect(PulseLinesView.calmProgress(since: voice, at: voice) == 0)
+        let half = PulseLinesView.calmProgress(
+            since: voice, at: voice.addingTimeInterval(RecordingHUDModel.calmDuration / 2))
+        #expect(half > 0.4 && half < 0.6)
+        #expect(PulseLinesView.calmProgress(since: voice, at: voice.addingTimeInterval(60)) == 1)
+    }
+
+    /// 時計が巻き戻っても描画を壊さない。
+    @Test("喋った時刻より前でも 0 に丸める")
+    func calmNeverNegative() {
+        let voice = Date()
+        #expect(PulseLinesView.calmProgress(since: voice, at: voice.addingTimeInterval(-5)) == 0)
+    }
+
+    /// 環境音（0.02 前後）で «喋っている» と誤判定すると、永遠に凪がない。
+    @Test("«喋っている» の閾値が環境音より上にある")
+    func voiceLevelIsAboveAmbient() {
+        #expect(RecordingHUDModel.voiceLevel > 0.03)
+        #expect(RecordingHUDModel.voiceLevel < 0.2, "高すぎると小声で凪いでしまう")
     }
 
     // MARK: - 送り出し（Issue #158）

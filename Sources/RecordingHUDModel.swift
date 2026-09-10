@@ -21,6 +21,22 @@ final class RecordingHUDModel: ObservableObject {
 
     @Published private(set) var levels: [Float] = Array(repeating: 0, count: barCount)
 
+    /// 最後に «喋っている» と見なせた時刻（Issue #162）。
+    ///
+    /// このアプリは**考えながら喋る**ための道具なので、途中の «間» は失敗ではなく普通の状態。
+    /// 黙ったときに波が同じ勢いのままだと «聞いていない» ように見え、逆に止めると
+    /// «落ちた» ように見える。**だんだん凪がせる**ことで «待っている» と読ませる。
+    ///
+    /// 録音開始時にいまの時刻で埋める。まだ一言も喋っていない最初の数秒は
+    /// «聞く気でいる» 側に倒したいので、`nil` にはしない。
+    @Published private(set) var lastVoiceAt = Date()
+
+    /// «喋っている» と見なす入力レベル。環境音（0.02 前後）では上がらない値にする。
+    static let voiceLevel: Float = 0.06
+    /// 黙ってから完全に凪ぐまでの時間。**短くしない**——考えている数秒で凪ぎ切ると、
+    /// 少し黙るたびに波が忙しく行き来してかえって気が散る。
+    static let calmDuration: TimeInterval = 2.5
+
     /// 挿入へ送り出した時刻（Issue #158）。**nil なら送り出していない。**
     ///
     /// 実測では 411 件中 409 件が `.uncertain`——ターミナルは Accessibility が
@@ -82,6 +98,7 @@ final class RecordingHUDModel: ObservableObject {
         levels.removeFirst()
         levels.append(min(1, max(0, level)))
         pushCount += 1
+        if level >= Self.voiceLevel { lastVoiceAt = Date() }
     }
 
     func setElapsed(_ value: TimeInterval) {
@@ -95,6 +112,7 @@ final class RecordingHUDModel: ObservableObject {
         isConfirmingCancel = false
         pendingResult = nil
         sendingStartedAt = nil
+        lastVoiceAt = Date()
         isHovering = false
     }
 
