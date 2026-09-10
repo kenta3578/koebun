@@ -30,7 +30,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Dock に出さず、メニューバーのみの常駐アプリにする（LSUIElement と二重保険）
         NSApp.setActivationPolicy(.accessory)
+        // テストのホストとして起動したときは何も始めない（Issue #102）。始めると権限ダイアログ・
+        // モデルのダウンロード・グローバル監視が走り、テストがそれを待つことになる。
+        guard !Self.isRunningTests else { return }
         AppController.shared.start()
+    }
+
+    /// `xcodebuild test` がこのアプリを `TEST_HOST` として起動しているか。
+    ///
+    /// 環境変数は Apple の非公開仕様で名前が変わってきた（Xcode 26 では `XCTestConfigurationFilePath`
+    /// は空文字で渡る）。テストバンドルは `DYLD_INSERT_LIBRARIES` で XCTest ごと `main` 前に
+    /// ロードされるので、XCTestCase クラスの存在も併せて見る。本番の起動では決してロードされない。
+    private static var isRunningTests: Bool {
+        let env = ProcessInfo.processInfo.environment
+        return env["XCTestSessionIdentifier"] != nil
+            || env["XCTestConfigurationFilePath"] != nil
+            || NSClassFromString("XCTestCase") != nil
     }
 
     /// 復元は挿入の 0.25 秒後に走る。その待ちの最中に終了すると、口述テキストが

@@ -17,6 +17,9 @@ targets:
   koebun:
     type: application
     platform: macOS
+    scheme:
+      testTargets:
+        - koebunTests
     sources:
       - path: Sources
     dependencies:
@@ -38,3 +41,21 @@ targets:
         ENABLE_HARDENED_RUNTIME: NO
         # 署名は Xcode で開いた時に各自の Personal Team を割り当てる
         CODE_SIGN_STYLE: Automatic
+
+  # 単体テスト（Issue #102）。アプリを TEST_HOST にして同じモジュールとして見る
+  # （守備範囲とホスト側の起動抑止は Tests/README.md）。
+  # TEST_HOST / BUNDLE_LOADER は xcodegen がアプリ依存から自動で埋める。
+  koebunTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+        excludes:
+          - README.md
+    dependencies:
+      - target: koebun
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kenta3578.koebunTests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.9"
