@@ -74,7 +74,8 @@ final class ReplacementStore: ObservableObject {
     /// ルールごとに全文置換を繰り返すと置換後の文字列が後続ルールに再マッチしてしまう
     /// （`アットマーク`→`@` の結果を別ルールがさらに書き換える）。1パス走査ならその連鎖が起きず、
     /// 適用順にも依存しない。日本語が対象なので単語境界は見ず素直な部分一致とする。
-    static func apply(_ text: String, rules: [ReplacementRule]) -> String {
+    /// **純関数なので `nonisolated`。** `DictationPipeline` が MainActor の外から呼ぶ（Issue #66）。
+    nonisolated static func apply(_ text: String, rules: [ReplacementRule]) -> String {
         let active = rules
             .filter { !$0.from.isEmpty }
             .sorted {
