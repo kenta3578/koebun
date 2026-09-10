@@ -25,25 +25,9 @@ final class AppController {
     /// 変わった時点でエンジンは止まり、以降の発話はサンプルに入らないので、
     /// 「途中までで処理した」ことを結果表示に必ず出す。停止処理で読んで false に戻す。
     private var audioDeviceChangedDuringRecording = false
-    /// 録音の世代。`startRecording` ごとに進む。
-    /// 停止後のパイプラインは自分の世代を控え、完了時に世代が進んでいれば「新しい録音が
-    /// 始まっている」と判定して状態と HUD に触らない（Issue #97）。停止直後に言い残しを
-    /// 押した瞬間から録り始めるために、処理中でも録音を始められるようにした代償。
-    private var recordingGeneration = 0
-
-    /// 新しい録音に追い越された（superseded）パイプラインが残した、見せ損ねた結果。
-    /// 挿入できなかった結果と文字起こし失敗だけを控え、次のパイプラインの完了時に代わりに出す。
-    /// 成功の完了表示は控えない（挿入された文字が見えているので失われるものが無い）。
-    private struct DeferredPresentation {
-        var status: AppStatus
-        /// 結果パネルに残す内容。nil なら状態表示だけ（文字起こし失敗・結果パネル OFF の挿入失敗）。
-        var result: (text: String, outcome: InsertionOutcome)?
-    }
-    /// 控えた結果は古い順に並べ、1 件ずつ出す（Issue #100）。上書きしない。
-    /// 追い越しが 3 世代重なっても前の失敗が消えず、結果パネルを閉じるたびに次が出る。
-    private var deferred: [DeferredPresentation] = []
-    /// 控えた結果に付ける前置き。複数たまっても順に出すので「前の」ではなく「以前の」。
-    private static let deferredLabel = "以前の発話"
+    /// 追い越しの判定と、見せ損ねた結果の退避（Issue #97 / #100）。
+    /// 判定そのものは `PipelineGuard` に閉じていて、AppKit 無しで単体テストできる（Issue #102）。
+    private var guardState = PipelineGuard()
 
     /// 直前に停止した発話のパイプライン。挿入の前にこれを待って、発話順に貼る（Issue #99）。
     ///
@@ -194,7 +178,7 @@ final class AppController {
         // 読込中は始めない。処理中は始めてよい（Issue #97）。先行パイプラインの完了処理が
         // この録音の状態・HUD を潰さないことは、世代番号で守る（Issue #57 H3 の再来を防ぐ）。
         guard state.status.canStartRecording else { return }
-        recordingGeneration &+= 1
+        _ = guardState.begin()
         do {
             // 挿入先は録音開始の**前**に控える。NSWorkspace だけなので AX 権限も要らず軽い。
             pendingBundleId = TextInjector.frontmostBundleId()
@@ -218,7 +202,7 @@ final class AppController {
         guard state.isRecording else { return }
         state.update(.processing)
 
-        let generation = recordingGeneration
+        let generation = guardState.generation
         let expectedBundleId = takePendingBundleId()
         SoundPlayer.play(SettingsStore.shared.stopSound)
         let samples = recorder.stop()
@@ -264,13 +248,14 @@ final class AppController {
             )
         } catch {
             let status = AppStatus.failed(reason: "文字起こし失敗: \(error.localizedDescription)")
-            // 次の録音に追い越されていたら、その HUD を潰さず控える（Issue #97）。
-            guard generation == recordingGeneration else {
-                enqueueDeferred(status: status, result: nil)
-                return
+            switch guardState.fail(generation: generation, status: status) {
+            case .superseded:
+                // 次の録音に追い越された。その HUD を潰さず控えてある（Issue #97）。
+                presentNextDeferredIfIdle()
+            case .present:
+                // 失敗は自動で閉じない。HUD に原因を残す。
+                state.update(status)
             }
-            // 失敗は自動で閉じない。HUD に原因を残す。
-            state.update(status)
             return
         }
 
@@ -289,11 +274,19 @@ final class AppController {
             showResultPanel: SettingsStore.shared.showResultPanel,
             resultLocation: SettingsStore.shared.resultLocationDescription)
 
-        let superseded = generation != recordingGeneration
-        applyStatus(presentation,
-                    superseded: superseded,
-                    deviceChanged: deviceChanged,
-                    result: (text, outcome))
+        let completion = guardState.finish(generation: generation,
+                                           status: presentation.status,
+                                           hud: presentation.hud,
+                                           text: text,
+                                           outcome: outcome)
+        if case .present = completion {
+            state.update(presentation.status)
+            // 途中でデバイスが変わって音が欠けたことは、成功表示に紛れさせない（Issue #77）。
+            // 失敗表示のときは原因の方が大事なので上書きしない。
+            if deviceChanged, !presentation.status.isFailed {
+                state.update(.warned(message: "録音デバイスが変わったため、切り替え前までの音声で処理しました"))
+            }
+        }
 
         // 履歴は挿入のあとにバックグラウンドで書き出す（保存が挿入を遅らせない）。
         // 無音だった発話は `record` 側で弾く（Issue #81）。
@@ -307,11 +300,15 @@ final class AppController {
             inserted: !text.isEmpty && outcome.isSucceeded
         )
 
-        guard !superseded else { return }
+        guard case .present(let replay) = completion else {
+            // 控えた結果は、待機中ならその場で出す（拾う機会が無くなるため）。
+            presentNextDeferredIfIdle()
+            return
+        }
         // 追い越された前のパイプラインが結果を見せ損ねていれば、自分の完了表示の代わりに出す。
         // 自分も結果を残す表示なら自分を先に出し、控えた分は結果パネルを閉じたときに続けて出す。
-        if presentation.hud != .keepResult, let deferred = takeDeferred() {
-            showDeferred(deferred)
+        if let replay {
+            showDeferred(replay)
             return
         }
         // 履歴を書き出してから HUD を動かす（完了表示を一瞬見せる／結果を残す／閉じる）。
@@ -322,57 +319,19 @@ final class AppController {
         }
     }
 
-    /// パイプライン完了時の状態表示。**追い越されていたら触らず控える**（Issue #97）。
-    ///
-    /// 分岐が 3 つあるのは、追い越されたときに「結果が失われるもの」だけを控えるため:
-    /// 成功の完了表示は控えない（挿入された文字が見えているので失うものが無い）。
-    private func applyStatus(_ presentation: InsertionPresentation,
-                             superseded: Bool,
-                             deviceChanged: Bool,
-                             result: (text: String, outcome: InsertionOutcome)) {
-        guard superseded else {
-            state.update(presentation.status)
-            // 途中でデバイスが変わって音が欠けたことは、成功表示に紛れさせない（Issue #77）。
-            // 失敗表示のときは原因の方が大事なので上書きしない。
-            if deviceChanged, !presentation.status.isFailed {
-                state.update(.warned(message: "録音デバイスが変わったため、切り替え前までの音声で処理しました"))
-            }
-            return
-        }
-        if presentation.hud == .keepResult {
-            enqueueDeferred(status: presentation.status, result: result)
-        } else if presentation.status.isFailed {
-            // 結果パネル OFF の挿入失敗。結果は履歴にあるので状態だけ控える。
-            enqueueDeferred(status: presentation.status, result: nil)
-        }
-    }
-
     /// 録音開始時に控えた挿入先を取り出す。nil なら照合しない（開始時に取れなかった場合）。
     private func takePendingBundleId() -> String? {
         defer { pendingBundleId = nil }
         return pendingBundleId
     }
 
-    /// 追い越されたパイプラインの見せ損ねた結果を控える。
-    /// 状態文には「以前の発話」と前置きし、メニューバー・HUD のどちらで見ても今の発話と混ざらない。
-    /// 新しい録音がもう終わっていて待機中なら（キャンセル後など）、拾う機会が無いのでその場で出す。
-    private func enqueueDeferred(status: AppStatus, result: (text: String, outcome: InsertionOutcome)?) {
-        deferred.append(DeferredPresentation(status: status.prefixed(Self.deferredLabel), result: result))
-        presentNextDeferredIfIdle()
-    }
-
-    /// 控えた結果を古い順に 1 件取り出す。
-    private func takeDeferred() -> DeferredPresentation? {
-        deferred.isEmpty ? nil : deferred.removeFirst()
-    }
-
     /// 追い越されたパイプラインが見せ損ねた結果を出す（Issue #100）。
     /// 結果があれば結果パネルで残す。無ければ状態表示（失敗の原因）を HUD に前面で出す。
     /// HUD が閉じていても出す。閉じたまま状態だけ変えるとメニューバーの色しか変わらず原因が読めない。
-    private func showDeferred(_ deferred: DeferredPresentation) {
+    private func showDeferred(_ deferred: PipelineGuard.Deferred) {
         state.update(deferred.status)
         if let result = deferred.result {
-            hud.presentResult(result.text, outcome: result.outcome, label: Self.deferredLabel)
+            hud.presentResult(result.text, outcome: result.outcome, label: PipelineGuard.deferredLabel)
         } else {
             hud.presentStatus()
         }
@@ -385,7 +344,7 @@ final class AppController {
         case .recording, .processing, .loadingModel: return
         case .idle, .done, .warned, .failed: break
         }
-        guard let next = takeDeferred() else { return }
+        guard let next = guardState.take() else { return }
         showDeferred(next)
     }
 
@@ -396,7 +355,7 @@ final class AppController {
         pendingBundleId = nil
         audioDeviceChangedDuringRecording = false
         // 追い越された前の発話が結果を見せ損ねていれば、閉じる代わりにそれを出す（Issue #97）。
-        if let deferred = takeDeferred() {
+        if let deferred = guardState.take() {
             showDeferred(deferred)
             return
         }

@@ -1,0 +1,38 @@
+# Tests
+
+`koebunTests`（Swift Testing）。`xcodebuild test` はアプリを `TEST_HOST` として起動するが、
+`AppDelegate` が XCTest 環境を検知して起動処理（権限・モデル・ホットキー）を走らせないので、
+権限ダイアログもモデルのダウンロードも出ない。実行は 0.1 秒未満。
+
+```bash
+xcodebuild test -project koebun.xcodeproj -scheme koebun \
+  -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
+```
+
+## 守備範囲
+
+AppKit の実画面・モデル・TCC に依存しない **純 Swift のロジック** だけを置く。
+
+| ファイル | 対象 |
+|---|---|
+| `PipelineGuardTests` | 世代番号ガード（追い越し・退避キュー・replay。Issue #97 / #100） |
+| `DictationPipelineTests` | 文字起こし → 辞書置換 → フィラー除去 の順序と計時（Issue #66。フェイクのエンジンと固定した時計で） |
+| `InsertionPresentationTests` | 挿入結果 → メニューバー状態と HUD の動き（`.claude/rules/insertion-feedback.md`） |
+| `HistoryEntryTests` | `meta.json` の互換。**整形系の列を持つ古い記録が読めること**（#128〜#131 で書く側だけ消した） |
+| `ReplacementsTests` | 辞書置換の 1 パス最長一致 |
+| `FillerRemoverTests` | フィラー除去。「残す」側（指示語・連語）を重点的に |
+| `PasteboardTests` | 機密マーカーの type 名・全 type の退避と復元（名前付きペーストボードで隔離） |
+| `HotKeyJudgeTests` | 修飾キーの左右区別・合成イベント・複数修飾キーの正規化 |
+
+## 置かないもの
+
+- WhisperKit を読み込むもの（約 2.9GB の DL と数十秒のロード）。要るなら `.disabled` で常時実行から外す
+- TCC ダイアログ・グローバルホットキー・他アプリへの挿入（XCUITest でも権限は自動化できない。実機で手動確認）
+- 見た目（`.claude/rules/visual-check.md` の手順でスクリーンショット）
+
+## 書き方
+
+- `~/koebun/` のファイルを読み書きする `*.shared` シングルトンは使わず、`nonisolated static` な純関数を呼ぶ
+- `@MainActor` に隔離された型を呼ぶスイートには `@MainActor` を付ける
+- テスト名は日本語で「何を保証するか」を書く。失敗したときにそのまま Issue の見出しになる
+- **消えた機能のテストは消す。** #128〜#131 で `FormatDiffTests` / `ModeTests` を削除した

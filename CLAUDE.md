@@ -59,7 +59,7 @@ Mac（Apple Silicon / 実機は M5 Pro・48GB メモリ）で、音声 → 文�
 **「マージした」では終わらない。実機に入れて動かすまでが1サイクル。** 自分専用アプリなので、実機で使って初めて次のフィードバックが出る。
 
 1. Issue を立てる（`category:*` / `priority:*` ラベル。本文は 問題 / 解決方針 / 完了条件）
-2. `EnterWorktree`（名前は `issue<N>`）で worktree を切って実装する。`.xcodeproj` は gitignore なので最初に `xcodegen generate`。型チェックは署名なしの Debug ビルド（下の Commands）
+2. `EnterWorktree`（名前は `issue<N>`）で worktree を切って実装する。`.xcodeproj` は gitignore なので最初に `xcodegen generate`。型チェックは署名なしの Debug ビルド、**PR の前に `xcodebuild test` が通ること**（どちらも下の Commands）
 3. Issue 単位でコミット → PR（`Closes #N`）→ `gh pr merge --merge --delete-branch`
 4. `ExitWorktree`（remove）→ `git pull --ff-only origin develop`
 5. **`./scripts/install-local.sh`** で実機へ入れて起動する（Release ビルド → `koebun-dev` 署名 → `/Applications` 置換 → 起動）
@@ -75,6 +75,9 @@ xcodegen generate                                   # project.yml → koebun.xco
 xcodebuild -project koebun.xcodeproj -scheme koebun -configuration Debug \
   -derivedDataPath /tmp/koebun-dd CODE_SIGNING_ALLOWED=NO build \
   2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)"      # 型チェック（署名なし・高速）
+xcodebuild test -project koebun.xcodeproj -scheme koebun \
+  -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO \
+  2>&1 | grep -E "✘|Test run|TEST (SUCCEEDED|FAILED)"     # 単体テスト（0.1秒未満。守備範囲は Tests/README.md）
 ./scripts/install-local.sh                          # 実機へインストールして起動（マージ後に必ず）
 pgrep -x koebun                                     # 起動確認
 ./scripts/kpi.sh                                    # 北極星の KPI（平日の挿入回数）を履歴から集計

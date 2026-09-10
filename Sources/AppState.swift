@@ -118,7 +118,7 @@ enum AppStatus: Equatable {
         case .loadingModel(let step):  return step
         case .idle:                    return "待機中（\(Self.hotKeyName)で録音開始）"
         case .recording:               return "録音中…（\(Self.hotKeyName)で停止）"
-        case .processing:              return "文字起こし・整形中…"
+        case .processing:              return "文字起こし中…"
         case .done(let message):       return "\(message) 待機中（\(Self.hotKeyName)で録音開始）"
         case .warned(let message):     return message
         case .failed(let reason, _):   return reason
