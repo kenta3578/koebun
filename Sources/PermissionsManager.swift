@@ -58,11 +58,15 @@ enum PermissionsManager {
 enum FailureHint: Equatable {
     /// アクセシビリティ権限が無い（挿入・キー送出ができない）。
     case accessibilityPermission
+    /// Secure Keyboard Entry 中・パスワード欄。**アプリ側から解除する手段は無い**（Issue #104）。
+    case secureInput
 
-    /// HUD のボタンに出す文言。
-    var actionTitle: String {
+    /// HUD のボタンに出す文言。**nil ならボタンを出さない。**
+    /// 押しても何も起きないボタンは、原因を読ませる邪魔にしかならない。
+    var actionTitle: String? {
         switch self {
         case .accessibilityPermission: return "設定を開く"
+        case .secureInput:             return nil
         }
     }
 
@@ -71,6 +75,8 @@ enum FailureHint: Equatable {
         switch self {
         case .accessibilityPermission:
             PermissionsManager.openPrivacyPane(.accessibility)
+        case .secureInput:
+            break
         }
     }
 }

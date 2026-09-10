@@ -19,6 +19,7 @@ AppKit の実画面・モデル・TCC に依存しない **純 Swift のロジ�
 | `DictationPipelineTests` | 文字起こし → 辞書置換 → フィラー除去 の順序と計時（Issue #66。フェイクのエンジンと固定した時計で） |
 | `InsertionPresentationTests` | 挿入結果 → メニューバー状態と HUD の動き（`.claude/rules/insertion-feedback.md`） |
 | `HistoryEntryTests` | `meta.json` の互換。**整形系の列を持つ古い記録が読めること**（#128〜#131 で書く側だけ消した） |
+| `FailureHintTests` | 失敗の手がかりの契約（ボタンを出す／出さない・状態まで運ばれるか） |
 | `ReplacementsTests` | 辞書置換の 1 パス最長一致 |
 | `FillerRemoverTests` | フィラー除去。「残す」側（指示語・連語）を重点的に |
 | `PasteboardTests` | 機密マーカーの type 名・全 type の退避と復元（名前付きペーストボードで隔離） |
