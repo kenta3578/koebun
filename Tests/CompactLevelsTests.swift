@@ -1,3 +1,4 @@
+import SwiftUI
 import Testing
 @testable import koebun
 
@@ -40,10 +41,13 @@ struct CompactLevelsTests {
         #expect(m.compactLevels.allSatisfy { $0 == 0 })
     }
 
-    /// 34pt に 10 本以上入れると «点» に見える（描き出して確認済み）。
-    @Test("本数は波として読める範囲に収まっている")
-    func barCountIsReadable() {
-        #expect(RecordingHUDModel.compactBarCount >= 5)
-        #expect(RecordingHUDModel.compactBarCount <= 10)
+    /// 本数を増やすと 1 本が細くなり、波ではなく «点» に見える。
+    /// **幅と本数は対で決まる**ので、数ではなく «1 本の太さ» で縛る
+    /// （`WaveformView` は slot の 55% をバー幅にし、下限 1.5pt でクランプする）。
+    @Test("バー 1 本が潰れない太さを保っている")
+    func barsStayLegible() {
+        let slot = HUDMetrics.minimalWaveSize.width / CGFloat(RecordingHUDModel.compactBarCount)
+        #expect(slot * 0.55 > 1.5, "本数を増やすならまず描き出して確かめる")
+        #expect(RecordingHUDModel.compactBarCount >= 5, "少なすぎると波に見えない")
     }
 }

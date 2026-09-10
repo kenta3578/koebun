@@ -94,7 +94,8 @@ struct RecordingHUDView: View {
             // **録音中だけ。** 処理中・完了の一瞬まで動かすと、視界の端でちらつく。
             if model.status == .recording {
                 WaveformView(levels: model.compactLevels, color: statusColor)
-                    .frame(width: 34, height: 14)
+                    .frame(width: HUDMetrics.minimalWaveSize.width,
+                           height: HUDMetrics.minimalWaveSize.height)
             }
             Text(model.elapsedText)
                 .font(.system(size: 11, design: .monospaced))
@@ -261,16 +262,25 @@ private struct WaveformView: View {
 
     /// 無音のときの底上げ（高さに対する比）。**谷でもバーが生きている**ようにする。
     /// 0 にすると波の谷が 2pt の点に潰れ、「波」ではなく「点が並んでいる」絵になる。
-    private static let idleBase: CGFloat = 0.12
-    /// 底上げの上に乗る揺れの幅。`idleBase + idleAmplitude` が無音時の最大の高さ。
-    private static let idleAmplitude: CGFloat = 0.30
+    private static let idleBase: CGFloat = 0.18
+    /// 揺れの幅。**時間とともに `low` ↔ `high` を行き来する**（＝脈）。
+    ///
+    /// 幅を固定すると波が «流れる» だけで、視界の端では動きに気づきにくい。
+    /// 全体が膨らんで縮む成分を重ねると、目を向けていなくても «脈打っている» と分かる（Issue #150）。
+    private static let idleAmplitudeLow: CGFloat = 0.38
+    private static let idleAmplitudeHigh: CGFloat = 0.95
     /// 幅いっぱいに入れる波の数。1.0 だと 1 つの膨らみが息をするだけで「揺れ」に見えない。
-    private static let idleCycles: Double = 1.5
-    /// 波が流れる速さ（ラジアン/秒）。**呼吸に近い遅さ**にする。
-    /// 常駐アプリの HUD が視界の端で速く動くと、北極星の「邪魔をしない」に反する。
-    private static let idleSpeed: Double = 1.6
-    /// この入力レベルを超えたら待機の波を 完全に引っ込める。
-    private static let idleFadeLevel: CGFloat = 0.35
+    private static let idleCycles: Double = 2.0
+    /// 波が流れる速さ（ラジアン/秒）。
+    private static let idleSpeed: Double = 3.2
+    /// 脈が 1 往復する速さ（ラジアン/秒）。**波より遅く**して、流れと脈が別々に読めるようにする。
+    private static let idlePulseSpeed: Double = 1.8
+    /// **全体のピーク**がこれを超えたら待機の波を完全に引っ込める。
+    ///
+    /// バーごとの値で判定すると、ささやき声（0.1〜0.2）が待機の波に隠れて
+    /// 「拾えていない」ように見える。**少しでも入力があれば波は消す**のが正しい
+    /// ——波はあくまで「無音のとき生きていると分かる」ためのものなので（Issue #150）。
+    private static let idleFadeLevel: CGFloat = 0.12
 
     var body: some View {
         // **HUD が見えている間しか描かれない。** 録音中と結果表示中しか出さないので、
@@ -283,9 +293,14 @@ private struct WaveformView: View {
                 let mid = size.height / 2
                 let time = timeline.date.timeIntervalSinceReferenceDate
 
+                // 待機の波を出すかどうかは**波形全体で 1 回**決める。バーごとに決めると、
+                // 同じ発話の中で波が出たり消えたりしてちらつく。
+                let peak = CGFloat(levels.max() ?? 0)
+                let idleWeight = max(0, 1 - peak / Self.idleFadeLevel)
                 for (index, level) in levels.enumerated() {
                     let height = max(2, Self.ratio(level: CGFloat(level), index: index,
-                                                   of: levels.count, at: time) * size.height)
+                                                   of: levels.count, at: time,
+                                                   idleWeight: idleWeight) * size.height)
                     let rect = CGRect(x: CGFloat(index) * slot + (slot - barWidth) / 2,
                                       y: mid - height / 2,
                                       width: barWidth,
@@ -298,16 +313,14 @@ private struct WaveformView: View {
         .accessibilityLabel("入力レベル")
     }
 
-    /// そのバーの高さ（高さに対する比）。
-    ///
-    /// **実レベルが上がるほど待機の波を引っ込める。** 単純に大きい方を採ると、
-    /// 待機の波より小さい入力（ささやき声）が波に隠れて「拾えていない」ように見える。
-    /// `idleFadeLevel` を超えたら待機の波は 0 になり、**表示は実レベルそのものになる**。
+    /// そのバーの高さ（高さに対する比）。`idleWeight` は呼び出し側が波形全体で決めた
+    /// 待機の波の重み（0 なら**表示は実レベルそのもの**）。
     private static func ratio(level: CGFloat, index: Int, of count: Int,
-                             at time: TimeInterval) -> CGFloat {
-        let fade = max(0, 1 - level / idleFadeLevel)
-        return max(level, idleHeight(index: index, of: count, at: time) * fade)
+                             at time: TimeInterval, idleWeight: CGFloat) -> CGFloat {
+        guard idleWeight > 0 else { return level }
+        return max(level, idleHeight(index: index, of: count, at: time) * idleWeight)
     }
+
 
     /// 無音のときの高さ。バーごとに位相をずらして波が流れて見えるようにする。
     ///
@@ -319,10 +332,13 @@ private struct WaveformView: View {
     private static func idleHeight(index: Int, of count: Int, at time: TimeInterval) -> CGFloat {
         guard count > 1 else { return idleBase }
         let step = 2 * Double.pi * idleCycles / Double(count)
-        let phase = time * idleSpeed - Double(index) * step
-        let wave = (sin(phase) + 1) / 2
+        let wave = (sin(time * idleSpeed - Double(index) * step) + 1) / 2
+        // 脈: 全バー共通で振幅そのものを揺らす。位相が index に依らないので、
+        // 「波が流れる」動きとは別に「全体が膨らむ」動きとして読める。
+        let pulse = (sin(time * idlePulseSpeed) + 1) / 2
+        let amplitude = idleAmplitudeLow + (idleAmplitudeHigh - idleAmplitudeLow) * CGFloat(pulse)
         let envelope = sin(Double(index) / Double(count - 1) * .pi)
-        return (idleBase + idleAmplitude * CGFloat(wave)) * CGFloat(envelope)
+        return (idleBase + amplitude * CGFloat(wave)) * CGFloat(envelope)
     }
 }
 

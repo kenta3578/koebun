@@ -10,8 +10,9 @@ import AppKit
 final class RecordingHUDModel: ObservableObject {
     /// 波形バーの本数（左が古く、右が最新）。
     static let barCount = 56
-    /// 最小表示のバーの本数。34pt にこれ以上入れると波ではなく «点» に見える（Issue #148）。
-    static let compactBarCount = 9
+    /// 最小表示のバーの本数。52pt に対してこの本数（Issue #148 / #150）。
+    /// 増やすと 1 本が細くなり、波ではなく «点» に見える。
+    static let compactBarCount = 11
     /// これを超える録音は、キャンセル時に確認を挟む。
     static let cancelConfirmThreshold: TimeInterval = 30
     /// 無音判定に使う直近フレーム数（20fps ≒ 2秒）。
