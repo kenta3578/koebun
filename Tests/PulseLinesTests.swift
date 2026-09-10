@@ -156,11 +156,19 @@ struct PulseLinesTests {
         #expect(PulseLinesView.calmPulseSpeed < PulseLinesView.idlePulseSpeed * 0.8)
     }
 
-    /// 忙しない動きは «邪魔をしない» に反する。面を持たせてから速さの意味が変わった。
+    /// 忙しない動きは «邪魔をしない» に反する。**流れる速さが «忙しい» の本体**で、
+    /// 実機では 1.4 でもまだ速かった（Issue #166）。上限はその実測に合わせてある。
     @Test("基準の速さが落ち着いた範囲にある")
     func baseSpeedIsCalm() {
-        #expect(PulseLinesView.lineSpeeds.map(abs).max()! <= 1.8)
-        #expect(PulseLinesView.idlePulseSpeed <= 1.2)
+        #expect(PulseLinesView.lineSpeeds.map(abs).max()! <= 0.6)
+        #expect(PulseLinesView.idlePulseSpeed <= 0.9)
+    }
+
+    /// 遅くしすぎると «止まっている / 落ちた» に見える。下限も要る。
+    @Test("止まって見えるほど遅くはない")
+    func baseSpeedIsNotFrozen() {
+        #expect(PulseLinesView.lineSpeeds.map(abs).min()! >= 0.25)
+        #expect(PulseLinesView.idlePulseSpeed >= 0.5)
     }
 
     @Test("線は 2 本で、向きが逆（重なり合って見えるため）")
