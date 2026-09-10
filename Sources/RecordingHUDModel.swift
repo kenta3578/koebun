@@ -19,57 +19,18 @@ final class RecordingHUDModel: ObservableObject {
 
     @Published private(set) var levels: [Float] = Array(repeating: 0, count: barCount)
 
-    /// 最後に «喋っている» と見なせた時刻（Issue #162）。
+    /// 最小表示を閉じるまでの待ち（Issue #160）。
     ///
-    /// このアプリは**考えながら喋る**ための道具なので、途中の «間» は失敗ではなく普通の状態。
-    /// 黙ったときに波が同じ勢いのままだと «聞いていない» ように見え、逆に止めると
-    /// «落ちた» ように見える。**だんだん凪がせる**ことで «待っている» と読ませる。
+    /// **最小表示は素早く閉じる。** «アイコンと経過時間だけのピル» が居残ると、
+    /// その居残り自体が «まだ終わっていない» と読まれる。通常表示は
+    /// 「挿入しました ✓」を読ませる必要があるので別（`AppStatus.doneDisplayDuration`）。
+    static let minimalCloseDelay: TimeInterval = 0.34
+
+    /// 波を出すか。**録音中だけ**（Issue #170）。
     ///
-    /// 録音開始時にいまの時刻で埋める。まだ一言も喋っていない最初の数秒は
-    /// «聞く気でいる» 側に倒したいので、`nil` にはしない。
-    @Published private(set) var lastVoiceAt = Date()
-
-    /// «喋っている» と見なす入力レベル。環境音（0.02 前後）では上がらない値にする。
-    static let voiceLevel: Float = 0.06
-    /// 黙ってから完全に凪ぐまでの時間。**短くしない**——考えている数秒で凪ぎ切ると、
-    /// 少し黙るたびに波が忙しく行き来してかえって気が散る。
-    static let calmDuration: TimeInterval = 2.5
-
-    /// 挿入へ送り出した時刻（Issue #158）。**nil なら送り出していない。**
-    ///
-    /// 実測では 411 件中 409 件が `.uncertain`——ターミナルは Accessibility が
-    /// 何も返さないので «入ったか» を確認できない。**確認したと嘘をつかずに、
-    /// 「送り出した」ことだけを見せる**ために、波が流れて消える動きを持たせる。
-    @Published var sendingStartedAt: Date?
-
-    /// 送り出しの動きにかける時間。
-    ///
-    /// **短くする。** ここに来るまでにユーザーは既に文字起こしを待っている。
-    /// 別れの動きが長いと «まだ終わらない» に読める（Issue #160）。
-    static let sendDuration: TimeInterval = 0.22
-
-    /// 波を出すか。録音中・文字起こし中と、送り出しの動きの最中（Issue #158）。
-    var showsWave: Bool {
-        if sendingStartedAt != nil { return true }
-        return status == .recording || status == .processing
-    }
-
-    /// 波の振幅を駆動する、なめらかにした入力レベル（0…1）。
-    ///
-    /// **生のレベルをそのまま渡さない**（Issue #168）。レベルはマイクのバッファごと
-    /// ＝ 85ms 間隔で届き、音節ごとに 0.1 → 0.7 → 0.2 と跳ねる。そのまま振幅にすると
-    /// 毎秒 12 回、波の大きさが切り替わって落ち着かない。**波の «速さ» のつまみを
-    /// いくら下げてもここは変わらない**——喋っている間は `max(level, 脈)` の
-    /// レベル側が勝つので、実使用で動いて見えるのはこの値である。
-    ///
-    /// アタックは速く・リリースは遅く。喋り出しで遅れると «反応していない» に見え、
-    /// 速く戻すと音節の切れ目ごとに萎んで跳ねに戻る。
-    @Published private(set) var smoothedLevel: Float = 0
-
-    /// 上がるときの追従率（85ms ごと）。0.3 ならおよそ 0.25 秒で立ち上がる。
-    static let levelAttack: Float = 0.3
-    /// 下がるときの追従率。**アタックよりずっと小さく**——ここが跳ねの効き所。
-    static let levelRelease: Float = 0.08
+    /// 文字起こし中も出していたことがあるが、その間は新しいレベルが届かないので
+    /// 波形が固まったまま残り «止まった» ように見える。処理中は状態アイコンが示す。
+    var showsWave: Bool { status == .recording }
 
     @Published private(set) var elapsed: TimeInterval = 0
     /// キャンセル確認を表示中か。
@@ -104,18 +65,9 @@ final class RecordingHUDModel: ObservableObject {
     private var pushCount = 0
 
     func push(level: Float) {
-        let clamped = min(1, max(0, level))
         levels.removeFirst()
-        levels.append(clamped)
+        levels.append(min(1, max(0, level)))
         pushCount += 1
-        if level >= Self.voiceLevel { lastVoiceAt = Date() }
-        smoothedLevel = Self.smooth(smoothedLevel, toward: clamped)
-    }
-
-    /// なめらかにした次の値。上がるのは速く、下がるのはゆっくり。
-    static func smooth(_ current: Float, toward target: Float) -> Float {
-        let rate = target > current ? levelAttack : levelRelease
-        return current + (target - current) * rate
     }
 
     func setElapsed(_ value: TimeInterval) {
@@ -128,9 +80,6 @@ final class RecordingHUDModel: ObservableObject {
         pushCount = 0
         isConfirmingCancel = false
         pendingResult = nil
-        sendingStartedAt = nil
-        smoothedLevel = 0
-        lastVoiceAt = Date()
         isHovering = false
     }
 
