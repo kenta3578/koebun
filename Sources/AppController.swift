@@ -210,117 +210,141 @@ final class AppController {
         }
     }
 
+    /// 録音を止めて、この発話ぶんのパイプラインを起動する。
+    ///
+    /// **ここは同期のまま短く保つ。** 挿入の順番待ち（`previousPipeline`）は同期部で並ばないと、
+    /// 文字起こしの `await` を挟んだ後に並ぶことになり発話順が入れ替わる（Issue #99）。
     private func stopRecording() {
         guard state.isRecording else { return }
         state.update(.processing)
+
         let generation = recordingGeneration
-
-        // クリップボードは「録音中にコピーしたもの」も拾うので、停止のこの時点で確定させる。
         let expectedBundleId = takePendingBundleId()
-        let stop = SettingsStore.shared.stopSound
-        SoundPlayer.play(stop)
-
+        SoundPlayer.play(SettingsStore.shared.stopSound)
         let samples = recorder.stop()
         // ここで読んで戻す（この録音ぶんの事情なので、次の録音へ持ち越さない）。
         let deviceChanged = audioDeviceChangedDuringRecording
         audioDeviceChangedDuringRecording = false
-        // 挿入の順番待ちはここ（同期部）で並ぶ。文字起こしの await の後で並ぶと順序が入れ替わる（Issue #99）。
+
         let previousPipeline = lastPipeline
         state.pipelineStarted()
         lastPipeline = Task { @MainActor in
             // どの経路で抜けても進行中の数を戻す（次の発話の挿入待ちは Task の完了で解ける）。
             defer { state.pipelineFinished() }
-            do {
-                guard let (speechKind, speechEngine) = resolveSpeechEngine() else {
-                    state.update(.failed(reason: "Apple 音声認識には \(EngineSupport.requiresMacOS26)"))
-                    return
-                }
-                let transcribeStart = Date()
-                let raw = try await speechEngine.transcribe(samples)
-                let replaceStart = Date()
-                // 整形 LLM の前段で辞書置換 → フィラー除去を適用する（どちらも決定的な文字列処理。
-                // 辞書が先。「アットマーク」のような読みをフィラー除去が崩さないように）。
-                var replaced = ReplacementStore.shared.apply(raw)
-                if SettingsStore.shared.fillerRemovalEnabled {
-                    replaced = FillerStore.shared.apply(replaced)
-                }
-                let replaceEnd = Date()
-                let text = replaced
-
-                // 前の発話のパイプラインが終わるまで待つ。貼る順番を発話順に揃える（Issue #99）。
-                await previousPipeline?.value
-                // 挿入は成否を判定して返る。成功と確認できなければ結果を捨てない（Issue #13）。
-                // 録音を始めたアプリと違うところへ貼らないよう、照合用に渡す（Issue #80）。
-                let outcome: InsertionOutcome = text.isEmpty
-                    ? .succeeded
-                    : await TextInjector.insert(text, expectedBundleId: expectedBundleId)
-                // 見せ方（メニューバーの状態と HUD の動き）は 1 か所で導出する（Issue #64）。
-                let presentation = InsertionPresentation.make(
-                    outcome: outcome,
-                    text: text,
-                    showResultPanel: SettingsStore.shared.showResultPanel,
-                    resultLocation: SettingsStore.shared.resultLocationDescription)
-                // 処理中に次の録音が始まっていたら、状態と HUD はその録音のもの。触らない（Issue #97）。
-                // 挿入できなかった結果だけは控えて、次のパイプラインの完了時に出す。
-                let superseded = generation != recordingGeneration
-                if !superseded {
-                    state.update(presentation.status)
-                    // 途中でデバイスが変わって音が欠けたことは、成功表示に紛れさせない（Issue #77）。
-                    // 失敗表示のときは原因の方が大事なので上書きしない。
-                    if deviceChanged, !presentation.status.isFailed {
-                        state.update(.warned(message: "録音デバイスが変わったため、切り替え前までの音声で処理しました"))
-                    }
-                } else if presentation.hud == .keepResult {
-                    enqueueDeferred(status: presentation.status, result: (text, outcome))
-                } else if presentation.status.isFailed {
-                    // 結果パネル OFF の挿入失敗。結果は履歴にあるので状態だけ控える。
-                    enqueueDeferred(status: presentation.status, result: nil)
-                }
-                let inserted = !text.isEmpty && outcome.isSucceeded
-
-                // 履歴は挿入のあとにバックグラウンドで書き出す（保存が挿入を遅らせない）。
-                // 無音だった発話は `record` 側で弾く（Issue #81）。
-                HistoryStore.shared.record(
-                    samples: samples,
-                    rawText: raw,
-                    replacedText: replaced,
-                    // どのエンジンで処理したかを残す。これがエンジン比較（Issue #27）の一次データ。
-                    speechEngine: speechKind.rawValue,
-                    durations: .init(
-                        transcribeMs: Self.milliseconds(from: transcribeStart, to: replaceStart),
-                        replaceMs: Self.milliseconds(from: replaceStart, to: replaceEnd)
-                    ),
-                    inserted: inserted
-                )
-
-                guard !superseded else { return }
-                // 追い越された前のパイプラインが結果を見せ損ねていれば、自分の完了表示の代わりに出す。
-                // 自分も結果を残す表示なら自分を先に出し、控えた分は結果パネルを閉じたときに続けて出す。
-                if presentation.hud != .keepResult, let deferred = takeDeferred() {
-                    showDeferred(deferred)
-                    return
-                }
-                // 履歴を書き出してから HUD を動かす（完了表示を一瞬見せる／結果を残す／閉じる）。
-                switch presentation.hud {
-                case .finish: hud.finish()
-                case .keepResult:          hud.presentResult(text, outcome: outcome)
-                case .hide:                hud.hide()
-                }
-            } catch {
-                let status = AppStatus.failed(reason: "文字起こし失敗: \(error.localizedDescription)")
-                // 次の録音に追い越されていたら、その HUD を潰さず控える（Issue #97）。
-                guard generation == recordingGeneration else {
-                    enqueueDeferred(status: status, result: nil)
-                    return
-                }
-                // 失敗は自動で閉じない。HUD に原因を残す。
-                state.update(status)
-            }
+            await runPipeline(samples: samples,
+                              expectedBundleId: expectedBundleId,
+                              deviceChanged: deviceChanged,
+                              generation: generation,
+                              after: previousPipeline)
         }
     }
 
-    private static func milliseconds(from start: Date, to end: Date) -> Int {
-        Int((end.timeIntervalSince(start) * 1000).rounded())
+    /// 文字起こし → 挿入 → 表示 → 履歴。**例外を外に出さない**（発話を失わないため）。
+    ///
+    /// 文字起こしと後処理そのものは `DictationPipeline` に閉じている。ここに残すのは
+    /// 「挿入する・見せる・残す」という副作用の側だけ（`ai_docs/refactor-report.md` S2）。
+    private func runPipeline(samples: [Float],
+                             expectedBundleId: String?,
+                             deviceChanged: Bool,
+                             generation: Int,
+                             after previousPipeline: Task<Void, Never>?) async {
+        guard let (speechKind, speechEngine) = resolveSpeechEngine() else {
+            state.update(.failed(reason: "Apple 音声認識には \(EngineSupport.requiresMacOS26)"))
+            return
+        }
+
+        let output: DictationPipeline.Output
+        do {
+            // MainActor の設定を読むのはここまで。以降パイプラインは純関数として動く。
+            output = try await DictationPipeline.run(
+                samples: samples,
+                engine: speechEngine,
+                rules: ReplacementStore.shared.rules,
+                fillers: SettingsStore.shared.fillerRemovalEnabled ? FillerStore.shared.list : nil
+            )
+        } catch {
+            let status = AppStatus.failed(reason: "文字起こし失敗: \(error.localizedDescription)")
+            // 次の録音に追い越されていたら、その HUD を潰さず控える（Issue #97）。
+            guard generation == recordingGeneration else {
+                enqueueDeferred(status: status, result: nil)
+                return
+            }
+            // 失敗は自動で閉じない。HUD に原因を残す。
+            state.update(status)
+            return
+        }
+
+        let text = output.replacedText
+        // 前の発話のパイプラインが終わるまで待つ。貼る順番を発話順に揃える（Issue #99）。
+        await previousPipeline?.value
+        // 挿入は成否を判定して返る。成功と確認できなければ結果を捨てない（Issue #13）。
+        // 録音を始めたアプリと違うところへ貼らないよう、照合用に渡す（Issue #80）。
+        let outcome: InsertionOutcome = text.isEmpty
+            ? .succeeded
+            : await TextInjector.insert(text, expectedBundleId: expectedBundleId)
+        // 見せ方（メニューバーの状態と HUD の動き）は 1 か所で導出する（Issue #64）。
+        let presentation = InsertionPresentation.make(
+            outcome: outcome,
+            text: text,
+            showResultPanel: SettingsStore.shared.showResultPanel,
+            resultLocation: SettingsStore.shared.resultLocationDescription)
+
+        let superseded = generation != recordingGeneration
+        applyStatus(presentation,
+                    superseded: superseded,
+                    deviceChanged: deviceChanged,
+                    result: (text, outcome))
+
+        // 履歴は挿入のあとにバックグラウンドで書き出す（保存が挿入を遅らせない）。
+        // 無音だった発話は `record` 側で弾く（Issue #81）。
+        HistoryStore.shared.record(
+            samples: samples,
+            rawText: output.rawText,
+            replacedText: output.replacedText,
+            // どのエンジンで処理したかを残す。これがエンジン比較（Issue #27）の一次データ。
+            speechEngine: speechKind.rawValue,
+            durations: output.durations,
+            inserted: !text.isEmpty && outcome.isSucceeded
+        )
+
+        guard !superseded else { return }
+        // 追い越された前のパイプラインが結果を見せ損ねていれば、自分の完了表示の代わりに出す。
+        // 自分も結果を残す表示なら自分を先に出し、控えた分は結果パネルを閉じたときに続けて出す。
+        if presentation.hud != .keepResult, let deferred = takeDeferred() {
+            showDeferred(deferred)
+            return
+        }
+        // 履歴を書き出してから HUD を動かす（完了表示を一瞬見せる／結果を残す／閉じる）。
+        switch presentation.hud {
+        case .finish:     hud.finish()
+        case .keepResult: hud.presentResult(text, outcome: outcome)
+        case .hide:       hud.hide()
+        }
+    }
+
+    /// パイプライン完了時の状態表示。**追い越されていたら触らず控える**（Issue #97）。
+    ///
+    /// 分岐が 3 つあるのは、追い越されたときに「結果が失われるもの」だけを控えるため:
+    /// 成功の完了表示は控えない（挿入された文字が見えているので失うものが無い）。
+    private func applyStatus(_ presentation: InsertionPresentation,
+                             superseded: Bool,
+                             deviceChanged: Bool,
+                             result: (text: String, outcome: InsertionOutcome)) {
+        guard superseded else {
+            state.update(presentation.status)
+            // 途中でデバイスが変わって音が欠けたことは、成功表示に紛れさせない（Issue #77）。
+            // 失敗表示のときは原因の方が大事なので上書きしない。
+            if deviceChanged, !presentation.status.isFailed {
+                state.update(.warned(message: "録音デバイスが変わったため、切り替え前までの音声で処理しました"))
+            }
+            return
+        }
+        if presentation.hud == .keepResult {
+            enqueueDeferred(status: presentation.status, result: result)
+        } else if presentation.status.isFailed {
+            // 結果パネル OFF の挿入失敗。結果は履歴にあるので状態だけ控える。
+            enqueueDeferred(status: presentation.status, result: nil)
+        }
     }
 
     /// 録音開始時に控えた挿入先を取り出す。nil なら照合しない（開始時に取れなかった場合）。
