@@ -34,8 +34,8 @@ struct PulseLinesView: View {
     }
 
     private static let waves = [
-        Wave(amplitude: 0.62, cycles: 1.2, speed: 2.4, phase: 0, opacity: 1.0),
-        Wave(amplitude: 0.46, cycles: 1.8, speed: -1.8, phase: 1.3, opacity: 0.55),
+        Wave(amplitude: 0.62, cycles: 1.2, speed: 1.4, phase: 0, opacity: 1.0),
+        Wave(amplitude: 0.46, cycles: 1.8, speed: -1.0, phase: 1.3, opacity: 0.55),
     ]
 
     /// 稜線の太さ。**2 つとも同じ**にする（違えると «別々のもの» に見える）。
@@ -55,10 +55,15 @@ struct PulseLinesView: View {
     private static let calmFloor: CGFloat = 0.16
     private static let calmCeiling: CGFloat = 0.30
     /// 無音のときに振幅が脈打つ速さ（ラジアン/秒）。凪ぐと遅くなる。
-    static let idlePulseSpeed: Double = 1.8
-    private static let calmPulseSpeed: Double = 0.85
-    /// 凪ぎ切ったときの波が流れる速さ。
-    private static let calmWaveSpeed: Double = 1.2
+    ///
+    /// **面を持たせてから速さの意味が変わった**（Issue #164）。棒を並べていた頃と
+    /// 同じ値でも、塗りが付くと画面で動く «量» が増えて忙しなく——落ち着かない見え方に
+    /// なる。北極星の「邪魔をしない」に寄せて、はっきり遅くしてある。
+    static let idlePulseSpeed: Double = 1.0
+    static let calmPulseSpeed: Double = 0.45
+    /// 凪ぎ切ったときの波が流れる速さ。**基準より十分遅くする**——近いと凪いだことが
+    /// 分からない。
+    static let calmWaveSpeed: Double = 0.6
     /// 送り出しで右へ動かす距離（幅に対する比）。**画面の外まで飛ばさない**——
     /// 挿入できたと確認したわけではないので、«消えていった» 以上のことを言わせない。
     private static let sendTravel: CGFloat = 0.75
