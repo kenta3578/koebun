@@ -10,8 +10,6 @@ import AppKit
 final class RecordingHUDModel: ObservableObject {
     /// 波形バーの本数（左が古く、右が最新）。
     static let barCount = 56
-    /// 直近ピークを取る窓（`levels` の末尾何本を見るか）。20 本 ≒ 1 秒。
-    static let peakWindow = 12
     /// これを超える録音は、キャンセル時に確認を挟む。
     static let cancelConfirmThreshold: TimeInterval = 30
     /// 無音判定に使う直近フレーム数（20fps ≒ 2秒）。
@@ -56,11 +54,22 @@ final class RecordingHUDModel: ObservableObject {
         return status == .recording || status == .processing
     }
 
-    /// 直近の入力レベル（0…1）。線の振幅を駆動する（Issue #152）。
+    /// 波の振幅を駆動する、なめらかにした入力レベル（0…1）。
     ///
-    /// **平均ではなく直近の窓のピーク**を採る。平均だと語と語の切れ目で振幅が落ち込み、
-    /// 喋っている最中に線が縮んで «止まった» ように見える。
-    var recentPeak: Float { levels.suffix(Self.peakWindow).max() ?? 0 }
+    /// **生のレベルをそのまま渡さない**（Issue #168）。レベルはマイクのバッファごと
+    /// ＝ 85ms 間隔で届き、音節ごとに 0.1 → 0.7 → 0.2 と跳ねる。そのまま振幅にすると
+    /// 毎秒 12 回、波の大きさが切り替わって落ち着かない。**波の «速さ» のつまみを
+    /// いくら下げてもここは変わらない**——喋っている間は `max(level, 脈)` の
+    /// レベル側が勝つので、実使用で動いて見えるのはこの値である。
+    ///
+    /// アタックは速く・リリースは遅く。喋り出しで遅れると «反応していない» に見え、
+    /// 速く戻すと音節の切れ目ごとに萎んで跳ねに戻る。
+    @Published private(set) var smoothedLevel: Float = 0
+
+    /// 上がるときの追従率（85ms ごと）。0.3 ならおよそ 0.25 秒で立ち上がる。
+    static let levelAttack: Float = 0.3
+    /// 下がるときの追従率。**アタックよりずっと小さく**——ここが跳ねの効き所。
+    static let levelRelease: Float = 0.08
 
     @Published private(set) var elapsed: TimeInterval = 0
     /// キャンセル確認を表示中か。
@@ -95,10 +104,18 @@ final class RecordingHUDModel: ObservableObject {
     private var pushCount = 0
 
     func push(level: Float) {
+        let clamped = min(1, max(0, level))
         levels.removeFirst()
-        levels.append(min(1, max(0, level)))
+        levels.append(clamped)
         pushCount += 1
         if level >= Self.voiceLevel { lastVoiceAt = Date() }
+        smoothedLevel = Self.smooth(smoothedLevel, toward: clamped)
+    }
+
+    /// なめらかにした次の値。上がるのは速く、下がるのはゆっくり。
+    static func smooth(_ current: Float, toward target: Float) -> Float {
+        let rate = target > current ? levelAttack : levelRelease
+        return current + (target - current) * rate
     }
 
     func setElapsed(_ value: TimeInterval) {
@@ -112,6 +129,7 @@ final class RecordingHUDModel: ObservableObject {
         isConfirmingCancel = false
         pendingResult = nil
         sendingStartedAt = nil
+        smoothedLevel = 0
         lastVoiceAt = Date()
         isHovering = false
     }

@@ -97,7 +97,7 @@ struct RecordingHUDView: View {
             // していたが、止めた瞬間に波が消えると «送り出した» 動きが作れない。
             // 出しっぱなしではなく、送り出しの動きが終わったら自分で消える。
             if model.showsWave {
-                PulseLinesView(level: CGFloat(model.recentPeak),
+                PulseLinesView(level: CGFloat(model.smoothedLevel),
                                lastVoiceAt: model.lastVoiceAt,
                                sendingStartedAt: model.sendingStartedAt,
                                color: statusColor)
