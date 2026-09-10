@@ -26,16 +26,21 @@ final class SettingsStore: ObservableObject {
     @Published var simulateKeypresses: Bool {
         didSet { UserDefaults.standard.set(simulateKeypresses, forKey: "simulateKeypresses") }
     }
-    /// 挿入できたと確認できなかったとき、結果をクリップボードに残す（＝元の内容へ復元しない）。
-    /// OFF にすると常に復元する（結果は HUD 側にだけ残る）。
-    @Published var keepResultOnClipboardWhenUnsure: Bool {
-        didSet { UserDefaults.standard.set(keepResultOnClipboardWhenUnsure, forKey: "keepResultOnClipboardWhenUnsure") }
+    /// 挿入できなかった結果をどこに残すか（Issue #67）。
+    ///
+    /// 以前は `showResultPanel` と `keepResultOnClipboardWhenUnsure` の 2 つの Bool に
+    /// 割れていて、同じ問いに 2 か所で答える形になっていた。1 つに畳んである。
+    @Published var resultRetention: ResultRetention {
+        didSet { UserDefaults.standard.set(resultRetention.rawValue, forKey: "resultRetention") }
     }
-    /// 挿入できなかった・確認できなかった結果を HUD のパネルに残す（Issue #44）。
-    /// OFF でも結果はクリップボード（上の設定に従う）と履歴に残るので失われない。
-    @Published var showResultPanel: Bool {
-        didSet { UserDefaults.standard.set(showResultPanel, forKey: "showResultPanel") }
-    }
+
+    /// HUD のパネルに残すか。`resultRetention` から導く。
+    var showResultPanel: Bool { resultRetention == .hud }
+    /// **挿入に失敗したとき**、結果をクリップボードに残すか（＝元の内容へ復元しない）。
+    ///
+    /// 「確認できなかっただけ」（`.uncertain`）では残さない。ターミナルではそれが常態で、
+    /// 残すと口述のたびにクリップボードが壊れる（Issue #143）。
+    var keepResultOnClipboardWhenUnsure: Bool { resultRetention == .clipboard }
     /// 録音トリガーの修飾キー（keyCode の配列。左右は区別し、押した順に並ぶ）。既定は右⌥。
     /// 複数なら全部が押されたときに反応する（例: 左⇧ + 左⌘。Issue #115）。
     @Published var hotKeyModifiers: [UInt16] {
@@ -85,18 +90,49 @@ final class SettingsStore: ObservableObject {
     /// **実際に残る場所をすべて挙げる。** HUD に出すからといってクリップボードに
     /// 残っていない訳ではなく、以前は「HUD」とだけ言って、クリップボードを踏んだまま
     /// 戻していないことを隠していた（Issue #79）。
-    var resultLocationDescription: String {
-        var places: [String] = []
-        if showResultPanel { places.append("HUD") }
-        if keepResultOnClipboardWhenUnsure { places.append("クリップボード") }
-        places.append("履歴")
-        return places.joined(separator: "・")
+    /// - Parameter isFailure: 本当に失敗したか。**`.uncertain` では false。**
+    ///   クリップボードに残るのは失敗のときだけなので、確認できなかっただけの結果に
+    ///   「クリップボードに残しています」と言うと嘘になる（Issue #143）。
+    func resultLocationDescription(isFailure: Bool) -> String {
+        // クリップボードに残るのは失敗のときだけ。確認できなかっただけの結果に
+        // 「クリップボードに残しています」と言うと嘘になる（Issue #143）。
+        guard isFailure || resultRetention != .clipboard else { return "履歴" }
+        return resultRetention.locations.joined(separator: "・")
     }
 
     /// 履歴の保存期間の選択肢（日数 → 表示名）。0 = 無期限。
     static let historyRetentionOptions: [(days: Int, label: String)] = [
         (7, "7日"), (30, "30日"), (90, "90日"), (365, "1年"), (0, "無期限")
     ]
+
+    /// 挿入できなかった結果の残し先。**どれを選んでも履歴には必ず残る。**
+    enum ResultRetention: String, CaseIterable, Identifiable {
+        /// HUD のパネルに残す。コピー／もう一度挿入ができる。
+        case hud
+        /// クリップボードに残す（元の内容へ戻さない）。そのまま ⌘V で貼れる。
+        case clipboard
+        /// 履歴だけ。HUD は閉じ、クリップボードは元へ戻す。
+        case historyOnly
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .hud:         return "HUD に残す（コピー・再挿入できる）"
+            case .clipboard:   return "クリップボードに残す（そのまま ⌘V で貼れる）"
+            case .historyOnly: return "履歴だけに残す"
+            }
+        }
+
+        /// 状態表示に出す残し先。履歴は常に付く。
+        var locations: [String] {
+            switch self {
+            case .hud:         return ["HUD", "履歴"]
+            case .clipboard:   return ["クリップボード", "履歴"]
+            case .historyOnly: return ["履歴"]
+            }
+        }
+    }
 
     private init() {
         // 自分の音（~/koebun/sounds/）を指していてファイルが消えていたら「なし」に戻す（Issue #71）。
@@ -108,11 +144,7 @@ final class SettingsStore: ObservableObject {
         hudPosition = UserDefaults.standard.string(forKey: "hudPosition")
             .flatMap(HUDPosition.init(rawValue:)) ?? .bottomCenter
         simulateKeypresses = UserDefaults.standard.bool(forKey: "simulateKeypresses")
-        // 既定は「結果を残す」。挿入結果を失う事故（Issue #13）の方が、
-        // クリップボードが戻らないことより痛い。
-        keepResultOnClipboardWhenUnsure =
-            UserDefaults.standard.object(forKey: "keepResultOnClipboardWhenUnsure") as? Bool ?? true
-        showResultPanel = UserDefaults.standard.object(forKey: "showResultPanel") as? Bool ?? true
+        resultRetention = Self.storedResultRetention()
         let storedExtra = (UserDefaults.standard.object(forKey: "hotKeyExtraKeyCode") as? Int).flatMap(UInt16.init(exactly:))
         let storedModifiers = Self.storedHotKeyModifiers()
         // 手で書かれた・古いビルドが残した「成立しない組み合わせ」は既定に戻す（誤爆・永久に反応しない を防ぐ）。
@@ -135,6 +167,23 @@ final class SettingsStore: ObservableObject {
         speechEngine = Self.storedEngine(
             forKey: "speechEngine", defaults: [.apple, .whisperKit], isSupported: \.isSupported
         )
+    }
+
+    /// 残し先を読む。**旧 2 トグルからの移行**を吸収する（Issue #67）。
+    ///
+    /// `showResultPanel` が ON なら HUD、OFF で `keepResultOnClipboardWhenUnsure` が
+    /// ON ならクリップボード、どちらも OFF なら履歴だけ。**同じ挙動のまま移る。**
+    /// 新規は HUD（旧既定の `showResultPanel = true` と同じ）。
+    private static func storedResultRetention() -> ResultRetention {
+        let defaults = UserDefaults.standard
+        if let raw = defaults.string(forKey: "resultRetention"),
+           let value = ResultRetention(rawValue: raw) {
+            return value
+        }
+        let panel = defaults.object(forKey: "showResultPanel") as? Bool ?? true
+        if panel { return .hud }
+        let clipboard = defaults.object(forKey: "keepResultOnClipboardWhenUnsure") as? Bool ?? true
+        return clipboard ? .clipboard : .historyOnly
     }
 
     /// HUD の大きさを読む。**旧「録音中に HUD を表示」トグル（`showRecordingHUD`）からの移行**を

@@ -204,18 +204,16 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Toggle("挿入を確認できなかったら結果をクリップボードに残す",
-                       isOn: $settings.keepResultOnClipboardWhenUnsure)
-                Text("挿入できたと確認できたときだけ元のクリップボードへ戻します。"
-                     + "確認できなかったときは結果を残すので、そのまま ⌘V で貼れます"
-                     + "（OFF にすると常に元へ戻します。結果は履歴に残ります）。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Toggle("挿入できなかったとき結果を HUD に残す", isOn: $settings.showResultPanel)
-                Text("ON だと、挿入できなかった・確認できなかった結果をコピー／もう一度挿入できるパネルで残します。"
-                     + "OFF だと HUD はそのまま閉じます。結果は履歴（と上の設定に従ってクリップボード）に残ります。")
+                Picker("挿入できなかった結果", selection: $settings.resultRetention) {
+                    ForEach(SettingsStore.ResultRetention.allCases) { retention in
+                        Text(retention.label).tag(retention)
+                    }
+                }
+                Text("**どれを選んでも履歴には必ず残ります。**"
+                     + "クリップボードに残すのは、権限が無い・録音したアプリが前面にない等で"
+                     + "はっきり挿入できなかったときだけです。"
+                     + "ターミナルのように結果を確認できないアプリでは、挿入は済んでいる可能性が高いので"
+                     + "クリップボードは元へ戻します。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
