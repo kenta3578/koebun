@@ -22,12 +22,10 @@ struct InsertionPresentation {
     /// - Parameters:
     ///   - outcome: 挿入の結果。
     ///   - text: 挿入しようとしたテキスト。空なら「無音」。
-    ///   - formattingFailure: 整形を試みて外れた理由。整形しなかった／成功したなら nil。
     ///   - showResultPanel: 非成功の結果を HUD に残す設定。
     ///   - resultLocation: 結果の残し先の文言（メニューバーの失敗表示に使う）。
     static func make(outcome: InsertionOutcome,
                      text: String,
-                     formattingFailure: String?,
                      showResultPanel: Bool,
                      resultLocation: String) -> InsertionPresentation {
         if text.isEmpty {
@@ -38,9 +36,6 @@ struct InsertionPresentation {
         if outcome.isFailure {
             // 本当の失敗だけ警告色。「確認できなかっただけ」は失敗にしない（Issue #34）。
             status = .failed(reason: outcome.statusMessage(resultKeptIn: resultLocation), hint: outcome.hint)
-        } else if let formattingFailure {
-            // 整形を外したことは必ず見せる（無言で生テキストに落ちない）。
-            status = .done(message: "整形なしで挿入 ✓（\(formattingFailure)）")
         } else {
             // 成功でないなら、結果をどこに残したか（＝クリップボードを戻していないか）を出す。
             status = .done(message: outcome.isSucceeded
