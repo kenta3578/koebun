@@ -12,16 +12,11 @@ final class AppController {
     private let hud = RecordingHUDController()
     private let state = AppState.shared
 
-    /// 録音1回ぶんの、開始時に決まる情報（コンテキストとモード）。
+    /// 録音を始めた時点の最前面アプリ。挿入直前の照合に使う（Issue #80）。
     ///
-    /// **モードも挿入先も録音開始時に確定させる**。停止時に取り直すと、
-    /// 喋っている間にアプリを切り替えただけで別モードの整形になる。
-    private struct PendingRecording {
-        /// 録音を始めた時点の最前面アプリ。挿入直前の照合に使う（Issue #80）。
-        var expectedBundleId: String?
-        var mode: Mode
-    }
-    private var pending: PendingRecording?
+    /// **挿入先は録音開始時に確定させる**。停止時に取り直すと、喋っている間に
+    /// アプリを切り替えただけで別のアプリへ貼ってしまう。
+    private var pendingBundleId: String?
 
     /// アクセシビリティ権限が付くのを見張るタイマー（Issue #78）。許可を検知したら止める。
     private var accessibilityTimer: Timer?
@@ -65,9 +60,7 @@ final class AppController {
     /// Apple 実装は `@available(macOS 26.0, *)` なので型を直接書けない。
     /// プロトコル型で持ち、生成だけを `#available` の中で行う。
     private let whisperTranscriber = Transcriber()
-    private let mlxFormatter = Formatter()
     private var appleTranscriber: (any SpeechEngine)?
-    private var appleFormatter: (any FormattingEngine)?
 
     private init() {}
 
@@ -81,20 +74,6 @@ final class AppController {
             guard #available(macOS 26.0, *) else { return nil }
             let engine = appleTranscriber ?? AppleTranscriber()
             appleTranscriber = engine
-            return (kind, engine)
-        }
-    }
-
-    /// 設定で選ばれている整形エンジン。この環境で使えないときは nil。
-    private func resolveFormattingEngine() -> (kind: FormattingEngineKind, engine: any FormattingEngine)? {
-        let kind = SettingsStore.shared.formattingEngine
-        switch kind {
-        case .mlx:
-            return (kind, mlxFormatter)
-        case .apple:
-            guard #available(macOS 26.0, *) else { return nil }
-            let engine = appleFormatter ?? AppleFormatter()
-            appleFormatter = engine
             return (kind, engine)
         }
     }
@@ -141,7 +120,6 @@ final class AppController {
 
         // 整形モデルは WhisperKit の**後**に、録音を待たせずに積む。
         // 数GB のダウンロードが走りうるので、ここを await すると起動が止まる。
-        loadFormatter()
     }
 
     // MARK: - 録音 HUD
@@ -204,71 +182,6 @@ final class AppController {
         }
     }
 
-    // MARK: - 整形モデル
-
-    /// 整形 LLM を常駐させる。録音はロードの完了を待たない（間に合わなければ整形を飛ばす）。
-    func loadFormatter() {
-        guard SettingsStore.shared.formatterEnabled else {
-            Task { [mlxFormatter, appleFormatter] in
-                await mlxFormatter.unload()
-                await appleFormatter?.unload()
-            }
-            return
-        }
-        guard let (kind, engine) = resolveFormattingEngine() else {
-            NSLog("koebun: Apple 整形には \(EngineSupport.requiresMacOS26)")
-            return
-        }
-        let modelId = SettingsStore.shared.formatterModelId
-
-        // 選ばれなかった方を降ろす（mlx の 14B なら約9GB が返る）。
-        if kind != .mlx { Task { [mlxFormatter] in await mlxFormatter.unload() } }
-        if kind != .apple, let appleFormatter {
-            Task { await appleFormatter.unload() }
-        }
-
-        Task {
-            do {
-                // 進捗コールバックは actor の外から呼ばれるので、AppState は
-                // ここで captureせず MainActor 側で shared を引く。
-                try await engine.load(modelId: modelId) { loadState in
-                    Task { @MainActor in Self.showFormatterLoad(loadState) }
-                }
-            } catch is CancellationError {
-                // モデルを切り替えたときの中断。新しいロード側が状態を出す。
-            } catch {
-                // 整形が載らなくても文字起こしは使えるので、待機状態には戻す。
-                // Apple Intelligence が無効なときはここに来る。理由は挿入時にも必ず出る。
-                NSLog("koebun: 整形モデルの読み込みに失敗しました: \(error)")
-                if case .loadingModel = state.status { state.update(.idle) }
-            }
-        }
-    }
-
-    /// ロード進捗を状態表示に流す。**録音・処理中の表示は上書きしない**
-    /// （バックグラウンドのダウンロードが、目の前の録音表示を消してはいけない）。
-    private static func showFormatterLoad(_ loadState: EngineLoadState) {
-        let state = AppState.shared
-        switch state.status {
-        case .loadingModel, .idle: break
-        default: return
-        }
-
-        switch loadState {
-        case .notLoaded:
-            state.update(.idle)
-        case .loading(_, let fraction):
-            let suffix = fraction.map { " \(Int($0 * 100))%" } ?? ""
-            state.update(.loadingModel(step: "整形モデルを準備中\(suffix)…（録音はできます）"))
-        case .ready:
-            state.update(.idle)
-        case .failed(let reason):
-            // 整形なしでも使えるので `.failed` にはしない（待機表示のまま使わせる）。
-            NSLog("koebun: 整形モデルを読み込めませんでした: \(reason)")
-            state.update(.idle)
-        }
-    }
-
     private func toggleRecording() {
         if state.isRecording {
             stopRecording()
@@ -284,8 +197,7 @@ final class AppController {
         recordingGeneration &+= 1
         do {
             // 挿入先は録音開始の**前**に控える。NSWorkspace だけなので AX 権限も要らず軽い。
-            pending = PendingRecording(expectedBundleId: TextInjector.frontmostBundleId(),
-                                       mode: ModeStore.shared.current)
+            pendingBundleId = TextInjector.frontmostBundleId()
 
             try recorder.start()
             state.update(.recording)
@@ -304,7 +216,7 @@ final class AppController {
         let generation = recordingGeneration
 
         // クリップボードは「録音中にコピーしたもの」も拾うので、停止のこの時点で確定させる。
-        let pending = takePending()
+        let expectedBundleId = takePendingBundleId()
         let stop = SettingsStore.shared.stopSound
         SoundPlayer.play(stop)
 
@@ -333,11 +245,7 @@ final class AppController {
                     replaced = FillerStore.shared.apply(replaced)
                 }
                 let replaceEnd = Date()
-
-                // 整形はここ。失敗しても replaced を挿入するので、発話は落ちない。
-                let formatting = await format(replaced, pending: pending)
-                let formatEnd = Date()
-                let text = formatting.result?.text ?? replaced
+                let text = replaced
 
                 // 前の発話のパイプラインが終わるまで待つ。貼る順番を発話順に揃える（Issue #99）。
                 await previousPipeline?.value
@@ -345,12 +253,11 @@ final class AppController {
                 // 録音を始めたアプリと違うところへ貼らないよう、照合用に渡す（Issue #80）。
                 let outcome: InsertionOutcome = text.isEmpty
                     ? .succeeded
-                    : await TextInjector.insert(text, expectedBundleId: pending.expectedBundleId)
+                    : await TextInjector.insert(text, expectedBundleId: expectedBundleId)
                 // 見せ方（メニューバーの状態と HUD の動き）は 1 か所で導出する（Issue #64）。
                 let presentation = InsertionPresentation.make(
                     outcome: outcome,
                     text: text,
-                    formattingFailure: formatting.failure,
                     showResultPanel: SettingsStore.shared.showResultPanel,
                     resultLocation: SettingsStore.shared.resultLocationDescription)
                 // 処理中に次の録音が始まっていたら、状態と HUD はその録音のもの。触らない（Issue #97）。
@@ -377,18 +284,11 @@ final class AppController {
                     samples: samples,
                     rawText: raw,
                     replacedText: replaced,
-                    formattedText: formatting.result?.text,
-                    modeName: formatting.modeName,
-                    prompt: formatting.promptForHistory,
                     // どのエンジンで処理したかを残す。これがエンジン比較（Issue #27）の一次データ。
                     speechEngine: speechKind.rawValue,
-                    formattingEngine: formatting.engineKind?.rawValue,
-                    formattingModelId: formatting.modelId,
                     durations: .init(
                         transcribeMs: Self.milliseconds(from: transcribeStart, to: replaceStart),
-                        replaceMs: Self.milliseconds(from: replaceStart, to: replaceEnd),
-                        formatMs: formatting.attempted
-                            ? Self.milliseconds(from: replaceEnd, to: formatEnd) : nil
+                        replaceMs: Self.milliseconds(from: replaceStart, to: replaceEnd)
                     ),
                     inserted: inserted
                 )
@@ -419,82 +319,14 @@ final class AppController {
         }
     }
 
-    /// 整形の結果。**整形は落ちても発話を落とさない**ので、成否は `result` の有無で表す。
-    private struct FormatOutcome {
-        var modeName: String
-        /// 整形が通ったときだけ入る。nil なら置換後テキストをそのまま挿入する。
-        var result: Formatter.Result?
-        /// LLM を呼んだか。`そのまま` モードなら false（履歴の formatMs を nil にする）。
-        var attempted: Bool
-        /// 整形を諦めた理由。ユーザーに見せる短い文言。
-        var failure: String?
-        /// 整形を試みたエンジン。**失敗しても残す**——どのエンジンで何回外したかが
-        /// 比較（Issue #27）でいちばん効く数字なので、成功した分だけ数えては意味が無い。
-        var engineKind: FormattingEngineKind? = nil
-        /// 整形を試みたモデルの識別子。
-        var modelId: String? = nil
-        /// 履歴に残すプロンプト。**コンテキストを除いてある**（Issue #81）。
-        var promptForHistory: String? = nil
-    }
-
-    /// 置換後テキストを現在のモードで整形する。**例外を外に出さない**。
-    ///
-    /// `そのまま` モードは LLM を一切呼ばない最速パス。モデル未ロード・タイムアウト・
-    /// 空出力はすべて「整形なし」に落とし、理由を `failure` で持ち帰る。
-    private func format(_ text: String, pending: PendingRecording) async -> FormatOutcome {
-        let mode = pending.mode
-        // 整形が OFF なら**エンジンに触れない**（Issue #31）。
-        guard SettingsStore.shared.formatterEnabled else {
-            return FormatOutcome(modeName: mode.name, result: nil, attempted: false, failure: nil)
-        }
-        guard mode.usesLLM, !text.isEmpty else {
-            return FormatOutcome(modeName: mode.name, result: nil, attempted: false, failure: nil)
-        }
-
-        guard let (engineKind, engine) = resolveFormattingEngine() else {
-            return FormatOutcome(
-                modeName: mode.name, result: nil, attempted: false,
-                failure: "Apple 整形には \(EngineSupport.requiresMacOS26)"
-            )
-        }
-        // 整形が失敗したときに履歴へ残すモデル ID。成功時は結果の modelId で上書きされる
-        // （Apple 実装はモデルを選べないので固定の識別子を返す）。
-        // 以前はここで `mode.modelId` を優先していたが、そちらはロードに使われておらず、
-        // 失敗時だけ「使っていないモデル」が記録されて成功時と食い違っていた（Issue #87）。
-        let modelId = SettingsStore.shared.formatterModelId
-
-        let timeout = Duration.seconds(SettingsStore.shared.formatTimeoutSeconds)
-        do {
-            let result = try await engine.format(text, mode: mode, timeout: timeout)
-            return FormatOutcome(
-                modeName: mode.name, result: result, attempted: true, failure: nil,
-                engineKind: engineKind, modelId: result.modelId,
-                promptForHistory: result.prompt
-            )
-        } catch {
-            // Apple Intelligence が無効・非対応のときもここ。理由は `AppStatus` に出る
-            // （`stopRecording` の "整形なしで挿入 ✓（理由）"）ので、無言では落ちない。
-            let reason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            NSLog("koebun: 整形を諦めて置換後テキストを挿入します: \(reason)")
-            return FormatOutcome(
-                modeName: mode.name, result: nil, attempted: true, failure: reason,
-                engineKind: engineKind, modelId: modelId
-            )
-        }
-    }
-
     private static func milliseconds(from start: Date, to end: Date) -> Int {
         Int((end.timeIntervalSince(start) * 1000).rounded())
     }
 
-    /// 録音開始時に確定した情報を取り出す。
-    ///
-    /// 開始時の取得が丸ごと失敗していても、モードだけは必ず決まる（フォールバックは現在のモード）。
-    private func takePending() -> PendingRecording {
-        let pending = self.pending ?? PendingRecording(expectedBundleId: nil,
-                                                       mode: ModeStore.shared.current)
-        self.pending = nil
-        return pending
+    /// 録音開始時に控えた挿入先を取り出す。nil なら照合しない（開始時に取れなかった場合）。
+    private func takePendingBundleId() -> String? {
+        defer { pendingBundleId = nil }
+        return pendingBundleId
     }
 
     /// 追い越されたパイプラインの見せ損ねた結果を控える。
@@ -537,7 +369,7 @@ final class AppController {
     private func cancelRecording() {
         guard state.isRecording else { return }
         _ = recorder.stop()
-        pending = nil
+        pendingBundleId = nil
         audioDeviceChangedDuringRecording = false
         // 追い越された前の発話が結果を見せ損ねていれば、閉じる代わりにそれを出す（Issue #97）。
         if let deferred = takeDeferred() {

@@ -46,7 +46,7 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     /// 生テキスト・整形後・所要時間をどちらの結果として読めばいいかが
     /// これが無いと分からなくなる。
     var speechEngine: String?
-    /// 整形に使ったエンジン（`FormattingEngineKind.rawValue`）。
+    /// 整形に使ったエンジン（かつての `FormattingEngineKind.rawValue`）。
     /// 整形を試みなかった発話（`そのまま` モード・整形 OFF）は nil。
     var formattingEngine: String?
     /// 整形に使ったモデルの識別子。mlx なら HuggingFace の repo id、Apple なら固定の識別子。
@@ -70,9 +70,13 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     }
 
     /// 履歴に出す整形エンジン名。モデル ID が分かればそれも添える（14B と 32B を混同しないため）。
+    /// 削除済みの整形エンジン名（`rawValue` → 表示名）。古い履歴を読むためだけに持つ。
+    private static let legacyFormattingEngineNames = ["mlx": "Qwen3", "apple": "Apple"]
+
     var formattingEngineLabel: String? {
         guard let formattingEngine else { return nil }
-        let name = FormattingEngineKind(rawValue: formattingEngine)?.shortLabel ?? formattingEngine
+        // 整形 LLM は #131 で削除した。**古い履歴の表示のためだけ**に名前を残す。
+        let name = Self.legacyFormattingEngineNames[formattingEngine] ?? formattingEngine
         guard let modelId = formattingModelId, !modelId.isEmpty else { return name }
         // HuggingFace の repo id は `mlx-community/Qwen3-14B-4bit` と長いので末尾だけ出す。
         return "\(name) / \(modelId.split(separator: "/").last.map(String.init) ?? modelId)"
@@ -361,22 +365,13 @@ final class HistoryStore: ObservableObject {
     /// バックグラウンドで行う。書き出しに失敗しても挿入は成功しているので、
     /// ログに残すだけでユーザーの操作は止めない。
     /// - Parameters:
-    ///   - formattedText: 整形 LLM の出力。整形しなかった／失敗したときは nil。
-    ///   - modeName: 使用した整形モード名。
     ///   - prompt: 整形 LLM に送ったシステムプロンプト全文（整形が通ったときのみ）。
     ///   - speechEngine: 文字起こしに使ったエンジン（`SpeechEngineKind.rawValue`）。
-    ///   - formattingEngine: 整形に使ったエンジン。整形を試みなかったときは nil。
-    ///   - formattingModelId: 整形に使ったモデルの識別子。
     func record(
         samples: [Float],
         rawText: String,
         replacedText: String,
-        formattedText: String? = nil,
-        modeName: String? = nil,
-        prompt: String? = nil,
         speechEngine: String? = nil,
-        formattingEngine: String? = nil,
-        formattingModelId: String? = nil,
         durations: HistoryEntry.Durations,
         inserted: Bool
     ) {
@@ -389,13 +384,8 @@ final class HistoryStore: ObservableObject {
             createdAt: createdAt,
             rawText: rawText,
             replacedText: replacedText,
-            formattedText: formattedText,
-            modeName: modeName,
-            prompt: prompt,
             durations: durations,
             speechEngine: speechEngine,
-            formattingEngine: formattingEngine,
-            formattingModelId: formattingModelId,
             audio: nil,
             inserted: inserted
         )

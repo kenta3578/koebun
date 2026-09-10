@@ -79,38 +79,6 @@ final class SettingsStore: ObservableObject {
     @Published var speechEngine: SpeechEngineKind {
         didSet { UserDefaults.standard.set(speechEngine.rawValue, forKey: "speechEngine") }
     }
-    /// 整形エンジン。音声認識とは**独立に**選べる（片方だけ Apple にした比較ができるように）。
-    @Published var formattingEngine: FormattingEngineKind {
-        didSet { UserDefaults.standard.set(formattingEngine.rawValue, forKey: "formattingEngine") }
-    }
-
-    // MARK: - 整形 LLM
-
-    /// 現在の整形モード名（`~/koebun/modes/*.json` の `name`）。
-    ///
-    /// UI から選び直したことを `ModeStore` に伝える（`didSet` は `init` では走らないので、
-    /// 起動時の読み込みは手動選択として数えられない）。次の録音1回だけ自動切替に優先する。
-    @Published var modeName: String {
-        didSet { UserDefaults.standard.set(modeName, forKey: "modeName") }
-    }
-    /// 整形 LLM を常駐させるか。**既定は OFF**（Issue #31）。OFF なら数GB のモデルを一切読まない
-    /// ——ロードもダウンロードも走らせず、整形そのものを飛ばして置換後テキストを挿入する。
-    @Published var formatterEnabled: Bool {
-        didSet { UserDefaults.standard.set(formatterEnabled, forKey: "formatterEnabled") }
-    }
-    /// 整形に使うモデルの HuggingFace リポジトリ ID。
-    @Published var formatterModelId: String {
-        didSet { UserDefaults.standard.set(formatterModelId, forKey: "formatterModelId") }
-    }
-    /// 整形の制限時間（秒）。超えたら整形を諦めて置換後テキストを挿入する。
-    @Published var formatTimeoutSeconds: Double {
-        didSet { UserDefaults.standard.set(formatTimeoutSeconds, forKey: "formatTimeoutSeconds") }
-    }
-
-    /// 整形の制限時間の選択肢。長いほど整形が通りやすく、外したときの待ち時間も伸びる。
-    static let formatTimeoutOptions: [(seconds: Double, label: String)] = [
-        (3, "3秒"), (5, "5秒"), (8, "8秒"), (15, "15秒"), (30, "30秒")
-    ]
 
     /// 挿入できなかった・確認できなかった結果がどこに残るか（表示の文言に使う）。
     ///
@@ -167,21 +135,6 @@ final class SettingsStore: ObservableObject {
         speechEngine = Self.storedEngine(
             forKey: "speechEngine", defaults: [.apple, .whisperKit], isSupported: \.isSupported
         )
-        // 整形エンジンの既定は mlx のまま。Apple の 3B は実測で禁止事項（数値の表記変更・
-        // 語の脱落・推測での修復）を破ったので、既定にはしない。
-        formattingEngine = Self.storedEngine(
-            forKey: "formattingEngine", defaults: [.mlx], isSupported: \.isSupported
-        )
-
-        // 既定は「そのまま」＋整形 OFF（Issue #31）。**新規インストール直後に
-        // ダウンロードが 1 バイトも走らない**状態を出発点にする。
-        // 整形は使いたい人が設定で ON にする（そのとき初めてモデルの取得が走る）。
-        modeName = UserDefaults.standard.string(forKey: "modeName") ?? Mode.plainName
-        formatterEnabled = UserDefaults.standard.object(forKey: "formatterEnabled") as? Bool ?? false
-        formatterModelId = UserDefaults.standard.string(forKey: "formatterModelId")
-            ?? Formatter.defaultModelId
-        let timeout = UserDefaults.standard.double(forKey: "formatTimeoutSeconds")
-        formatTimeoutSeconds = timeout > 0 ? timeout : 8
     }
 
     /// HUD の大きさを読む。**旧「録音中に HUD を表示」トグル（`showRecordingHUD`）からの移行**を
