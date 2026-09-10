@@ -98,6 +98,7 @@ struct RecordingHUDView: View {
             // 出しっぱなしではなく、送り出しの動きが終わったら自分で消える。
             if model.showsWave {
                 PulseLinesView(level: CGFloat(model.recentPeak),
+                               lastVoiceAt: model.lastVoiceAt,
                                sendingStartedAt: model.sendingStartedAt,
                                color: statusColor)
                     .frame(width: HUDMetrics.minimalWaveSize.width,
