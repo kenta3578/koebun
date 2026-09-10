@@ -73,6 +73,8 @@ Mac（Apple Silicon / 実機は M5 Pro・48GB メモリ）で、音声 → 文�
 
 ```bash
 xcodegen generate                                   # project.yml → koebun.xcodeproj（worktree では必須）
+git diff --exit-code koebun.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved \
+  || echo "依存の revision が動いた。意図した更新か確認する（Issue #106）"
 xcodebuild -project koebun.xcodeproj -scheme koebun -configuration Debug \
   -derivedDataPath /tmp/koebun-dd CODE_SIGNING_ALLOWED=NO build \
   2>&1 | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)"  # 型チェック（署名なし）。**警告も 0 を保つ**
@@ -82,6 +84,7 @@ xcodebuild test -project koebun.xcodeproj -scheme koebun \
 ./scripts/install-local.sh                          # 実機へインストールして起動（マージ後に必ず）
 pgrep -x koebun                                     # 起動確認
 ./scripts/kpi.sh                                    # 北極星の KPI（平日の挿入回数）を履歴から集計
+./scripts/model-manifest.sh                         # WhisperKit の重みのマニフェストを作り直す（Issue #106）
 tccutil reset Accessibility com.kenta3578.koebun    # 権限トグルが効かないときの一度きりのリセット
 log stream --predicate 'subsystem == "com.kenta3578.koebun"' --level info   # ログ（category: audio/asr/hotkey/history/store/inject）
 gh issue list --state open                          # 候補プール（ai_docs ではなく Issue に置く）

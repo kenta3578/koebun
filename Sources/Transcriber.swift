@@ -1,4 +1,5 @@
 import Foundation
+import os
 @preconcurrency import WhisperKit
 
 enum TranscriberError: Error {
@@ -29,7 +30,30 @@ actor Transcriber: SpeechEngine {
     /// HubApi が既存ファイルを見るので再ダウンロードは走らない。
     func load() async throws {
         let config = WhisperKitConfig(model: Self.model, load: true, download: true)
-        pipe = try await WhisperKit(config)
+        // まず取得（既にあれば HubApi が既存ファイルを見るので走らない）。
+        let pipeline = try await WhisperKit(config)
+        // **読み込んだ後ではなく、使う前に照合する。** WhisperKit には revision を渡す口が
+        // 無く main を追い続けるので、書き換えられたら黙って別の重みを読む（Issue #106）。
+        // 一致しなければ throw して、この pipe を使わせない。
+        try Self.verifyDownloadedModel()
+        pipe = pipeline
+    }
+
+    /// キャッシュ上のモデルを記録と照合する。同じマニフェストで一度通っていれば読み飛ばす。
+    private static func verifyDownloadedModel() throws {
+        guard let directory = modelDirectory else { return }
+        do {
+            try ModelIntegrity.verify(directory: directory)
+        } catch {
+            Log.asr.error("モデルの照合に失敗しました: \(error.localizedDescription)")
+            throw error
+        }
+    }
+
+    /// キャッシュ上のモデルディレクトリ。`.cachesDirectory` が引けなければ nil。
+    private static var modelDirectory: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("argmaxinc/whisperkit-coreml/openai_whisper-\(model)")
     }
 
     /// モデルが既にダウンロード済みか。UI に「ダウンロード中」を出すかの判断に使う。
@@ -40,9 +64,9 @@ actor Transcriber: SpeechEngine {
         else { return false }
         // 一式のうち1つでも欠けると `loadModels` が modelsUnavailable を投げるので、
         // 代表として MelSpectrogram の有無を見る。
-        let probe = caches
-            .appendingPathComponent("argmaxinc/whisperkit-coreml/openai_whisper-\(model)")
-            .appendingPathComponent("MelSpectrogram.mlmodelc")
+        _ = caches
+        guard let probe = modelDirectory?.appendingPathComponent("MelSpectrogram.mlmodelc")
+        else { return false }
         return FileManager.default.fileExists(atPath: probe.path)
     }
 
