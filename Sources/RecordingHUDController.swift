@@ -152,6 +152,9 @@ final class RecordingHUDController {
         startedAt = nil
         guard isVisible else { return }
 
+        // 挿入へ送り出す動き（Issue #158）。**確認したと言わずに「送った」だけを見せる。**
+        model.sendingStartedAt = Date()
+
         cancelAutoHide()
         autoHideTask = Task { [weak self] in
             try? await Task.sleep(for: AppStatus.doneDisplayDuration)

@@ -47,6 +47,52 @@ struct PulseLinesTests {
         #expect(ok)
     }
 
+    // MARK: - 送り出し（Issue #158）
+
+    @Test("送り出していなければ進みは 0")
+    func notSending() {
+        #expect(PulseLinesView.sendProgress(from: nil, at: Date()) == 0)
+    }
+
+    @Test("送り出しは 0 から 1 へ進み、1 で止まる")
+    func sendProgresses() {
+        let start = Date()
+        let half = RecordingHUDModel.sendDuration / 2
+        #expect(PulseLinesView.sendProgress(from: start, at: start) == 0)
+        let mid = PulseLinesView.sendProgress(from: start, at: start.addingTimeInterval(half))
+        #expect(mid > 0.4 && mid < 0.6)
+        // ちょうどの時刻は浮動小数の誤差で 0.9999… になりうるので、閾値で見る。
+        #expect(PulseLinesView.sendProgress(from: start,
+                                            at: start.addingTimeInterval(RecordingHUDModel.sendDuration)) > 0.99)
+        // 過ぎても 1 を超えない（超えると描画が反転する）。
+        #expect(PulseLinesView.sendProgress(from: start, at: start.addingTimeInterval(10)) == 1)
+    }
+
+    /// 時計が巻き戻る（時刻同期など）ことはありうる。負の進みで描画を壊さない。
+    @Test("開始より前の時刻でも 0 に丸める")
+    func sendProgressNeverNegative() {
+        let start = Date()
+        #expect(PulseLinesView.sendProgress(from: start, at: start.addingTimeInterval(-5)) == 0)
+    }
+
+    @Test("録音中・文字起こし中・送り出し中だけ波を出す")
+    func showsWaveOnlyWhenMeaningful() {
+        let m = RecordingHUDModel()
+        m.status = .idle
+        #expect(!m.showsWave)
+        m.status = .recording
+        #expect(m.showsWave)
+        m.status = .processing
+        #expect(m.showsWave)
+        m.status = .done(message: "挿入しました ✓")
+        #expect(!m.showsWave)
+        // 送り出しの最中は状態に関わらず出す（完了表示に切り替わっても動きを切らさない）。
+        m.sendingStartedAt = Date()
+        #expect(m.showsWave)
+        m.reset()
+        #expect(!m.showsWave)
+    }
+
     @Test("線は 2 本で、向きが逆（重なり合って見えるため）")
     func linesCross() {
         #expect(PulseLinesView.lineSpeeds.count == 2)
