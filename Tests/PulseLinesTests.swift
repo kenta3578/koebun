@@ -148,6 +148,43 @@ struct PulseLinesTests {
         #expect(!m.showsWave)
     }
 
+    /// **実使用で動いて見えるのは振幅の方。** 速さのつまみをいくら下げても、
+    /// 喋っている間は `max(level, 脈)` のレベル側が勝つ（Issue #168）。
+    @Test("跳ねる生レベルを渡しても振幅はコマ間でほぼ動かない")
+    func smoothingFlattensJitter() {
+        // 音節ごとに跳ねる、実際にありがちな 85ms 刻みのレベル。
+        let raw: [Float] = [0.10, 0.55, 0.72, 0.41, 0.18, 0.63, 0.88, 0.52, 0.22, 0.12, 0.44, 0.70]
+        var value: Float = 0
+        var smoothed: [Float] = []
+        for r in raw {
+            value = RecordingHUDModel.smooth(value, toward: r)
+            smoothed.append(value)
+        }
+        let rawJump = zip(raw, raw.dropFirst()).map { abs($1 - $0) }.max()!
+        // **立ち上がりは数えない。** 最初の数コマは 0 から «喋り出した» ぶんの
+        // 伸びで、これは消したい跳ねではなく見せたい反応（別テストで速さを縛る）。
+        let settled = smoothed.dropFirst(3)
+        let smoothJump = zip(settled, settled.dropFirst()).map { abs($1 - $0) }.max()!
+        // 生は 0.45 も跳ぶ。喋っている間の振幅はその 1/3 以下に収まること。
+        #expect(rawJump > 0.4)
+        #expect(smoothJump < rawJump / 3)
+    }
+
+    /// 遅らせすぎると «喋っても反応しない» になる。跳ねを消すのと引き換えにしない。
+    @Test("喋り出しには 0.3 秒ほどで立ち上がる")
+    func smoothingRisesQuickly() {
+        var value: Float = 0
+        // 85ms 刻みで 4 回 ≒ 0.34 秒。
+        for _ in 0..<4 { value = RecordingHUDModel.smooth(value, toward: 0.8) }
+        #expect(value > 0.8 * 0.7)
+    }
+
+    /// 下がるのが速いと、音節の切れ目ごとに萎んで跳ねに戻る。
+    @Test("下がるのは上がるよりずっと遅い")
+    func releaseIsSlowerThanAttack() {
+        #expect(RecordingHUDModel.levelRelease < RecordingHUDModel.levelAttack / 3)
+    }
+
     /// 片側だけ触ると «凪いだのに速いまま» / «常に凪いでいる» のどちらかになる。
     @Test("凪ぎの速さは基準より十分遅い")
     func calmIsSlowerThanBase() {
