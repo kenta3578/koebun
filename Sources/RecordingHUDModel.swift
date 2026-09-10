@@ -29,7 +29,10 @@ final class RecordingHUDModel: ObservableObject {
     @Published var sendingStartedAt: Date?
 
     /// 送り出しの動きにかける時間。
-    static let sendDuration: TimeInterval = 0.42
+    ///
+    /// **短くする。** ここに来るまでにユーザーは既に文字起こしを待っている。
+    /// 別れの動きが長いと «まだ終わらない» に読める（Issue #160）。
+    static let sendDuration: TimeInterval = 0.22
 
     /// 波を出すか。録音中・文字起こし中と、送り出しの動きの最中（Issue #158）。
     var showsWave: Bool {

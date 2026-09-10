@@ -155,9 +155,16 @@ final class RecordingHUDController {
         // 挿入へ送り出す動き（Issue #158）。**確認したと言わずに「送った」だけを見せる。**
         model.sendingStartedAt = Date()
 
+        // **最小表示は送り出しが終わったら閉じる。** 波が飛んだあとに 1.5 秒
+        // «アイコンと経過時間だけのピル» が残ると、その居残りが «遅い» と読まれる。
+        // 通常表示は「挿入しました ✓」を読ませる必要があるので従来どおり（Issue #160）。
+        let delay: Duration = model.usesMinimalBar
+            ? .milliseconds(Int(RecordingHUDModel.sendDuration * 1000) + 120)
+            : AppStatus.doneDisplayDuration
+
         cancelAutoHide()
         autoHideTask = Task { [weak self] in
-            try? await Task.sleep(for: AppStatus.doneDisplayDuration)
+            try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
             self?.hide()
         }
