@@ -97,7 +97,9 @@ struct RecordingHUDView: View {
             // していたが、止めた瞬間に波が消えると «送り出した» 動きが作れない。
             // 出しっぱなしではなく、送り出しの動きが終わったら自分で消える。
             if model.showsWave {
-                LiveWaveformView(levels: model.levels, color: statusColor)
+                LiveWaveformView(levels: model.levels,
+                                 pushCount: model.pushCount,
+                                 color: statusColor)
                     .frame(width: HUDMetrics.minimalWaveSize.width,
                            height: HUDMetrics.minimalWaveSize.height)
             }
