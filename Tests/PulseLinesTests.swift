@@ -148,6 +148,21 @@ struct PulseLinesTests {
         #expect(!m.showsWave)
     }
 
+    /// 片側だけ触ると «凪いだのに速いまま» / «常に凪いでいる» のどちらかになる。
+    @Test("凪ぎの速さは基準より十分遅い")
+    func calmIsSlowerThanBase() {
+        let slowest = PulseLinesView.lineSpeeds.map(abs).min()!
+        #expect(PulseLinesView.calmWaveSpeed < slowest * 0.8)
+        #expect(PulseLinesView.calmPulseSpeed < PulseLinesView.idlePulseSpeed * 0.8)
+    }
+
+    /// 忙しない動きは «邪魔をしない» に反する。面を持たせてから速さの意味が変わった。
+    @Test("基準の速さが落ち着いた範囲にある")
+    func baseSpeedIsCalm() {
+        #expect(PulseLinesView.lineSpeeds.map(abs).max()! <= 1.8)
+        #expect(PulseLinesView.idlePulseSpeed <= 1.2)
+    }
+
     @Test("線は 2 本で、向きが逆（重なり合って見えるため）")
     func linesCross() {
         #expect(PulseLinesView.lineSpeeds.count == 2)
