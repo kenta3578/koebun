@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import os
 
 /// 1発話ぶんの履歴（`meta.json` の実体）。
 ///
@@ -173,7 +174,7 @@ enum HistoryFiles {
             // 音声の情報を含めて書き直す。
             try encoder.encode(entry).write(to: metaURL, options: .atomic)
         } catch {
-            NSLog("koebun: 履歴の音声書き出しに失敗しました: \(error)")
+            Log.history.error("音声を書き出せませんでした: \(error.localizedDescription)")
         }
         return entry
     }
@@ -255,11 +256,11 @@ enum HistoryFiles {
             let url = directoryURL(for: name).appendingPathComponent(metaFileName)
             guard let data = try? Data(contentsOf: url) else {
                 // 無言で読み飛ばすと、音声だけが残った孤児に気づけない（Issue #81）。
-                NSLog("koebun: 履歴 \(name)/\(metaFileName) がありません（録音だけが残っている可能性があります）")
+                Log.history.notice("meta が見つかりません（録音だけが残っている可能性）: \(name)")
                 return nil
             }
             guard var entry = try? decoder.decode(HistoryEntry.self, from: data) else {
-                NSLog("koebun: 履歴 \(name)/\(metaFileName) を読めませんでした")
+                Log.history.error("meta を読めませんでした: \(name)")
                 return nil
             }
             entry.id = name
@@ -275,7 +276,7 @@ enum HistoryFiles {
             // 既に無いのは正常（purge と重なったときなど）。
         } catch {
             // 握り潰すと「消したのに復活した」の原因が追えない（Issue #81）。
-            NSLog("koebun: 履歴 \(id) の削除に失敗しました: \(error)")
+            Log.history.error("削除できませんでした: \(id) / \(error.localizedDescription)")
         }
     }
 
@@ -316,7 +317,7 @@ enum HistoryFiles {
                 try manager.removeItem(at: directoryURL(for: name))
                 removed += 1
             } catch {
-                NSLog("koebun: 古い履歴 \(name) の削除に失敗しました: \(error)")
+                Log.history.error("古い履歴を削除できませんでした: \(name) / \(error.localizedDescription)")
             }
         }
         return removed
@@ -403,7 +404,7 @@ final class HistoryStore: ObservableObject {
                 let written = try HistoryFiles.write(entry, samples: saveAudio ? samples : [])
                 await MainActor.run { HistoryStore.shared.finishWriting(written) }
             } catch {
-                NSLog("koebun: 履歴の保存に失敗しました: \(error)")
+                Log.history.error("保存できませんでした: \(error.localizedDescription)")
                 await MainActor.run { HistoryStore.shared.abandonWriting(entry.id) }
             }
         }
@@ -480,7 +481,7 @@ final class HistoryStore: ObservableObject {
         Task.detached(priority: .utility) {
             let removed = HistoryFiles.purge(retentionDays: days)
             guard removed > 0 else { return }
-            NSLog("koebun: 保存期間（\(days)日）を過ぎた履歴を \(removed) 件削除しました")
+            Log.history.info("保存期間（\(days, privacy: .public)日）を過ぎた履歴を \(removed, privacy: .public) 件削除しました")
             await MainActor.run { HistoryStore.shared.reload() }
         }
     }

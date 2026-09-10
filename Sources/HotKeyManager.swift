@@ -168,7 +168,7 @@ final class HotKeyManager {
             callback: hotKeyTapCallback,
             userInfo: userInfo
         ) else {
-            NSLog("koebun: ホットキーのイベントタップを作れませんでした（アクセシビリティ権限が無い可能性）")
+            Log.hotkey.error("イベントタップを作れませんでした（アクセシビリティ権限が無い可能性）")
             return false
         }
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)

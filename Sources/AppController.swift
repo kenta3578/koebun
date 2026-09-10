@@ -1,4 +1,5 @@
 import AppKit
+import os
 
 /// 全体のオーケストレーション:
 ///   権限確認 → モデルロード → ホットキー登録 →
@@ -130,7 +131,7 @@ final class AppController {
         // 裏で動く追い越されたパイプラインも数に入れる（Issue #101）。
         // UI 側でも切り替えを無効にしてあるが、経路を 1 つに絞れないのでここでも守る。
         guard state.canSwitchEngine else {
-            NSLog("koebun: 録音・処理中のため音声認識エンジンの切り替えを見送りました")
+            Log.asr.notice("録音・処理中のため音声認識エンジンの切り替えを見送りました")
             return
         }
 
@@ -161,7 +162,7 @@ final class AppController {
             let reason = isDownloading
                 ? "音声認識モデルを取得できませんでした（ネットワークと空き容量を確認してください）"
                 : "モデル読込失敗: \(error.localizedDescription)"
-            NSLog("koebun: 音声認識モデルの読み込みに失敗しました: \(error)")
+            Log.asr.error("音声認識モデルを読み込めませんでした: \(error.localizedDescription)")
             state.update(.failed(reason: reason))
         }
     }
@@ -210,11 +211,18 @@ final class AppController {
         let deviceChanged = audioDeviceChangedDuringRecording
         audioDeviceChangedDuringRecording = false
 
+        // **ユーザーが待つ実時間**をここから測る（Issue #107）。履歴の `durations` は
+        // 処理ごとの内訳だが、こちらは挿入の順番待ちも含む「押してから入るまで」。
+        let signpost = Log.signposter.beginInterval("dictation", id: Log.signposter.makeSignpostID())
+
         let previousPipeline = lastPipeline
         state.pipelineStarted()
         lastPipeline = Task { @MainActor in
             // どの経路で抜けても進行中の数を戻す（次の発話の挿入待ちは Task の完了で解ける）。
-            defer { state.pipelineFinished() }
+            defer {
+                state.pipelineFinished()
+                Log.signposter.endInterval("dictation", signpost)
+            }
             await runPipeline(samples: samples,
                               expectedBundleId: expectedBundleId,
                               deviceChanged: deviceChanged,
@@ -396,14 +404,14 @@ final class AppController {
         accessibilityTimer = nil
         hotkeys.start()
         state.update(.idle)
-        NSLog("koebun: アクセシビリティ権限を検知したのでホットキーを登録し直しました")
+        Log.hotkey.notice("アクセシビリティ権限を検知したのでホットキーを登録し直しました")
     }
 
     /// 録音中にオーディオデバイスの構成が変わった。AVAudioEngine は既に止まっていて
     /// 以降の音は入らないので、ここで締めて途中までの音声を処理する（Issue #77）。
     private func handleAudioConfigurationChange() {
         guard state.isRecording else { return }
-        NSLog("koebun: 録音中にオーディオデバイスが変わったため録音を終了します")
+        Log.audio.notice("録音中にオーディオデバイスが変わったため録音を終了します")
         audioDeviceChangedDuringRecording = true
         stopRecording()
     }
