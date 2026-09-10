@@ -1,6 +1,6 @@
 import AVFoundation
 import AppKit
-import ApplicationServices
+@preconcurrency import ApplicationServices
 
 /// マイク / アクセシビリティ権限の要求・確認。
 enum PermissionsManager {
@@ -24,7 +24,9 @@ enum PermissionsManager {
     /// 戻り値は「いま許可されているか」。
     @discardableResult
     static func promptAccessibilityIfNeeded() -> Bool {
-        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        // `kAXTrustedCheckOptionPrompt` は ApplicationServices の**未注釈のグローバル var**
+        // なので、読むだけで並行性検査に引っかかる。値は公開された固定文字列なので直接書く。
+        let key = "AXTrustedCheckOptionPrompt"
         let options = [key: true] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
     }

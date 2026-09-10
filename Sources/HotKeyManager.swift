@@ -1,3 +1,4 @@
+@preconcurrency import CoreFoundation
 import AppKit
 import Combine
 import os
@@ -279,7 +280,9 @@ private final class HotKeyTapState: @unchecked Sendable {
                 else { return nil }
                 inner.swallowedKeyCode = keyCode
                 // 押しっぱなしのオートリピートでは 1 回だけ（飲み込みは続ける）。
-                return isRepeat ? {} : inner.onMatch
+                // 空クロージャのリテラルは @Sendable と推論されないので明示する。
+                let noop: @Sendable () -> Void = {}
+                return isRepeat ? noop : inner.onMatch
             }
             guard let onMatch else { return false }
             onMatch()

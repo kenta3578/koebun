@@ -33,6 +33,9 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Sources/Info.plist
         SWIFT_VERSION: "5.9"
+        # 言語モードは Swift 5 のまま、データ競合の検査だけ最大にする（Issue #103）。
+        # 型で競合を防げているかをコンパイラに確かめさせる唯一の手段。
+        SWIFT_STRICT_CONCURRENCY: complete
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         # ローカル実行前提: sandbox OFF（Accessibility / CGEvent / グローバル監視のため必須）
         # ⚠️ 他者へ配布する段階では ENABLE_HARDENED_RUNTIME: YES + entitlements 最小化

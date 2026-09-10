@@ -39,6 +39,7 @@ Mac（Apple Silicon / 実機は M5 Pro・48GB メモリ）で、音声 → 文�
 - **完全ローカル前提**: クラウド送信・外部API依存を増やさない。音声・テキストは端末外に出さない
 - **低遅延優先**: 認識は Apple 内蔵で 292ms（実測）。重い処理をホットパスに足さない
 - **機能を足さない**: LLM 整形・5 モード・コンテキスト注入・アプリ別自動切替・整形差分ガードは #62 の判定で削除済み（#128〜#131）。**同じものを戻す前に `ai_docs/north-star.md` の「帰結: 薄さが価値」を読む**
+- **並行性の警告を 0 に保つ**: `SWIFT_STRICT_CONCURRENCY: complete`（Issue #103）。`@unchecked Sendable` を増やさず、`@MainActor` か `OSAllocatedUnfairLock` で隔離する。未注釈ライブラリ由来だけ `@preconcurrency import` で抑える
 - **ネイティブAPIで素直に書く**: ホットキー/マイク/注入は macOS ネイティブAPIをそのまま使う（ブリッジ越しに無理しない）
 
 領域ごとの規約は `.claude/rules/` にある（該当ファイルを開いたときに自動でロードされる）:
@@ -74,7 +75,7 @@ Mac（Apple Silicon / 実機は M5 Pro・48GB メモリ）で、音声 → 文�
 xcodegen generate                                   # project.yml → koebun.xcodeproj（worktree では必須）
 xcodebuild -project koebun.xcodeproj -scheme koebun -configuration Debug \
   -derivedDataPath /tmp/koebun-dd CODE_SIGNING_ALLOWED=NO build \
-  2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)"      # 型チェック（署名なし・高速）
+  2>&1 | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)"  # 型チェック（署名なし）。**警告も 0 を保つ**
 xcodebuild test -project koebun.xcodeproj -scheme koebun \
   -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO \
   2>&1 | grep -E "✘|Test run|TEST (SUCCEEDED|FAILED)"     # 単体テスト（0.1秒未満。守備範囲は Tests/README.md）

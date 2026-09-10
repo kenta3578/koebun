@@ -164,10 +164,10 @@ actor AppleTranscriber: SpeechEngine {
             return output
         }
 
-        var supplied = false
         var error: NSError?
-        // 入力ブロックは `convert` の中から**同期的に**呼ばれるので、バッファは実際には
+        // 入力ブロックは `convert` の中から**同期的に**呼ばれるので、バッファもフラグも実際には
         // 並行領域を跨がない。`AVAudioConverter` 側の @Sendable 注釈に合わせるためだけの退避。
+        nonisolated(unsafe) var supplied = false
         nonisolated(unsafe) let input = source
         converter.convert(to: output, error: &error) { _, status in
             if supplied {
