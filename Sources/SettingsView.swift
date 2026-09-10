@@ -406,25 +406,38 @@ struct ReplacementsSettingsView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            List {
-                ForEach($store.rules) { $rule in
-                    HStack(spacing: 8) {
-                        TextField("カーズ桜", text: $rule.from)
-                        TextField("河津桜", text: $rule.to)
-                        Button {
-                            store.rules.removeAll { $0.id == rule.id }
-                        } label: {
-                            Image(systemName: "minus.circle")
+            // **`List` を使わない**（Issue #94）。macOS の `List` は `VStack` の中で
+            // 余剰高さを取りにいくうえ、`.listStyle(.bordered)` が説明できない上下インセットを
+            // 足す。そのぶんルール一覧が圧迫され、既定 5 件の最下段が切れていた。
+            // 枠と交互色は自前で描けば、間隔は `spacing` のとおりになる。
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array($store.rules.enumerated()), id: \.element.id) { index, $rule in
+                        HStack(spacing: 8) {
+                            TextField("カーズ桜", text: $rule.from)
+                            TextField("河津桜", text: $rule.to)
+                            Button {
+                                store.rules.removeAll { $0.id == rule.id }
+                            } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("このルールを削除")
+                            .accessibilityLabel("このルールを削除")
                         }
-                        .buttonStyle(.borderless)
-                        .help("このルールを削除")
-                        .accessibilityLabel("このルールを削除")
+                        .textFieldStyle(.roundedBorder)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(index.isMultiple(of: 2)
+                                    ? Color.clear
+                                    : Color.primary.opacity(0.04))
                     }
-                    .textFieldStyle(.roundedBorder)
                 }
             }
-            .listStyle(.bordered)
-            .alternatingRowBackgrounds()
+            // 5 件は必ず収まる高さを確保しつつ、増えたぶんはスクロールで見せる。
+            .frame(minHeight: Self.ruleRowHeight * 5, maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.15)))
 
             HStack {
                 Button("ルールを追加") {
@@ -442,6 +455,10 @@ struct ReplacementsSettingsView: View {
         }
         .padding()
     }
+
+    /// ルール 1 行ぶんの高さ（角丸テキストフィールド + 上下パディング）。
+    /// 既定の 5 ルールが切れずに収まる下限を決めるために持つ。
+    private static let ruleRowHeight: CGFloat = 30
 
     /// フィラー除去（Issue #59）。語彙は 2 種類に分けて編集する。
     private var fillerSection: some View {
