@@ -253,25 +253,68 @@ private struct WaveformView: View {
     let levels: [Float]
     let color: Color
 
+    /// 無音のときの底上げ（高さに対する比）。**谷でもバーが生きている**ようにする。
+    /// 0 にすると波の谷が 2pt の点に潰れ、「波」ではなく「点が並んでいる」絵になる。
+    private static let idleBase: CGFloat = 0.12
+    /// 底上げの上に乗る揺れの幅。`idleBase + idleAmplitude` が無音時の最大の高さ。
+    private static let idleAmplitude: CGFloat = 0.30
+    /// 幅いっぱいに入れる波の数。1.0 だと 1 つの膨らみが息をするだけで「揺れ」に見えない。
+    private static let idleCycles: Double = 1.5
+    /// 波が流れる速さ（ラジアン/秒）。**呼吸に近い遅さ**にする。
+    /// 常駐アプリの HUD が視界の端で速く動くと、北極星の「邪魔をしない」に反する。
+    private static let idleSpeed: Double = 1.6
+    /// この入力レベルを超えたら待機の波を 完全に引っ込める。
+    private static let idleFadeLevel: CGFloat = 0.35
+
     var body: some View {
-        Canvas { context, size in
-            guard !levels.isEmpty else { return }
-            let slot = size.width / CGFloat(levels.count)
-            let barWidth = max(1.5, slot * 0.55)
-            let mid = size.height / 2
-            for (index, level) in levels.enumerated() {
-                let height = max(2, CGFloat(level) * size.height)
-                let rect = CGRect(x: CGFloat(index) * slot + (slot - barWidth) / 2,
-                                  y: mid - height / 2,
-                                  width: barWidth,
-                                  height: height)
-                context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2),
-                             with: .color(color))
+        // **HUD が見えている間しか描かれない。** 録音中と結果表示中しか出さないので、
+        // 常駐中のコストは増えない（Issue #146）。
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                guard !levels.isEmpty else { return }
+                let slot = size.width / CGFloat(levels.count)
+                let barWidth = max(1.5, slot * 0.55)
+                let mid = size.height / 2
+                let time = timeline.date.timeIntervalSinceReferenceDate
+
+                for (index, level) in levels.enumerated() {
+                    let height = max(2, Self.ratio(level: CGFloat(level), index: index, at: time)
+                                        * size.height)
+                    let rect = CGRect(x: CGFloat(index) * slot + (slot - barWidth) / 2,
+                                      y: mid - height / 2,
+                                      width: barWidth,
+                                      height: height)
+                    context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2),
+                                 with: .color(color))
+                }
             }
         }
         .accessibilityLabel("入力レベル")
     }
+
+    /// そのバーの高さ（高さに対する比）。
+    ///
+    /// **実レベルが上がるほど待機の波を引っ込める。** 単純に大きい方を採ると、
+    /// 待機の波より小さい入力（ささやき声）が波に隠れて「拾えていない」ように見える。
+    /// `idleFadeLevel` を超えたら待機の波は 0 になり、**表示は実レベルそのものになる**。
+    private static func ratio(level: CGFloat, index: Int, at time: TimeInterval) -> CGFloat {
+        let fade = max(0, 1 - level / idleFadeLevel)
+        return max(level, idleHeight(index: index, at: time) * fade)
+    }
+
+    /// 無音のときの高さ。バーごとに位相をずらして波が流れて見えるようにする。
+    ///
+    /// 中央ほど振幅が大きくなる窓（`sin`）を掛けて両端を細くしている。
+    /// 掛けないと端でバーが唐突に切れて、波ではなく «並んだ棒» に見える。
+    private static func idleHeight(index: Int, at time: TimeInterval) -> CGFloat {
+        let step = 2 * Double.pi * idleCycles / Double(RecordingHUDModel.barCount)
+        let phase = time * idleSpeed - Double(index) * step
+        let wave = (sin(phase) + 1) / 2
+        let envelope = sin(Double(index) / Double(RecordingHUDModel.barCount - 1) * .pi)
+        return (idleBase + idleAmplitude * CGFloat(wave)) * CGFloat(envelope)
+    }
 }
+
 
 // MARK: - パネル
 
