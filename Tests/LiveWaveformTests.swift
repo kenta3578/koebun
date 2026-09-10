@@ -9,12 +9,30 @@ import SwiftUI
 /// 時間依存の動きを 5 つ重ね、速さを何度調整しても落ち着かなかった。
 @MainActor
 struct LiveWaveformTests {
-    @Test("喋ると波が大きくなる")
-    func louderInputMakesTallerWave() {
-        let quiet = LiveWaveformView.history(Array(repeating: 0.05, count: 40))
-        let loud = LiveWaveformView.history(Array(repeating: 0.8, count: 40))
-        #expect(LiveWaveformView.envelope(loud, at: 0.5)
-                > LiveWaveformView.envelope(quiet, at: 0.5) * 1.5)
+    /// **差がないと «喋ったら大きくなった» と読めない**（Issue #174）。
+    /// レベルは −50dB…0dB を 0…1 に写した値で、通常の発話は 0.3〜0.6。
+    @Test("静音と発話で振れ幅が 4 倍以上ちがう")
+    func speechIsMuchTallerThanSilence() {
+        let silent = LiveWaveformView.history(Array(repeating: 0, count: 40))
+        let speaking = LiveWaveformView.history(Array(repeating: 0.5, count: 40))
+        #expect(LiveWaveformView.envelope(speaking, at: 0.5)
+                > LiveWaveformView.envelope(silent, at: 0.5) * 4)
+    }
+
+    /// 隣り合うコマの差がそのままトゲになる。載せる前に幅方向で丸める。
+    /// **時間方向の平滑化にしない**（#168 の跳ねを生んで捨てた手）。
+    @Test("尖った履歴は幅方向にならされる")
+    func spikyHistoryIsSmoothedAcrossTheWidth() {
+        var spiky = Array(repeating: CGFloat(0.1), count: LiveWaveformView.window)
+        spiky[spiky.count / 2] = 1
+        let before = LiveWaveformView.smoothing(spiky, passes: 0)
+        let after = LiveWaveformView.smoothing(spiky, passes: 2)
+        func maxStep(_ values: [CGFloat]) -> CGFloat {
+            zip(values, values.dropFirst()).map { abs($1 - $0) }.max() ?? 0
+        }
+        #expect(maxStep(after) < maxStep(before) / 2)
+        // ならしても総量は減らない（山が消えると «拾えていない» に見える）。
+        #expect(abs(after.reduce(0, +) - before.reduce(0, +)) < 0.01)
     }
 
     /// 平らな線になると «落ちた» ように見える。黙っていてもうねりは残す（Issue #172）。
@@ -22,7 +40,9 @@ struct LiveWaveformTests {
     func silenceKeepsUndulating() {
         let silent = LiveWaveformView.history(Array(repeating: 0, count: 40))
         #expect(LiveWaveformView.envelope(silent, at: 0.5) == LiveWaveformView.idleBase)
-        #expect(LiveWaveformView.idleBase > 0.2)
+        // 上下から挟む。消えると «落ちた» ように見え、高いと発話との差が出ない。
+        #expect(LiveWaveformView.idleBase > 0.05)
+        #expect(LiveWaveformView.idleBase < 0.2)
     }
 
     /// **波を進めるのはコマ数だけ。** 経過時間から決めると速さのつまみが要る。

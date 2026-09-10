@@ -33,8 +33,25 @@ struct LiveWaveformView: View {
     static let cycles: Double = 1.6
 
     /// 黙っているときのうねりの大きさ（高さの半分に対する比）。
+    ///
     /// **0 にしない**——平らな線になると «落ちた» ように見える（Issue #172）。
-    static let idleBase: CGFloat = 0.30
+    /// ただし高くすると発話との差が出ない。0.30 では «喋ったら大きくなった» と
+    /// 読めなかった（Issue #174）。
+    static let idleBase: CGFloat = 0.12
+
+    /// 発話側の利得。
+    ///
+    /// レベルは RMS を −50dB…0dB で 0…1 に写した値で、**通常の発話は 0.3〜0.6**
+    /// （`AudioRecorder.normalizedLevel`）。素通しだと上限まで届かず、静音との差が
+    /// 2 倍ほどにしかならない。0.5 前後で振り切るように持ち上げる（Issue #174）。
+    static let gain: CGFloat = 1.7
+
+    /// 履歴を**幅方向に**ならす回数。
+    ///
+    /// 隣り合うコマの差がそのままトゲになるので、載せる前に丸める。
+    /// **時間方向の平滑化にしない**（Issue #168 の跳ねを生んで捨てた手）。
+    /// ここは «いつ» ではなく «どこ» をならしているので、時間のつまみは増えない。
+    private static let smoothingPasses = 2
 
     /// 塗りの濃さ。濃くすると «塗りつぶし» になって波に見えない。
     private static let fillRatio: CGFloat = 0.22
@@ -61,10 +78,30 @@ struct LiveWaveformView: View {
     }
 
     /// 幅に載せる直近の履歴。足りないぶんは無音で埋める（録音を始めた直後）。
+    /// 幅方向にならしてから返す。
     static func history(_ levels: [Float]) -> [CGFloat] {
         let recent = levels.suffix(window).map { CGFloat(max(0, min(1, $0))) }
-        guard recent.count < window else { return Array(recent) }
-        return Array(repeating: 0, count: window - recent.count) + recent
+        let padded = recent.count < window
+            ? Array(repeating: 0, count: window - recent.count) + recent
+            : Array(recent)
+        return smoothing(padded, passes: smoothingPasses)
+    }
+
+    /// 隣と混ぜてトゲを丸める（幅方向の移動平均）。両端は自分で埋める。
+    static func smoothing(_ history: [CGFloat], passes: Int) -> [CGFloat] {
+        var result = history
+        guard result.count > 2 else { return result }
+        for _ in 0..<passes {
+            var next = result
+            for index in result.indices {
+                let before = result[max(0, index - 1)]
+                let here = result[index]
+                let after = result[min(result.count - 1, index + 1)]
+                next[index] = before * 0.25 + here * 0.5 + after * 0.25
+            }
+            result = next
+        }
+        return result
     }
 
     /// 波の位相。**コマが 1 つ届くと、波はちょうど 1 コマぶん左へ流れる。**
@@ -81,7 +118,8 @@ struct LiveWaveformView: View {
         let position = min(1, max(0, x)) * CGFloat(history.count - 1)
         let index = min(history.count - 2, max(0, Int(position)))
         let weight = (1 - cos((position - CGFloat(index)) * .pi)) / 2
-        let level = history[index] * (1 - weight) + history[index + 1] * weight
+        let raw = history[index] * (1 - weight) + history[index + 1] * weight
+        let level = min(1, raw * gain)
         return idleBase + level * (1 - idleBase)
     }
 
