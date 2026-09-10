@@ -33,9 +33,12 @@ struct PulseLinesView: View {
         let opacity: CGFloat     // 稜線の濃さ（塗りはこれを薄めたもの）
     }
 
+    /// **流れる速さは «忙しい» の本体**（Issue #166）。0.1 秒のコマ間でどれだけ形が
+    /// 変わるかはほぼこの値だけで決まる。脈は周期が数秒あるのでコマ間には効かない。
+    /// 速すぎると感じたらまずここを下げる——脈を一緒に下げても効き目は薄い。
     private static let waves = [
-        Wave(amplitude: 0.62, cycles: 1.2, speed: 1.4, phase: 0, opacity: 1.0),
-        Wave(amplitude: 0.46, cycles: 1.8, speed: -1.0, phase: 1.3, opacity: 0.55),
+        Wave(amplitude: 0.62, cycles: 1.2, speed: 0.45, phase: 0, opacity: 1.0),
+        Wave(amplitude: 0.46, cycles: 1.8, speed: -0.32, phase: 1.3, opacity: 0.55),
     ]
 
     /// 稜線の太さ。**2 つとも同じ**にする（違えると «別々のもの» に見える）。
@@ -56,14 +59,13 @@ struct PulseLinesView: View {
     private static let calmCeiling: CGFloat = 0.30
     /// 無音のときに振幅が脈打つ速さ（ラジアン/秒）。凪ぐと遅くなる。
     ///
-    /// **面を持たせてから速さの意味が変わった**（Issue #164）。棒を並べていた頃と
-    /// 同じ値でも、塗りが付くと画面で動く «量» が増えて忙しなく——落ち着かない見え方に
-    /// なる。北極星の「邪魔をしない」に寄せて、はっきり遅くしてある。
-    static let idlePulseSpeed: Double = 1.0
-    static let calmPulseSpeed: Double = 0.45
+    /// **0 近くまで落とさない。** «波が脈打つ感じ» が最初の要望そのものなので、
+    /// 録音中に一往復ぶんは呼吸させる（0.7 で周期およそ 9 秒）。
+    static let idlePulseSpeed: Double = 0.7
+    static let calmPulseSpeed: Double = 0.3
     /// 凪ぎ切ったときの波が流れる速さ。**基準より十分遅くする**——近いと凪いだことが
     /// 分からない。
-    static let calmWaveSpeed: Double = 0.6
+    static let calmWaveSpeed: Double = 0.2
     /// 送り出しで右へ動かす距離（幅に対する比）。**画面の外まで飛ばさない**——
     /// 挿入できたと確認したわけではないので、«消えていった» 以上のことを言わせない。
     private static let sendTravel: CGFloat = 0.75
