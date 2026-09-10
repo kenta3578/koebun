@@ -313,7 +313,8 @@ final class RecordingHUDController {
         // 画面より大きいパネルは想定しないが、その場合は左下に寄せる。
         let x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
         let y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
-        return CGPoint(x: x, y: y)
+        // 整数の座標に置く（Issue #154）。ドラッグや画面端のクランプで半端な値になりうる。
+        return CGPoint(x: x.rounded(), y: y.rounded())
     }
 
     // MARK: 経過時間

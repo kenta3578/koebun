@@ -75,7 +75,10 @@ extension RecordingHUDController {
         case .bottomCenter: y = visible.minY + Self.bottomMargin
         case .topCenter:    y = visible.maxY - size.height - Self.topMargin
         }
-        panel.setFrameOrigin(CGPoint(x: visible.midX - size.width / 2, y: y))
+        // **整数の座標に置く。** 半端な座標だと線が半ピクセルにまたがって滲み、
+        // 細い線ほど «エッジが滑らかでない» ように見える（Issue #154）。
+        panel.setFrameOrigin(CGPoint(x: (visible.midX - size.width / 2).rounded(),
+                                     y: y.rounded()))
         needsReposition = false
     }
 

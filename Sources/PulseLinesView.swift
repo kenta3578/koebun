@@ -26,8 +26,8 @@ struct PulseLinesView: View {
     }
 
     private static let lines = [
-        Line(amplitude: 0.70, cycles: 1.2, speed: 2.8, phase: 0, opacity: 1.0, width: 2.0),
-        Line(amplitude: 0.52, cycles: 1.8, speed: -2.1, phase: 1.3, opacity: 0.55, width: 1.8),
+        Line(amplitude: 0.70, cycles: 1.2, speed: 2.8, phase: 0, opacity: 1.0, width: 1.2),
+        Line(amplitude: 0.52, cycles: 1.8, speed: -2.1, phase: 1.3, opacity: 0.55, width: 1.0),
     ]
 
     /// 無音のときに振幅が行き来する範囲。
@@ -39,8 +39,10 @@ struct PulseLinesView: View {
     private static let idleCeiling: CGFloat = 0.58
     /// 無音のときに振幅が脈打つ速さ（ラジアン/秒）。
     static let idlePulseSpeed: Double = 1.8
-    /// 曲線のなめらかさ。増やしても Canvas なので実質のコストは変わらない。
-    private static let samples = 48
+    /// 曲線のなめらかさ。**幅 1pt あたり 2 点以上**を確保する。
+    /// 折れは 8 倍に拡大しても見えなかったが、線を細くすると曲率の高い山で目立ちうるので
+    /// 余裕を持たせてある（Canvas なので実質のコストは変わらない）。
+    private static let samples = 128
 
     /// 各線の流れる向き（テストが «逆向きであること» を確かめる）。
     static var lineSpeeds: [Double] { lines.map(\.speed) }
