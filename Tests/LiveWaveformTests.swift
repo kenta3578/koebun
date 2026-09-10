@@ -13,17 +13,27 @@ struct LiveWaveformTests {
     func louderInputMakesTallerWave() {
         let quiet = LiveWaveformView.history(Array(repeating: 0.05, count: 40))
         let loud = LiveWaveformView.history(Array(repeating: 0.8, count: 40))
-        #expect(LiveWaveformView.amplitude(loud, at: 0.5)
-                > LiveWaveformView.amplitude(quiet, at: 0.5) * 3)
+        #expect(LiveWaveformView.envelope(loud, at: 0.5)
+                > LiveWaveformView.envelope(quiet, at: 0.5) * 1.5)
     }
 
-    /// 0 にすると «落ちた» ように見える。平らな細い線として残す。
-    @Test("無音でも線は消えない")
-    func silenceKeepsAThinLine() {
+    /// 平らな線になると «落ちた» ように見える。黙っていてもうねりは残す（Issue #172）。
+    @Test("黙っていてもうねりが残る")
+    func silenceKeepsUndulating() {
         let silent = LiveWaveformView.history(Array(repeating: 0, count: 40))
-        let value = LiveWaveformView.amplitude(silent, at: 0.5)
-        #expect(value == LiveWaveformView.idleBase)
-        #expect(value > 0)
+        #expect(LiveWaveformView.envelope(silent, at: 0.5) == LiveWaveformView.idleBase)
+        #expect(LiveWaveformView.idleBase > 0.2)
+    }
+
+    /// **波を進めるのはコマ数だけ。** 経過時間から決めると速さのつまみが要る。
+    @Test("コマが 1 つ届くと波は 1 コマぶん流れる")
+    func oneSampleAdvancesTheWaveByOneSlot() {
+        let step = LiveWaveformView.phase(1) - LiveWaveformView.phase(0)
+        let full = 2 * Double.pi * LiveWaveformView.cycles / Double(LiveWaveformView.window)
+        #expect(abs(step - full) < 1e-9)
+        // 窓ぶん届くと、波はちょうど `cycles` 周ぶん流れている。
+        let lap = LiveWaveformView.phase(LiveWaveformView.window) - LiveWaveformView.phase(0)
+        #expect(abs(lap - 2 * .pi * LiveWaveformView.cycles) < 1e-9)
     }
 
     /// 履歴は左が古く右が最新。喋り始めた直後は**右側だけ**が立つ。
@@ -33,8 +43,8 @@ struct LiveWaveformTests {
         levels[levels.count - 1] = 0.9
         levels[levels.count - 2] = 0.9
         let history = LiveWaveformView.history(levels)
-        #expect(LiveWaveformView.amplitude(history, at: 1.0)
-                > LiveWaveformView.amplitude(history, at: 0.2) * 3)
+        #expect(LiveWaveformView.envelope(history, at: 1.0)
+                > LiveWaveformView.envelope(history, at: 0.2) * 1.5)
     }
 
     /// 録音を始めた直後は履歴が足りない。埋めずに描くと幅が縮んで «伸びてくる» 動きになる。
@@ -46,11 +56,11 @@ struct LiveWaveformTests {
     }
 
     /// 範囲外のレベルが来ても、稜線が枠を突き抜けない。
-    @Test("振幅は 0…1 に収まる")
-    func amplitudeStaysInBounds() {
+    @Test("振れ幅は 0…1 に収まる")
+    func envelopeStaysInBounds() {
         let history = LiveWaveformView.history([-3, 0.5, 9, 0.2])
         for step in 0...20 {
-            let value = LiveWaveformView.amplitude(history, at: CGFloat(step) / 20)
+            let value = LiveWaveformView.envelope(history, at: CGFloat(step) / 20)
             #expect(value >= 0 && value <= 1)
         }
     }

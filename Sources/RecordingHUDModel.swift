@@ -62,7 +62,9 @@ final class RecordingHUDModel: ObservableObject {
     }
 
     /// 無音判定を「起動直後の空バッファ」で誤発火させないためのカウンタ。
-    private var pushCount = 0
+    /// レベルが届いた回数。**波を進める唯一の «時計»**（Issue #172）。
+    /// 経過時間で波を動かすと速さのつまみが要る。コマ数なら要らない。
+    @Published private(set) var pushCount = 0
 
     func push(level: Float) {
         levels.removeFirst()
