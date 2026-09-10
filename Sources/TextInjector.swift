@@ -182,7 +182,7 @@ enum TextInjector {
     /// 以前は HUD と履歴が `NSPasteboard` を直接叩いていたので、そこからコピーした
     /// 直後に録音すると、自分のテキストが次の整形プロンプトに混ざっていた（Issue #79）。
     static func copyToPasteboard(_ text: String) {
-        let written = writeToPasteboard(text)
+        _ = writeToPasteboard(text)
     }
 
     /// 結果をクリップボードへ書く。

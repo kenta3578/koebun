@@ -182,7 +182,9 @@ enum HistoryFiles {
     ///
     /// 既定（0755）のままだと、マルチユーザーの Mac で他アカウントから発話の全文と
     /// 音声を読める。`~/koebun` は Desktop や Documents と違い TCC の保護対象外（Issue #81）。
-    private static let privateAttributes: [FileAttributeKey: Any] = [.posixPermissions: 0o700]
+    /// `[FileAttributeKey: Any]` は Sendable でないので `static let` だと共有された可変状態に見える。
+    /// 呼ぶたびに作れば渡す先はローカルの値だけになる（生成コストは無視できる）。
+    private static var privateAttributes: [FileAttributeKey: Any] { [.posixPermissions: 0o700] }
 
     static func createPrivateDirectory(at url: URL) throws {
         try FileManager.default.createDirectory(

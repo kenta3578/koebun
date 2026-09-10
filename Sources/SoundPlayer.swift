@@ -22,7 +22,7 @@ enum SoundPlayer {
             .appendingPathComponent("sounds", isDirectory: true)
     }
 
-    static let supportedExtensions: Set<String> = ["aiff", "aif", "wav", "mp3", "m4a", "caf"]
+    nonisolated static let supportedExtensions: Set<String> = ["aiff", "aif", "wav", "mp3", "m4a", "caf"]
 
     /// `~/koebun/sounds/` にある音の名前（拡張子なし、名前順）。
     static func customSounds() -> [String] {
