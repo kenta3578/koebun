@@ -90,10 +90,11 @@ struct RecordingHUDView: View {
     private var minimalContent: some View {
         HStack(spacing: 6) {
             statusIcon(size: 10, width: 12)
-            // 最小表示でも「生きている」ことが分かるように波形を出す（Issue #148）。
+            // 最小表示でも「生きている」ことが分かるように出す（Issue #148 / #152）。
+            // **棒ではなく線。** 細いバーを並べると «つぶつぶ» に見えて波として読めなかった。
             // **録音中だけ。** 処理中・完了の一瞬まで動かすと、視界の端でちらつく。
             if model.status == .recording {
-                WaveformView(levels: model.compactLevels, color: statusColor)
+                PulseLinesView(level: CGFloat(model.recentPeak), color: statusColor)
                     .frame(width: HUDMetrics.minimalWaveSize.width,
                            height: HUDMetrics.minimalWaveSize.height)
             }
