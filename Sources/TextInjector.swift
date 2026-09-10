@@ -143,6 +143,17 @@ enum TextInjector {
                            hint: .accessibilityPermission)
         }
 
+        // パスワード欄・Secure Keyboard Entry 中は送出そのものが届かない（Issue #104）。
+        // **`FocusSnapshot.capture()` より前に見る。** 安全なテキスト欄は文字数も caret も
+        // 返さないので capture は nil になり、そこからでは「読めないだけ」と区別できない。
+        //
+        // **この経路だけはクリップボードに残さない。** 残すと、パスワードを入れようとしている
+        // 場所の隣に口述文が置かれ、次の ⌘V で意図しない場所へ貼られる。
+        // 結果は履歴に残り、HUD からコピーもできるので失われはしない。
+        if let reason = FocusSnapshot.secureInputReason() {
+            return .failed(reason: reason, hint: .secureInput)
+        }
+
         let before = FocusSnapshot.capture()
 
         if settings.simulateKeypresses {
@@ -446,6 +457,37 @@ private struct FocusSnapshot {
                              characterCount: count,
                              caret: caret,
                              selectionLength: selectionLength)
+    }
+
+    /// 挿入してはいけない状態なら、その理由。挿入してよいなら nil。
+    ///
+    /// 2 つを見る（TN2150 / `swift-macos.md` §4）:
+    ///   1. `IsSecureEventInputEnabled()` — Terminal の Secure Keyboard Entry など。
+    ///      **システム全体で合成入力が届かなくなる**ので、前面アプリを問わず止める
+    ///   2. focused element の subrole が `AXSecureTextField` — パスワード欄
+    ///
+    /// どちらも「送っても届かない」だけでなく、**届いてしまったらパスワード欄に口述文が入る**。
+    /// 送る前に止めるのが唯一の正解。
+    @MainActor
+    static func secureInputReason() -> String? {
+        if IsSecureEventInputEnabled() {
+            return "Secure Keyboard Entry が有効なため入力できません"
+        }
+        if isFocusedElementSecure() {
+            return "パスワード欄には入力しません"
+        }
+        return nil
+    }
+
+    /// フォーカス中の要素がパスワード欄か。読めなければ false（普通の欄として扱う）。
+    @MainActor
+    private static func isFocusedElementSecure() -> Bool {
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, timeout)
+        guard let focused = element(system, kAXFocusedUIElementAttribute) else { return false }
+        AXUIElementSetMessagingTimeout(focused, timeout)
+        guard let subrole = copyAttribute(focused, kAXSubroleAttribute) as? String else { return false }
+        return subrole == (kAXSecureTextFieldSubrole as String)
     }
 
     /// AX の同期 IPC で固まらないよう、応答待ちを打ち切る秒数。

@@ -285,8 +285,8 @@ struct RecordingHUDView: View {
                     .truncationMode(.tail)
             }
             Spacer()
-            if let hint {
-                Button(hint.actionTitle) { hint.perform() }
+            if let hint, let actionTitle = hint.actionTitle {
+                Button(actionTitle) { hint.perform() }
                     .controlSize(.small)
             }
             Button("閉じる", action: onDismiss)
