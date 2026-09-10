@@ -10,6 +10,8 @@ import AppKit
 final class RecordingHUDModel: ObservableObject {
     /// 波形バーの本数（左が古く、右が最新）。
     static let barCount = 56
+    /// 最小表示のバーの本数。34pt にこれ以上入れると波ではなく «点» に見える（Issue #148）。
+    static let compactBarCount = 9
     /// これを超える録音は、キャンセル時に確認を挟む。
     static let cancelConfirmThreshold: TimeInterval = 30
     /// 無音判定に使う直近フレーム数（20fps ≒ 2秒）。
@@ -18,6 +20,21 @@ final class RecordingHUDModel: ObservableObject {
     private static let silenceLevel: Float = 0.02
 
     @Published private(set) var levels: [Float] = Array(repeating: 0, count: barCount)
+
+    /// 最小表示むけに間引いた入力レベル（Issue #148）。
+    ///
+    /// **平均ではなく最大**を採る。レベルメーターは山が見えないと「拾えていない」ように
+    /// 見えるので、9 本に潰すときも各区間のピークを残す。
+    var compactLevels: [Float] {
+        let buckets = Self.compactBarCount
+        guard levels.count >= buckets else { return levels }
+        let size = Double(levels.count) / Double(buckets)
+        return (0..<buckets).map { i in
+            let lower = Int(Double(i) * size)
+            let upper = min(levels.count, Int(Double(i + 1) * size))
+            return levels[lower..<max(lower + 1, upper)].max() ?? 0
+        }
+    }
     @Published private(set) var elapsed: TimeInterval = 0
     /// キャンセル確認を表示中か。
     @Published var isConfirmingCancel = false

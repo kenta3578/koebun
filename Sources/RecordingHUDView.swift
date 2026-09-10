@@ -90,6 +90,12 @@ struct RecordingHUDView: View {
     private var minimalContent: some View {
         HStack(spacing: 6) {
             statusIcon(size: 10, width: 12)
+            // 最小表示でも「生きている」ことが分かるように波形を出す（Issue #148）。
+            // **録音中だけ。** 処理中・完了の一瞬まで動かすと、視界の端でちらつく。
+            if model.status == .recording {
+                WaveformView(levels: model.compactLevels, color: statusColor)
+                    .frame(width: 34, height: 14)
+            }
             Text(model.elapsedText)
                 .font(.system(size: 11, design: .monospaced))
                 .monospacedDigit()
@@ -278,8 +284,8 @@ private struct WaveformView: View {
                 let time = timeline.date.timeIntervalSinceReferenceDate
 
                 for (index, level) in levels.enumerated() {
-                    let height = max(2, Self.ratio(level: CGFloat(level), index: index, at: time)
-                                        * size.height)
+                    let height = max(2, Self.ratio(level: CGFloat(level), index: index,
+                                                   of: levels.count, at: time) * size.height)
                     let rect = CGRect(x: CGFloat(index) * slot + (slot - barWidth) / 2,
                                       y: mid - height / 2,
                                       width: barWidth,
@@ -297,20 +303,25 @@ private struct WaveformView: View {
     /// **実レベルが上がるほど待機の波を引っ込める。** 単純に大きい方を採ると、
     /// 待機の波より小さい入力（ささやき声）が波に隠れて「拾えていない」ように見える。
     /// `idleFadeLevel` を超えたら待機の波は 0 になり、**表示は実レベルそのものになる**。
-    private static func ratio(level: CGFloat, index: Int, at time: TimeInterval) -> CGFloat {
+    private static func ratio(level: CGFloat, index: Int, of count: Int,
+                             at time: TimeInterval) -> CGFloat {
         let fade = max(0, 1 - level / idleFadeLevel)
-        return max(level, idleHeight(index: index, at: time) * fade)
+        return max(level, idleHeight(index: index, of: count, at: time) * fade)
     }
 
     /// 無音のときの高さ。バーごとに位相をずらして波が流れて見えるようにする。
     ///
+    /// **本数は引数で受ける**（`RecordingHUDModel.barCount` を直接見ない）。最小表示は
+    /// 同じ絵を 9 本に間引いて出すので、固定値だと波の周期と両端の窓がずれる（Issue #148）。
+    ///
     /// 中央ほど振幅が大きくなる窓（`sin`）を掛けて両端を細くしている。
     /// 掛けないと端でバーが唐突に切れて、波ではなく «並んだ棒» に見える。
-    private static func idleHeight(index: Int, at time: TimeInterval) -> CGFloat {
-        let step = 2 * Double.pi * idleCycles / Double(RecordingHUDModel.barCount)
+    private static func idleHeight(index: Int, of count: Int, at time: TimeInterval) -> CGFloat {
+        guard count > 1 else { return idleBase }
+        let step = 2 * Double.pi * idleCycles / Double(count)
         let phase = time * idleSpeed - Double(index) * step
         let wave = (sin(phase) + 1) / 2
-        let envelope = sin(Double(index) / Double(RecordingHUDModel.barCount - 1) * .pi)
+        let envelope = sin(Double(index) / Double(count - 1) * .pi)
         return (idleBase + idleAmplitude * CGFloat(wave)) * CGFloat(envelope)
     }
 }
