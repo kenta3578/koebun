@@ -21,6 +21,22 @@ final class RecordingHUDModel: ObservableObject {
 
     @Published private(set) var levels: [Float] = Array(repeating: 0, count: barCount)
 
+    /// 挿入へ送り出した時刻（Issue #158）。**nil なら送り出していない。**
+    ///
+    /// 実測では 411 件中 409 件が `.uncertain`——ターミナルは Accessibility が
+    /// 何も返さないので «入ったか» を確認できない。**確認したと嘘をつかずに、
+    /// 「送り出した」ことだけを見せる**ために、波が流れて消える動きを持たせる。
+    @Published var sendingStartedAt: Date?
+
+    /// 送り出しの動きにかける時間。
+    static let sendDuration: TimeInterval = 0.42
+
+    /// 波を出すか。録音中・文字起こし中と、送り出しの動きの最中（Issue #158）。
+    var showsWave: Bool {
+        if sendingStartedAt != nil { return true }
+        return status == .recording || status == .processing
+    }
+
     /// 直近の入力レベル（0…1）。線の振幅を駆動する（Issue #152）。
     ///
     /// **平均ではなく直近の窓のピーク**を採る。平均だと語と語の切れ目で振幅が落ち込み、
@@ -75,6 +91,7 @@ final class RecordingHUDModel: ObservableObject {
         pushCount = 0
         isConfirmingCancel = false
         pendingResult = nil
+        sendingStartedAt = nil
         isHovering = false
     }
 

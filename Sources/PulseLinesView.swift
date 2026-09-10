@@ -17,6 +17,8 @@ import SwiftUI
 struct PulseLinesView: View {
     /// 直近の入力レベル（0…1）。
     let level: CGFloat
+    /// 挿入へ送り出した時刻。nil なら送り出していない（Issue #158）。
+    var sendingStartedAt: Date?
     let color: Color
 
     /// 波 1 つぶんの形。**向き（`speed` の符号）を変えるのが肝**で、同じ向きだと
@@ -48,6 +50,10 @@ struct PulseLinesView: View {
     private static let idleCeiling: CGFloat = 0.58
     /// 無音のときに振幅が脈打つ速さ（ラジアン/秒）。
     static let idlePulseSpeed: Double = 1.8
+    /// 送り出しで右へ動かす距離（幅に対する比）。**画面の外まで飛ばさない**——
+    /// 挿入できたと確認したわけではないので、«消えていった» 以上のことを言わせない。
+    private static let sendTravel: CGFloat = 0.75
+
     /// 曲線のなめらかさ。**幅 1pt あたり 2 点以上**を確保する。
     /// 折れは 8 倍に拡大しても見えなかったが、線を細くすると曲率の高い山で目立ちうるので
     /// 余裕を持たせてある（Canvas なので実質のコストは変わらない）。
@@ -61,7 +67,17 @@ struct PulseLinesView: View {
         TimelineView(.animation) { timeline in
             Canvas { context, size in
                 let time = timeline.date.timeIntervalSinceReferenceDate
-                let drive = Self.drive(level: level, at: time)
+                // 送り出しの進み（0…1）。1 になったら何も描かない。
+                let sending = Self.sendProgress(from: sendingStartedAt, at: timeline.date)
+                guard sending < 1 else { return }
+                // **先に動かし、あとから畳む。** 同時に始めると平らになるのが速すぎて
+                // «流れて出ていく» に見えず、その場でしぼんだようになる。
+                let travel = pow(sending, 0.55)            // 出だしを速く
+                let collapse = pow(sending, 1.7)           // 畳むのは後半で
+                let drive = Self.drive(level: level, at: time) * (1 - collapse)
+                let shift = size.width * Self.sendTravel * travel
+                let fade = 1 - pow(sending, 1.4)
+                context.translateBy(x: shift, y: 0)
                 for wave in Self.waves {
                     let crest = Self.path(wave, drive: drive, in: size, at: time)
                     // **先に面、あとから稜線。** 逆にすると塗りが線を覆って輪郭がぼける。
@@ -69,17 +85,25 @@ struct PulseLinesView: View {
                     // ピルの中で «四角い塊» に見える（水面らしさが消える）。
                     context.fill(Self.filled(crest, in: size),
                                  with: .linearGradient(
-                                    Gradient(colors: [color.opacity(wave.opacity * Self.fillRatio),
+                                    Gradient(colors: [color.opacity(wave.opacity * Self.fillRatio * fade),
                                                       color.opacity(0)]),
                                     startPoint: CGPoint(x: 0, y: 0),
                                     endPoint: CGPoint(x: 0, y: size.height)))
-                    context.stroke(crest, with: .color(color.opacity(wave.opacity)),
+                    context.stroke(crest, with: .color(color.opacity(wave.opacity * fade)),
                                    style: StrokeStyle(lineWidth: Self.strokeWidth,
                                                       lineCap: .round, lineJoin: .round))
                 }
             }
         }
         .accessibilityLabel("入力レベル")
+    }
+
+    /// 送り出しの進み（0…1）。まだ送り出していなければ 0。
+    static func sendProgress(from start: Date?, at now: Date) -> CGFloat {
+        guard let start else { return 0 }
+        let elapsed = now.timeIntervalSince(start)
+        guard elapsed > 0 else { return 0 }
+        return min(1, CGFloat(elapsed / RecordingHUDModel.sendDuration))
     }
 
     /// 振幅の倍率。**無音のときは脈打ち、喋れば入力レベルが勝つ。**

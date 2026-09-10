@@ -92,9 +92,14 @@ struct RecordingHUDView: View {
             statusIcon(size: 10, width: 12)
             // 最小表示でも「生きている」ことが分かるように出す（Issue #148 / #152）。
             // **棒ではなく線。** 細いバーを並べると «つぶつぶ» に見えて波として読めなかった。
-            // **録音中だけ。** 処理中・完了の一瞬まで動かすと、視界の端でちらつく。
-            if model.status == .recording {
-                PulseLinesView(level: CGFloat(model.recentPeak), color: statusColor)
+            //
+            // **録音中から送り出しまで途切れさせない**（Issue #158）。以前は録音中だけに
+            // していたが、止めた瞬間に波が消えると «送り出した» 動きが作れない。
+            // 出しっぱなしではなく、送り出しの動きが終わったら自分で消える。
+            if model.showsWave {
+                PulseLinesView(level: CGFloat(model.recentPeak),
+                               sendingStartedAt: model.sendingStartedAt,
+                               color: statusColor)
                     .frame(width: HUDMetrics.minimalWaveSize.width,
                            height: HUDMetrics.minimalWaveSize.height)
             }
