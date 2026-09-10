@@ -22,7 +22,8 @@ AppKit の実画面・モデル・TCC に依存しない **純 Swift のロジ�
 | `FailureHintTests` | 失敗の手がかりの契約（ボタンを出す／出さない・状態まで運ばれるか） |
 | `ReplacementsTests` | 辞書置換の 1 パス最長一致 |
 | `FillerRemoverTests` | フィラー除去。「残す」側（指示語・連語）を重点的に |
-| `PasteboardTests` | 機密マーカーの type 名・全 type の退避と復元（名前付きペーストボードで隔離） |
+| `PasteboardTests` | 全 type の退避と復元（名前付きペーストボードで隔離） |
+| `PasteboardMarkerTests` | クリップボードに立てる目印。挿入用（4 つ）とユーザーのコピー（Concealed のみ）の違い |
 | `HotKeyJudgeTests` | 修飾キーの左右区別・合成イベント・複数修飾キーの正規化 |
 
 ## 置かないもの
