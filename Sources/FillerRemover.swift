@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import os
 
 /// フィラー（えっと・あの・まあ…）を決定的に取り除く軽整形（Issue #59）。
 ///
@@ -132,7 +133,7 @@ final class FillerStore: ObservableObject {
             let backup = url.appendingPathExtension("broken")
             try? FileManager.default.removeItem(at: backup)
             try? FileManager.default.moveItem(at: url, to: backup)
-            NSLog("koebun: fillers.json の読み込みに失敗したため \(backup.lastPathComponent) へ退避しました: \(error)")
+            Log.store.error("fillers.json を読めないため退避しました: \(backup.lastPathComponent) / \(error.localizedDescription)")
             return .default
         }
     }
@@ -146,7 +147,7 @@ final class FillerStore: ObservableObject {
             encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
             try encoder.encode(list).write(to: url, options: .atomic)
         } catch {
-            NSLog("koebun: fillers.json の保存に失敗しました: \(error)")
+            Log.store.error("fillers.json を保存できませんでした: \(error.localizedDescription)")
         }
     }
 }

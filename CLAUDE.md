@@ -83,5 +83,6 @@ xcodebuild test -project koebun.xcodeproj -scheme koebun \
 pgrep -x koebun                                     # 起動確認
 ./scripts/kpi.sh                                    # 北極星の KPI（平日の挿入回数）を履歴から集計
 tccutil reset Accessibility com.kenta3578.koebun    # 権限トグルが効かないときの一度きりのリセット
+log stream --predicate 'subsystem == "com.kenta3578.koebun"' --level info   # ログ（category: audio/asr/hotkey/history/store/inject）
 gh issue list --state open                          # 候補プール（ai_docs ではなく Issue に置く）
 ```

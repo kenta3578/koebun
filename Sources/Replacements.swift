@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// 辞書置換の1ルール。
 ///
@@ -117,7 +118,7 @@ final class ReplacementStore: ObservableObject {
             let backup = url.appendingPathExtension("broken")
             try? FileManager.default.removeItem(at: backup)
             try? FileManager.default.moveItem(at: url, to: backup)
-            NSLog("koebun: replacements.json の読み込みに失敗したため \(backup.lastPathComponent) へ退避しました: \(error)")
+            Log.store.error("replacements.json を読めないため退避しました: \(backup.lastPathComponent) / \(error.localizedDescription)")
             return defaultRules
         }
     }
@@ -133,7 +134,7 @@ final class ReplacementStore: ObservableObject {
             encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
             try encoder.encode(rules).write(to: url, options: .atomic)
         } catch {
-            NSLog("koebun: replacements.json の保存に失敗しました: \(error)")
+            Log.store.error("replacements.json を保存できませんでした: \(error.localizedDescription)")
         }
     }
 }

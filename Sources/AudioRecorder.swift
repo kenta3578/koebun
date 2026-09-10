@@ -177,7 +177,7 @@ final class AudioRecorder {
 
         guard status != .error, let channel = out.floatChannelData else {
             // 無言で捨てると「録音したのに（無音）」の原因が追えなくなる。
-            if let error { NSLog("koebun: 音声の変換に失敗しました: \(error)") }
+            if let error { Log.audio.error("音声の変換に失敗しました: \(error.localizedDescription)") }
             return
         }
         let frames = Int(out.frameLength)
