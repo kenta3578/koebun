@@ -1,9 +1,14 @@
 import SwiftUI
 
-/// 重なり合ってうねる 2 本の線（Issue #152）。
+/// 重なり合ってうねる 2 つの波（Issue #152 / #156）。
 ///
-/// 棒を並べる `WaveformView` は、細いバーだと «つぶつぶ» に見えて波として読めなかった。
-/// 線を 2 本、**周期と速さと向きを変えて**重ねると、交差しながらうねる 1 つの動きになる。
+/// 棒を並べる形は、細いバーだと «つぶつぶ» に見えて波として読めなかった。
+/// 線だけにしたら今度は **«ミミズ» に見えた**——細い線が 2 本バラバラに交差すると、
+/// 面が無いぶん «泳いでいる 2 匹» として読まれる。
+///
+/// **線の下を薄く塗って面を持たせると «水面» として読める。** 線は稜線になり、
+/// 2 層が重なることで奥行きが出る。太さは 2 本とも同じにする——違えると
+/// «別々のもの» に見えて、また 2 匹に戻る。
 ///
 /// 入力レベルで振幅が変わるので、**喋れば大きく揺れる**。無音のときは `idleFloor` ぶんだけ
 /// 残った振幅がゆっくり脈打つので、「録音は生きている」ことが視界の端でも分かる。
@@ -14,21 +19,25 @@ struct PulseLinesView: View {
     let level: CGFloat
     let color: Color
 
-    /// 1 本ぶんの形。**向き（`speed` の符号）を変えるのが肝**で、同じ向きだと
-    /// 2 本が平行に流れるだけで «重なり合う» に見えない。
-    private struct Line {
+    /// 波 1 つぶんの形。**向き（`speed` の符号）を変えるのが肝**で、同じ向きだと
+    /// 2 つが平行に流れるだけで «重なり合う» に見えない。
+    private struct Wave {
         let amplitude: CGFloat   // 高さに対する振幅
         let cycles: Double       // 幅に入れる波の数
         let speed: Double        // 流れる速さ（負なら逆向き）
         let phase: Double        // 位相のずらし
-        let opacity: CGFloat
-        let width: CGFloat
+        let opacity: CGFloat     // 稜線の濃さ（塗りはこれを薄めたもの）
     }
 
-    private static let lines = [
-        Line(amplitude: 0.70, cycles: 1.2, speed: 2.8, phase: 0, opacity: 1.0, width: 1.2),
-        Line(amplitude: 0.52, cycles: 1.8, speed: -2.1, phase: 1.3, opacity: 0.55, width: 1.0),
+    private static let waves = [
+        Wave(amplitude: 0.62, cycles: 1.2, speed: 2.4, phase: 0, opacity: 1.0),
+        Wave(amplitude: 0.46, cycles: 1.8, speed: -1.8, phase: 1.3, opacity: 0.55),
     ]
+
+    /// 稜線の太さ。**2 つとも同じ**にする（違えると «別々のもの» に見える）。
+    private static let strokeWidth: CGFloat = 1.2
+    /// 塗りの濃さ（稜線の `opacity` に対する比）。濃くすると «塗りつぶし» になって波に見えない。
+    private static let fillRatio: CGFloat = 0.22
 
     /// 無音のときに振幅が行き来する範囲。
     ///
@@ -44,8 +53,8 @@ struct PulseLinesView: View {
     /// 余裕を持たせてある（Canvas なので実質のコストは変わらない）。
     private static let samples = 128
 
-    /// 各線の流れる向き（テストが «逆向きであること» を確かめる）。
-    static var lineSpeeds: [Double] { lines.map(\.speed) }
+    /// 各波の流れる向き（テストが «逆向きであること» を確かめる）。
+    static var lineSpeeds: [Double] { waves.map(\.speed) }
 
     var body: some View {
         // **HUD が見えている間しか描かれない。** 録音中しか出さないので常駐コストは増えない。
@@ -53,10 +62,19 @@ struct PulseLinesView: View {
             Canvas { context, size in
                 let time = timeline.date.timeIntervalSinceReferenceDate
                 let drive = Self.drive(level: level, at: time)
-                for line in Self.lines {
-                    context.stroke(Self.path(line, drive: drive, in: size, at: time),
-                                   with: .color(color.opacity(line.opacity)),
-                                   style: StrokeStyle(lineWidth: line.width,
+                for wave in Self.waves {
+                    let crest = Self.path(wave, drive: drive, in: size, at: time)
+                    // **先に面、あとから稜線。** 逆にすると塗りが線を覆って輪郭がぼける。
+                    // 下へフェードさせる。べた塗りだと下端が直線で切れて、
+                    // ピルの中で «四角い塊» に見える（水面らしさが消える）。
+                    context.fill(Self.filled(crest, in: size),
+                                 with: .linearGradient(
+                                    Gradient(colors: [color.opacity(wave.opacity * Self.fillRatio),
+                                                      color.opacity(0)]),
+                                    startPoint: CGPoint(x: 0, y: 0),
+                                    endPoint: CGPoint(x: 0, y: size.height)))
+                    context.stroke(crest, with: .color(color.opacity(wave.opacity)),
+                                   style: StrokeStyle(lineWidth: Self.strokeWidth,
                                                       lineCap: .round, lineJoin: .round))
                 }
             }
@@ -71,7 +89,7 @@ struct PulseLinesView: View {
         return max(level, idle)
     }
 
-    private static func path(_ line: Line, drive: CGFloat,
+    private static func path(_ wave: Wave, drive: CGFloat,
                             in size: CGSize, at time: TimeInterval) -> Path {
         var path = Path()
         let mid = size.height / 2
@@ -79,11 +97,20 @@ struct PulseLinesView: View {
             let x = Double(step) / Double(samples)
             // 両端を窓で細くする。掛けないと端で線が唐突に切れて «帯» に見える。
             let envelope = sin(x * .pi)
-            let phase = time * line.speed + x * 2 * .pi * line.cycles + line.phase
-            let y = mid + line.amplitude * drive * CGFloat(sin(phase) * envelope) * size.height / 2
+            let phase = time * wave.speed + x * 2 * .pi * wave.cycles + wave.phase
+            let y = mid + wave.amplitude * drive * CGFloat(sin(phase) * envelope) * size.height / 2
             let point = CGPoint(x: CGFloat(x) * size.width, y: y)
             if step == 0 { path.move(to: point) } else { path.addLine(to: point) }
         }
+        return path
+    }
+
+    /// 稜線の下を閉じて «水面» にする。SwiftUI の座標は下が `size.height`。
+    private static func filled(_ crest: Path, in size: CGSize) -> Path {
+        var path = crest
+        path.addLine(to: CGPoint(x: size.width, y: size.height))
+        path.addLine(to: CGPoint(x: 0, y: size.height))
+        path.closeSubpath()
         return path
     }
 }
