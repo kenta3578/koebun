@@ -10,9 +10,8 @@ import AppKit
 final class RecordingHUDModel: ObservableObject {
     /// 波形バーの本数（左が古く、右が最新）。
     static let barCount = 56
-    /// 最小表示のバーの本数。52pt に対してこの本数（Issue #148 / #150）。
-    /// 増やすと 1 本が細くなり、波ではなく «点» に見える。
-    static let compactBarCount = 11
+    /// 直近ピークを取る窓（`levels` の末尾何本を見るか）。20 本 ≒ 1 秒。
+    static let peakWindow = 12
     /// これを超える録音は、キャンセル時に確認を挟む。
     static let cancelConfirmThreshold: TimeInterval = 30
     /// 無音判定に使う直近フレーム数（20fps ≒ 2秒）。
@@ -22,20 +21,12 @@ final class RecordingHUDModel: ObservableObject {
 
     @Published private(set) var levels: [Float] = Array(repeating: 0, count: barCount)
 
-    /// 最小表示むけに間引いた入力レベル（Issue #148）。
+    /// 直近の入力レベル（0…1）。線の振幅を駆動する（Issue #152）。
     ///
-    /// **平均ではなく最大**を採る。レベルメーターは山が見えないと「拾えていない」ように
-    /// 見えるので、9 本に潰すときも各区間のピークを残す。
-    var compactLevels: [Float] {
-        let buckets = Self.compactBarCount
-        guard levels.count >= buckets else { return levels }
-        let size = Double(levels.count) / Double(buckets)
-        return (0..<buckets).map { i in
-            let lower = Int(Double(i) * size)
-            let upper = min(levels.count, Int(Double(i + 1) * size))
-            return levels[lower..<max(lower + 1, upper)].max() ?? 0
-        }
-    }
+    /// **平均ではなく直近の窓のピーク**を採る。平均だと語と語の切れ目で振幅が落ち込み、
+    /// 喋っている最中に線が縮んで «止まった» ように見える。
+    var recentPeak: Float { levels.suffix(Self.peakWindow).max() ?? 0 }
+
     @Published private(set) var elapsed: TimeInterval = 0
     /// キャンセル確認を表示中か。
     @Published var isConfirmingCancel = false
