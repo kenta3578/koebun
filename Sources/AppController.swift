@@ -280,7 +280,7 @@ final class AppController {
             outcome: outcome,
             text: text,
             showResultPanel: SettingsStore.shared.showResultPanel,
-            resultLocation: SettingsStore.shared.resultLocationDescription)
+            resultLocation: SettingsStore.shared.resultLocationDescription(isFailure:))
 
         let completion = guardState.finish(generation: generation,
                                            status: presentation.status,

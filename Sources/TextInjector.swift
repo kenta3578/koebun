@@ -176,9 +176,18 @@ enum TextInjector {
 
         let outcome = await verifyAfterSettle(text: text, before: before)
 
-        // 成功したら復元する。非成功でも「結果を残さない」設定なら復元する（結果は HUD 側に残る）。
-        // keepResult かつ非成功のときだけ復元しない＝結果がクリップボードに残り、手動で貼れる。
-        if outcome.isSucceeded || !keepResult {
+        // **クリップボードに残すのは「本当に失敗した」ときだけ**（Issue #143）。
+        //
+        // 以前は「成功と確認できたとき以外」は残していたが、主戦場のターミナルは
+        // Accessibility が文字数も caret も返さないので `verifyAfterSettle` は必ず
+        // `.uncertain` になる。実測 411 件のうち `.succeeded` は 2 件で、**99.5% が
+        // 復元されない経路を通っていた**——つまり口述のたびに直前のコピーが失われ、
+        // 発話内容がクリップボードに残り続けていた（Issue #79 の復元が一度も走らない）。
+        //
+        // `.uncertain` は「送出は済んだ・確認手段が無いだけ」なので、貼れている可能性の方が
+        // 高い。結果は履歴に必ず残る（Issue #13 の懸念は履歴が無かった当時のもの）ので、
+        // クリップボードは戻す方が損が小さい。
+        if !outcome.isFailure || !keepResult {
             scheduleClipboardRestore(previous: previous, writtenChangeCount: writtenChangeCount)
         }
 

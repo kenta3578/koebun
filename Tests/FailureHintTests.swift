@@ -23,7 +23,7 @@ struct FailureHintTests {
             outcome: .failed(reason: "パスワード欄には入力しません", hint: .secureInput),
             text: "秘密",
             showResultPanel: true,
-            resultLocation: "履歴")
+            resultLocation: { _ in "履歴" })
         #expect(p.status.isFailed)
         guard case .failed(_, let hint) = p.status else {
             Issue.record("failed でない")

@@ -9,7 +9,7 @@ struct InsertionPresentationTests {
                       showResultPanel: Bool = true) -> InsertionPresentation {
         InsertionPresentation.make(outcome: outcome, text: text,
                                    showResultPanel: showResultPanel,
-                                   resultLocation: "クリップボード")
+                                   resultLocation: { $0 ? "クリップボード" : "履歴" })
     }
 
     @Test("空テキストは無音として完了表示")
@@ -46,7 +46,9 @@ struct InsertionPresentationTests {
         let p = make(.uncertain(detail: "AX で読めない"))
         #expect(!p.status.isFailed)
         // 見出しは「何が起きたか」、括弧内が「なぜ確認できないか」、末尾に結果の残し先。
-        #expect(p.status == .done(message: "挿入しました（AX で読めない）。結果はクリップボードに残しています"))
+        // **残し先は「履歴」。** uncertain ではクリップボードを元に戻すので、
+        // 「クリップボードに残しています」と言うと嘘になる（Issue #143）。
+        #expect(p.status == .done(message: "挿入しました（AX で読めない）。結果は履歴に残しています"))
         #expect(p.hud == .keepResult)
     }
 
@@ -54,6 +56,16 @@ struct InsertionPresentationTests {
     func uncertainWithoutPanel() {
         let p = make(.uncertain(detail: "x"), showResultPanel: false)
         #expect(p.hud == .finish)
+    }
+
+    /// Issue #143 の芯。ターミナルでは `.uncertain` が常態（実測 411 件中 409 件）なので、
+    /// ここで失敗と同じ扱いをすると毎回クリップボードが壊れる。
+    @Test("失敗と uncertain で結果の残し先が変わる")
+    func locationDependsOnFailure() {
+        let uncertain = make(.uncertain(detail: "x"))
+        let failed = make(.failed(reason: "貼れませんでした"))
+        #expect(uncertain.status == .done(message: "挿入しました（x）。結果は履歴に残しています"))
+        #expect(failed.status == .failed(reason: "貼れませんでした。結果はクリップボードに残しています"))
     }
 
     /// 整形（#131 で削除）を通していた頃は、成功でも `.warned` に落ちる経路があった。
