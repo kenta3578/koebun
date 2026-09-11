@@ -16,8 +16,8 @@ struct LevelBarsTests {
         #expect(heights.allSatisfy { $0 == LevelBarsView.barWidth })
     }
 
-    /// レベルは −50dB…0dB を 0…1 に写した値で、通常の発話は 0.3〜0.6。
-    @Test("通常の発話の上の端で形いっぱいになる")
+    /// 実測で声の窓は p95 0.28（Issue #187）。大きめの声で形いっぱいになる。
+    @Test("大きめの声で形いっぱいになる")
     func speechFillsTheProfile() {
         #expect(LevelBarsView.heights(level: LevelBarsView.fullLevel, isProcessing: false) == LevelBarsView.voiceProfile)
         #expect(LevelBarsView.heights(level: 1, isProcessing: false) == LevelBarsView.voiceProfile)
@@ -67,17 +67,35 @@ struct LevelBarsTests {
     }
 
     /// 普段の声でくすんだままだと «差が弱い»（Issue #184）。色は高さより先に赤になりきる。
+    /// 実測の普段の声（p50 0.16、Issue #187）でも赤になりきること。
     @Test("通常の発話で赤になりきる")
     func normalSpeechIsFullyRed() {
         #expect(LevelBarsView.colorFullLevel <= 0.3)
         #expect(LevelBarsView.colorFullLevel < LevelBarsView.fullLevel)
         #expect(LevelBarsView.muting(level: 0.3, isProcessing: false) == 0)
+        #expect(LevelBarsView.muting(level: 0.16, isProcessing: false) == 0)
+    }
+
+    /// 環境音（窓の 64% が 0.05 未満、Issue #187）で棒が伸びたり赤くなったりしない。
+    @Test("環境音では棒も色も動かない")
+    func ambientNoiseMovesNothing() {
+        let ambient = LevelBarsView.voiceFloor - 0.01
+        #expect(LevelBarsView.heights(level: ambient, isProcessing: false).allSatisfy { $0 == LevelBarsView.barWidth })
+        #expect(LevelBarsView.muting(level: ambient, isProcessing: false) == LevelBarsView.quietMuting)
+    }
+
+    /// 基準は想定ではなく実測から決める（Issue #187）。声の窓は p50 0.16 / p90 0.26 / p99 0.33。
+    @Test("基準は実測の声の範囲に収まる")
+    func thresholdsMatchMeasuredSpeech() {
+        #expect(LevelBarsView.colorFullLevel <= 0.16)
+        #expect(LevelBarsView.fullLevel >= 0.26 && LevelBarsView.fullLevel <= 0.33)
+        #expect(LevelBarsView.voiceFloor < LevelBarsView.colorFullLevel)
     }
 
     /// 二択で切り替えるとチカチカする。色は音量から連続的に変わる。
     @Test("色は音量から連続的に変わる")
     func tintChangesContinuously() {
-        let values = stride(from: Float(0), through: LevelBarsView.colorFullLevel, by: 0.01)
+        let values = stride(from: Float(0), through: LevelBarsView.colorFullLevel, by: 0.005)
             .map { LevelBarsView.muting(level: $0, isProcessing: false) }
         let steps = zip(values, values.dropFirst()).map { $0 - $1 }
         #expect(steps.allSatisfy { $0 >= 0 })      // 喋るほど減る
@@ -87,6 +105,42 @@ struct LevelBarsTests {
     @Test("文字起こし中の青はくすませない")
     func processingIsNotMuted() {
         #expect(LevelBarsView.muting(level: 0, isProcessing: true) == 0)
+    }
+
+    /// 起動音をマイクが拾う（Issue #186）。鳴っているあいだに届いた音量は棒に見せない。
+    @Test("起動音のあいだに届いた音量は棒に出さない")
+    func startSoundIsIgnored() {
+        let model = RecordingHUDModel()
+        let start = Date()
+        model.ignoreLevels(until: start.addingTimeInterval(0.46))
+        model.push(level: 0.46, now: start.addingTimeInterval(0.2))
+        #expect(model.currentLevel == 0)
+        model.push(level: 0.16, now: start.addingTimeInterval(0.6))
+        #expect(model.currentLevel == 0.16)
+    }
+
+    /// 実測で起動音（0.21 秒）は最も遅いもので開始から 354ms 地点に終わっていた。
+    @Test("無視する長さは実測の起動音の終わりを覆う")
+    func ignoreWindowCoversMeasuredChime() {
+        #expect(0.21 + RecordingHUDController.soundLatencyMargin >= 0.354)
+    }
+
+    /// 次の録音に持ち越さない。
+    @Test("リセットすると無視は解ける")
+    func resetClearsIgnore() {
+        let model = RecordingHUDModel()
+        model.ignoreLevels(until: Date().addingTimeInterval(60))
+        model.reset()
+        model.push(level: 0.2)
+        #expect(model.currentLevel == 0.2)
+    }
+
+    /// 音量はアプリ中の «起動音を無視していない» 状態ではそのまま出る。
+    @Test("無視していなければ届いた音量はそのまま出る")
+    func levelsPassThroughWithoutIgnore() {
+        let model = RecordingHUDModel()
+        model.push(level: 0.2)
+        #expect(model.currentLevel == 0.2)
     }
 
     /// 音節の切れ目で点に潰れないよう、直近の数回分の最大を使う。窓を過ぎれば下がる。

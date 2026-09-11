@@ -161,6 +161,17 @@ final class RecordingHUDController {
     }
 
     /// 録音レベル（0…1）を波形へ流す。
+    /// 起動音をマイクが拾う分を、棒に見せない（Issue #186）。`show()` の直後に呼ぶ。
+    func ignoreLevels(forSoundOf duration: TimeInterval) {
+        guard duration > 0 else { return }
+        model.ignoreLevels(until: Date().addingTimeInterval(duration + Self.soundLatencyMargin))
+    }
+
+    /// 音の長さに足す余裕。**実測から決めた。** 直近 6 件の録音で、起動音（0.21 秒）は
+    /// 開始から 84〜144ms 遅れて入り、最も遅いもので 354ms 地点に終わっていた。
+    /// 0.21 ＋ 0.25 ＝ 0.46 秒でそこを覆う（鳴らすまでの遅れとバッファ 1 つ分を含む）。
+    static let soundLatencyMargin: TimeInterval = 0.25
+
     func push(level: Float) {
         guard isVisible else { return }
         model.push(level: level)

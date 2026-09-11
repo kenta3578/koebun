@@ -50,9 +50,22 @@ final class RecordingHUDModel: ObservableObject {
     /// 無音判定を「起動直後の空バッファ」で誤発火させないためのカウンタ。
     private var pushCount = 0
 
-    func push(level: Float) {
+    /// この時刻までに届いたレベルは 0 として扱う（Issue #186）。
+    private var ignoreLevelsUntil: Date?
+
+    /// 起動音が鳴っているあいだ、届いたレベルを棒に反映しない（Issue #186）。
+    ///
+    /// 開始処理は «マイク開始 → HUD 表示 → 起動音» の順で、起動音はマイクが録っている最中に鳴る。
+    /// 実測では起動音が声（0.1〜0.2）より大きい 0.46 で録れ、棒が «喋ったように» 膨らんでいた。
+    /// **録音と文字起こしには触らず、棒に見せる値だけを捨てる。**
+    func ignoreLevels(until date: Date) {
+        ignoreLevelsUntil = date
+    }
+
+    func push(level: Float, now: Date = Date()) {
+        let ignored = ignoreLevelsUntil.map { now < $0 } ?? false
         levels.removeFirst()
-        levels.append(min(1, max(0, level)))
+        levels.append(ignored ? 0 : min(1, max(0, level)))
         pushCount += 1
     }
 
@@ -62,6 +75,7 @@ final class RecordingHUDModel: ObservableObject {
 
     func reset() {
         levels = Array(repeating: 0, count: Self.barCount)
+        ignoreLevelsUntil = nil
         elapsed = 0
         pushCount = 0
         isConfirmingCancel = false

@@ -189,7 +189,9 @@ final class AppController {
             // 表示サイズ（非表示/最小/通常）の判断は HUD 側に一本化してある。
             hud.show()
             let start = SettingsStore.shared.startSound
-            SoundPlayer.play(start)
+            // 起動音はマイクが録っている最中に鳴る。その分を棒に見せない（Issue #186）。
+            // 録音・文字起こしには触らない。
+            hud.ignoreLevels(forSoundOf: SoundPlayer.play(start))
         } catch {
             state.update(.failed(reason: "録音開始失敗: \(error.localizedDescription)"))
         }
