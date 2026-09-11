@@ -1,5 +1,6 @@
 import Testing
 import SwiftUI
+import AppKit
 @testable import koebun
 
 /// 最小表示の波形（Issue #170）。
@@ -90,6 +91,47 @@ struct LiveWaveformTests {
     func normalBarsFollowTheLevelOnly() {
         #expect(WaveformView.ratio(level: 0.7) == 0.7)
         #expect(WaveformView.ratio(level: 0) > 0)
+    }
+
+    /// 環境音で紫になると «声を拾った» の意味がなくなる（Issue #176）。
+    @Test("環境音では紫にならない")
+    func ambientNoiseStaysGray() {
+        let ambient = LiveWaveformView.history(Array(repeating: 0.05, count: 40))
+        #expect(LiveWaveformView.voice(ambient, at: 0.5) == 0)
+    }
+
+    /// 通常の発話は 0.3〜0.6。そこでは迷わず紫になり切ること。
+    @Test("発話では紫になり切る")
+    func speechTurnsFullyPurple() {
+        let speaking = LiveWaveformView.history(Array(repeating: 0.4, count: 40))
+        #expect(LiveWaveformView.voice(speaking, at: 0.5) > 0.95)
+    }
+
+    /// **波全体を一斉に切り替えない。** 位置ごとに決めて波と一緒に流す。
+    /// 全体で切り替えると、音節の切れ目（85ms）ごとに色がパカパカ変わる。
+    @Test("色は位置ごとに決まる")
+    func tintIsDecidedPerPosition() {
+        var levels = Array(repeating: Float(0), count: RecordingHUDModel.barCount)
+        for index in (levels.count - 4)..<levels.count { levels[index] = 0.6 }
+        let history = LiveWaveformView.history(levels)
+        #expect(LiveWaveformView.voice(history, at: 1.0) > 0.8)
+        #expect(LiveWaveformView.voice(history, at: 0.2) == 0)
+    }
+
+    /// 状態色（`AppStatus.tintColor`）と被ると意味が衝突する。
+    /// 黄＝読み込み・警告、赤＝録音中、青＝文字起こし中、緑＝完了、橙＝失敗。
+    @Test("声の色は状態色と被らない")
+    func voiceColorAvoidsStatusColors() {
+        let statusColors: [NSColor] = [.systemYellow, .systemRed, .systemBlue, .systemGreen, .systemOrange]
+        #expect(!statusColors.contains(WaveTint.voiceNSColor))
+    }
+
+    /// しきい値の前後で色が段にならないこと（途中の値を取る）。
+    @Test("声らしさはしきい値の前後でなだらかに増える")
+    func voiceAmountRisesSmoothly() {
+        let values = stride(from: CGFloat(0), through: 1, by: 0.05).map { WaveTint.amount(level: $0) }
+        #expect(zip(values, values.dropFirst()).allSatisfy { $0 <= $1 })
+        #expect(values.contains { $0 > 0.2 && $0 < 0.8 })
     }
 
     /// 文字起こし中は新しいレベルが届かない。出しっぱなしだと波形が固まって見える。
