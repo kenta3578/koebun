@@ -64,7 +64,7 @@ struct RecordingHUDView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 10) {
                 statusIcon
-                WaveformView(levels: model.levels, color: statusColor)
+                WaveformView(levels: model.levels)
                     .frame(maxWidth: .infinity, minHeight: 24)
                 Text(model.elapsedText)
                     .font(.system(size: 12, design: .monospaced))
@@ -97,9 +97,10 @@ struct RecordingHUDView: View {
             // していたが、止めた瞬間に波が消えると «送り出した» 動きが作れない。
             // 出しっぱなしではなく、送り出しの動きが終わったら自分で消える。
             if model.showsWave {
+                // 色は状態色ではなく «声を拾ったか» で決める（Issue #176）。
+                // 録音中であることは左のマイクアイコンの赤が示す。
                 LiveWaveformView(levels: model.levels,
-                                 pushCount: model.pushCount,
-                                 color: statusColor)
+                                 pushCount: model.pushCount)
                     .frame(width: HUDMetrics.minimalWaveSize.width,
                            height: HUDMetrics.minimalWaveSize.height)
             }
@@ -270,7 +271,6 @@ struct RecordingHUDView: View {
 /// テストから高さの決め方を確かめられるよう `private` にしていない（Issue #170）。
 struct WaveformView: View {
     let levels: [Float]
-    let color: Color
 
     /// 無音のときの底上げ（高さに対する比）。**谷でもバーが生きている**ようにする。
     /// 0 にすると波の谷が 2pt の点に潰れ、「波」ではなく「点が並んでいる」絵になる。
@@ -288,8 +288,12 @@ struct WaveformView: View {
                                   y: mid - height / 2,
                                   width: barWidth,
                                   height: height)
-                context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2),
-                             with: .color(color))
+                // 声を拾ったバーだけ紫（Issue #176）。灰の上に重ねて、境目をじわっと色づかせる。
+                // 最小表示と同じ規則にそろえる——表示サイズで色の意味が変わらないように。
+                let bar = Path(roundedRect: rect, cornerRadius: barWidth / 2)
+                let voice = WaveTint.amount(level: min(1, CGFloat(level) * LiveWaveformView.gain))
+                context.fill(bar, with: .color(WaveTint.quiet))
+                context.fill(bar, with: .color(WaveTint.voice.opacity(voice)))
             }
         }
         .accessibilityLabel("入力レベル")

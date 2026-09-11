@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// 最小表示に出す、入力レベルの波形（Issue #170 / #172）。
 ///
@@ -20,7 +21,6 @@ struct LiveWaveformView: View {
     let levels: [Float]
     /// レベルが届いた回数。**これが波を進める唯一の «時計»。**
     let pushCount: Int
-    let color: Color
 
     /// 幅に載せる履歴の長さ（コマ数）。
     ///
@@ -59,20 +59,37 @@ struct LiveWaveformView: View {
     private static let strokeWidth: CGFloat = 1.2
     /// 曲線のなめらかさ。**幅 1pt あたり 2 点以上**を確保する。
     private static let samples = 160
+    /// 色の変わり目を置く数（幅方向）。
+    private static let tintStops = 48
 
     var body: some View {
         Canvas { context, size in
             let history = Self.history(levels)
             let crest = Self.crest(history, phase: Self.phase(pushCount), in: size)
             guard crest.count > 1 else { return }
-            context.fill(Self.filled(crest, in: size),
-                         with: .linearGradient(
-                            Gradient(colors: [color.opacity(Self.fillRatio), color.opacity(0)]),
+            // 声を拾った位置だけ紫。**波全体を一斉に切り替えない**（Issue #176）。
+            let tint = GraphicsContext.Shading.linearGradient(
+                Self.tint(history),
+                startPoint: CGPoint(x: 0, y: 0),
+                endPoint: CGPoint(x: size.width, y: 0))
+            let area = Self.filled(crest, in: size)
+            let line = Self.line(crest)
+
+            // 塗り: 灰の上に紫を重ねてから、層ごと下へフェードさせる。
+            // 横（色）と縦（濃さ）のグラデーションは 1 回の塗りでは合成できない。
+            context.drawLayer { layer in
+                layer.fill(area, with: .color(WaveTint.quiet))
+                layer.fill(area, with: tint)
+                layer.blendMode = .destinationIn
+                layer.fill(Path(CGRect(origin: .zero, size: size)),
+                           with: .linearGradient(
+                            Gradient(colors: [.black.opacity(Self.fillRatio), .clear]),
                             startPoint: CGPoint(x: 0, y: 0),
                             endPoint: CGPoint(x: 0, y: size.height)))
-            context.stroke(Self.line(crest), with: .color(color),
-                           style: StrokeStyle(lineWidth: Self.strokeWidth,
-                                              lineCap: .round, lineJoin: .round))
+            }
+            let style = StrokeStyle(lineWidth: Self.strokeWidth, lineCap: .round, lineJoin: .round)
+            context.stroke(line, with: .color(WaveTint.quiet), style: style)
+            context.stroke(line, with: tint, style: style)
         }
         .accessibilityLabel("入力レベル")
     }
@@ -109,18 +126,35 @@ struct LiveWaveformView: View {
         Double(pushCount) * 2 * .pi * cycles / Double(window)
     }
 
-    /// その位置の振れ幅（0…1）。無音でも `idleBase` は残り、喋ったぶんだけ大きくなる。
+    /// その位置の入力レベル（0…1、利得を掛けた後）。振れ幅と色の両方がこれを見る。
     ///
     /// **隣り合うコマを直線で繋がない。** 折れ線だと角が立って «波» ではなく
     /// «ギザギザの帯» に見える。cosine で繋いで山と谷を丸める。
-    static func envelope(_ history: [CGFloat], at x: CGFloat) -> CGFloat {
-        guard history.count > 1 else { return idleBase }
+    static func level(_ history: [CGFloat], at x: CGFloat) -> CGFloat {
+        guard history.count > 1 else { return 0 }
         let position = min(1, max(0, x)) * CGFloat(history.count - 1)
         let index = min(history.count - 2, max(0, Int(position)))
         let weight = (1 - cos((position - CGFloat(index)) * .pi)) / 2
         let raw = history[index] * (1 - weight) + history[index + 1] * weight
-        let level = min(1, raw * gain)
-        return idleBase + level * (1 - idleBase)
+        return min(1, raw * gain)
+    }
+
+    /// その位置の振れ幅（0…1）。無音でも `idleBase` は残り、喋ったぶんだけ大きくなる。
+    static func envelope(_ history: [CGFloat], at x: CGFloat) -> CGFloat {
+        idleBase + level(history, at: x) * (1 - idleBase)
+    }
+
+    /// その位置の «声らしさ»（0…1）。0 なら灰、1 なら紫。
+    static func voice(_ history: [CGFloat], at x: CGFloat) -> CGFloat {
+        WaveTint.amount(level: level(history, at: x))
+    }
+
+    /// 幅方向の色。灰の上に重ねる紫の濃さを、位置ごとに並べる。
+    private static func tint(_ history: [CGFloat]) -> Gradient {
+        Gradient(stops: (0...tintStops).map { step in
+            let x = CGFloat(step) / CGFloat(tintStops)
+            return Gradient.Stop(color: WaveTint.voice.opacity(voice(history, at: x)), location: x)
+        })
     }
 
     /// 稜線の点列。両端は `sin` の窓で細くする——掛けないと端で波が唐突に切れる。
@@ -151,5 +185,33 @@ struct LiveWaveformView: View {
         path.addLine(to: CGPoint(x: 0, y: size.height))
         path.closeSubpath()
         return path
+    }
+}
+
+/// 波の色の決まり（Issue #176）。最小表示・通常表示で共通。
+///
+/// **黙っている部分は灰、声を拾った部分だけ紫。** 色は位置（バー）ごとに決め、
+/// 波全体を一斉に切り替えない——そうすると音節の切れ目（85ms）ごとに色が
+/// パカパカ変わる（#168 の跳ねと同じ種類の失敗）。
+///
+/// **状態色（`AppStatus.tintColor`）と被る色を選ばない。** 黄＝読み込み・警告、
+/// 赤＝録音中、青＝文字起こし中、緑＝完了、橙＝失敗。インディゴはダークで
+/// ほぼ青に見え «文字起こし中» と紛らわしいので避けた。ピンクは赤と見分けがつかない。
+enum WaveTint {
+    /// 黙っている部分。ラベルの灰（明暗の外観に追従する）。
+    static let quiet = Color(nsColor: .secondaryLabelColor)
+    /// 声を拾った部分。
+    static let voice = Color(nsColor: voiceNSColor)
+    static var voiceNSColor: NSColor { .systemPurple }
+
+    /// «声» と見なし始めるレベル（利得を掛けた後）。環境音はここに届かず灰のまま。
+    static let threshold: CGFloat = 0.2
+    /// しきい値から紫になり切るまでの幅。
+    static let span: CGFloat = 0.45
+
+    /// «声らしさ»（0…1）。しきい値の前後は smoothstep で丸め、じわっと色づかせる。
+    static func amount(level: CGFloat) -> CGFloat {
+        let t = max(0, min(1, (level - threshold) / span))
+        return t * t * (3 - 2 * t)
     }
 }
