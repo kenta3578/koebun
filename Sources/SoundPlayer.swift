@@ -45,15 +45,22 @@ enum SoundPlayer {
         name == none || systemSounds.contains(name) || customFileURL(for: name) != nil
     }
 
-    static func play(_ name: String) {
-        guard name != none else { return }
+    /// 音を鳴らし、その長さ（秒）を返す。「なし」や読めなかったときは 0。
+    ///
+    /// 長さを返すのは、起動音をマイクが拾う分を HUD が棒に見せないため（Issue #186）。
+    @discardableResult
+    static func play(_ name: String) -> TimeInterval {
+        guard name != none else { return 0 }
         if let url = customFileURL(for: name) {
             // 前の再生が終わる前に次を鳴らしても切れないよう、毎回インスタンスを作る。
             let sound = NSSound(contentsOf: url, byReference: true)
             sound?.play()
             retain(sound)
+            return sound?.duration ?? 0
         } else {
-            NSSound(named: .init(name))?.play()
+            let sound = NSSound(named: .init(name))
+            sound?.play()
+            return sound?.duration ?? 0
         }
     }
 

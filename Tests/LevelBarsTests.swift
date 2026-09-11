@@ -89,6 +89,42 @@ struct LevelBarsTests {
         #expect(LevelBarsView.muting(level: 0, isProcessing: true) == 0)
     }
 
+    /// 起動音をマイクが拾う（Issue #186）。鳴っているあいだに届いた音量は棒に見せない。
+    @Test("起動音のあいだに届いた音量は棒に出さない")
+    func startSoundIsIgnored() {
+        let model = RecordingHUDModel()
+        let start = Date()
+        model.ignoreLevels(until: start.addingTimeInterval(0.46))
+        model.push(level: 0.46, now: start.addingTimeInterval(0.2))
+        #expect(model.currentLevel == 0)
+        model.push(level: 0.16, now: start.addingTimeInterval(0.6))
+        #expect(model.currentLevel == 0.16)
+    }
+
+    /// 実測で起動音（0.21 秒）は最も遅いもので開始から 354ms 地点に終わっていた。
+    @Test("無視する長さは実測の起動音の終わりを覆う")
+    func ignoreWindowCoversMeasuredChime() {
+        #expect(0.21 + RecordingHUDController.soundLatencyMargin >= 0.354)
+    }
+
+    /// 次の録音に持ち越さない。
+    @Test("リセットすると無視は解ける")
+    func resetClearsIgnore() {
+        let model = RecordingHUDModel()
+        model.ignoreLevels(until: Date().addingTimeInterval(60))
+        model.reset()
+        model.push(level: 0.2)
+        #expect(model.currentLevel == 0.2)
+    }
+
+    /// 音量はアプリ中の «起動音を無視していない» 状態ではそのまま出る。
+    @Test("無視していなければ届いた音量はそのまま出る")
+    func levelsPassThroughWithoutIgnore() {
+        let model = RecordingHUDModel()
+        model.push(level: 0.2)
+        #expect(model.currentLevel == 0.2)
+    }
+
     /// 音節の切れ目で点に潰れないよう、直近の数回分の最大を使う。窓を過ぎれば下がる。
     @Test("いまの音量は直近の数回分の最大")
     func currentLevelHoldsThroughSyllableGaps() {
