@@ -101,7 +101,7 @@ struct RecordingHUDView: View {
         }
     }
 
-    /// 最小表示の左端。録音中と文字起こし中は «5 本の棒»、それ以外は状態アイコン（Issue #180）。
+    /// 最小表示の左端。録音中と文字起こし中は «棒»、それ以外は状態アイコン（Issue #180）。
     @ViewBuilder
     private var minimalIndicator: some View {
         switch model.status {
@@ -288,10 +288,10 @@ private struct WaveformView: View {
     }
 }
 
-/// 最小表示の «5 本の棒»（Issue #180、30 案の 14）。
+/// 最小表示の «棒»（Issue #180、30 案の 14。#189 で 5 本 → 7 本）。
 ///
 /// **読み取らせたいことは 1 つ——声の大きさ。** 録音中は声の大きさで高さが変わり、
-/// 文字起こし中は同じ 5 本が青い波形記号の形で止まる（棒が波形になって処理へ移る）。
+/// 文字起こし中は同じ棒が青い波形記号の形で止まる（棒が波形になって処理へ移る）。
 ///
 /// **時間で勝手に動く要素を足さない。** #146〜#176 で重ねるほど読めなくなり、
 /// #178 で全部戻した。動くのは届いた音量だけ。
@@ -304,10 +304,13 @@ struct LevelBarsView: View {
     let isProcessing: Bool
     let color: Color
 
-    /// 声が大きいときの形（pt）。中央ほど高くして、5 本を 1 つの «波形» として読ませる。
-    static let voiceProfile: [CGFloat] = [7, 12, 16, 12, 7]
+    /// 声が大きいときの形（pt）。中央ほど高くして、並んだ棒を 1 つの «波形» として読ませる。
+    ///
+    /// **本数は奇数にする**——中央の山を 1 つにして左右対称を保つ。«マス数を 1.5 倍» で
+    /// 5 本 → 7 本、パネルの縦 1.2 倍に合わせて最大 16 → 19pt にした（Issue #189）。
+    static let voiceProfile: [CGFloat] = [6, 10, 15, 19, 15, 10, 6]
     /// 文字起こし中の形。SF Symbols の `waveform` に寄せる（メニューバー・通常表示と同じ読み）。
-    static let processingProfile: [CGFloat] = [5, 9, 13, 9, 5]
+    static let processingProfile: [CGFloat] = [5, 8, 12, 15, 12, 8, 5]
     /// 棒の幅。黙っているときの高さもこれ＝点。0 にすると «消えた» に見える。
     static let barWidth: CGFloat = 3
     static let spacing: CGFloat = 2
@@ -358,7 +361,7 @@ struct LevelBarsView: View {
         CGFloat(min(1, max(0, level - voiceFloor) / (full - voiceFloor)))
     }
 
-    /// 5 本それぞれの高さ（pt）。
+    /// 棒それぞれの高さ（pt）。
     static func heights(level: Float, isProcessing: Bool) -> [CGFloat] {
         if isProcessing { return processingProfile }
         let ratio = ratio(level: level)

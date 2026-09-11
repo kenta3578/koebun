@@ -2,7 +2,7 @@ import Testing
 import SwiftUI
 @testable import koebun
 
-/// 最小表示の «5 本の棒»（Issue #180、30 案の 14）。
+/// 最小表示の «棒»（Issue #180、30 案の 14。#189 で 5 本 → 7 本）。
 ///
 /// 読み取らせたいことは «声の大きさ» の 1 つだけ。動くのは届いた音量だけで、
 /// 時間で勝手に動く要素は持たない（#146〜#176 で重ねて読めなくなり、#178 で戻した）。
@@ -12,7 +12,7 @@ struct LevelBarsTests {
     @Test("黙っているときは点になる")
     func silenceIsDots() {
         let heights = LevelBarsView.heights(level: 0, isProcessing: false)
-        #expect(heights.count == 5)
+        #expect(heights.count == LevelBarsView.voiceProfile.count)
         #expect(heights.allSatisfy { $0 == LevelBarsView.barWidth })
     }
 
@@ -30,12 +30,30 @@ struct LevelBarsTests {
         #expect(zip(quiet, loud).allSatisfy { $0 < $1 })
     }
 
-    /// 5 本を 1 つの «波形» として読ませるため、中央ほど高く左右対称。
+    /// 並んだ棒を 1 つの «波形» として読ませるため、中央ほど高く左右対称。
     @Test("中央ほど高く、左右対称")
     func centerIsTallest() {
-        let heights = LevelBarsView.heights(level: 0.4, isProcessing: false)
-        #expect(heights[2] == heights.max())
-        #expect(heights[0] == heights[4] && heights[1] == heights[3])
+        for level: Float in [0.1, 0.2, 0.4] {
+            let heights = LevelBarsView.heights(level: level, isProcessing: false)
+            #expect(heights[heights.count / 2] == heights.max())
+            #expect(heights == Array(heights.reversed()))
+        }
+        let processing = LevelBarsView.processingProfile
+        #expect(processing == Array(processing.reversed()))
+    }
+
+    /// «マス数を 1.5 倍»（Issue #189）で 5 本 → 7 本。中央の山を 1 つにするため奇数。
+    @Test("棒は 7 本で、文字起こし中も同じ本数")
+    func barCountIsSeven() {
+        #expect(LevelBarsView.voiceProfile.count == 7)
+        #expect(LevelBarsView.processingProfile.count == LevelBarsView.voiceProfile.count)
+    }
+
+    /// 横 1.5 倍・縦 1.2 倍にしても、ホバー時の停止・キャンセルの余白は変えない（Issue #189）。
+    @Test("ホバー時はボタンぶんだけ広く、高さは同じ")
+    func hoverAddsOnlyButtonRoom() {
+        #expect(HUDMetrics.minimalHoverPanelSize.width - HUDMetrics.minimalPanelSize.width == 60)
+        #expect(HUDMetrics.minimalHoverPanelSize.height == HUDMetrics.minimalPanelSize.height)
     }
 
     /// 文字起こし中は «青く固まる»。声が残っていても形は変えない。
