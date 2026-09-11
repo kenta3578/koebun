@@ -207,7 +207,11 @@ final class AudioRecorder {
     }
 
     /// RMS を -50dB…0dB で 0…1 に写す。
-    /// 線形のままだと通常の発話（RMS 0.02〜0.1 程度）がほぼ潰れて波形が動いて見えない。
+    /// 線形のままだと通常の発話がほぼ潰れて波形が動いて見えない。
+    ///
+    /// **通常の発話は、写した値で 0.1〜0.3（RMS でおよそ 0.006〜0.016）**。履歴の録音 619 件を
+    /// 実測した値（声の窓の p25 0.11 / p50 0.16 / p95 0.28、Issue #187）。以前ここに書いていた
+    /// «RMS 0.02〜0.1» は想定で、表示の基準をそこから決めると声が小さく出る。
     private static func normalizedLevel(rms: Float) -> Float {
         guard rms > 0 else { return 0 }
         let floorDB: Float = -50

@@ -311,9 +311,17 @@ struct LevelBarsView: View {
     /// 棒の幅。黙っているときの高さもこれ＝点。0 にすると «消えた» に見える。
     static let barWidth: CGFloat = 3
     static let spacing: CGFloat = 2
-    /// この音量で形いっぱいになる。レベルは −50dB…0dB を 0…1 に写した値で、
-    /// 通常の発話は 0.3〜0.6（`AudioRecorder.normalizedLevel`）。
-    static let fullLevel: Float = 0.6
+    /// 声とみなす下限（Issue #187）。これ未満は環境音として、棒も色も動かさない。
+    ///
+    /// 履歴の録音 619 件を実測すると、85ms 窓の 64% がこれ未満に入る（環境音と声の境目）。
+    static let voiceFloor: Float = 0.05
+
+    /// この音量で形いっぱいになる（Issue #187）。レベルは −50dB…0dB を 0…1 に写した値。
+    ///
+    /// **実測から決めた。** 声の窓（0.05 以上）は p25 0.11 / p50 0.16 / p75 0.21 / p95 0.28。
+    /// 以前は «通常の発話は 0.3〜0.6» という想定で 0.6 にしていて、普段の声では棒が 27% しか
+    /// 伸びなかった。大きめの声（p95）で最大、普段の声は半分ほどで抑揚が見える。
+    static let fullLevel: Float = 0.28
 
     /// 黙っているときに赤へ重ねる灰の濃さ（Issue #182 / #184）。喋るほど薄くなり、赤が冴える。
     ///
@@ -322,25 +330,32 @@ struct LevelBarsView: View {
     /// 0.8 以上はほぼ同じに見えたので、赤みが残る 0.8 にしている。
     static let quietMuting: CGFloat = 0.8
 
-    /// この音量で赤になりきる（Issue #184）。**高さの `fullLevel` とは別の値。**
+    /// この音量で赤になりきる（Issue #184 / #187）。**高さの `fullLevel` とは別の値。**
     ///
-    /// 高さと同じ 0.6 にすると、通常の発話（0.3〜0.35）でも灰が残り、黙っているときとの差が
-    /// 小さかった。色だけ先に赤になりきらせる。音量から連続的に決めるので、切り替えのチカチカはない。
-    static let colorFullLevel: Float = 0.3
+    /// 普段の声（実測 p50 0.16）で赤になりきるよう 0.15 にしている。以前の 0.3 は想定値からの
+    /// 決め打ちで、普段の声では半分しか赤にならず «差が弱い» と言われた。
+    /// 音量から連続的に決めるので、切り替えのチカチカはない。
+    static let colorFullLevel: Float = 0.15
 
     static var width: CGFloat {
         CGFloat(voiceProfile.count) * barWidth + CGFloat(voiceProfile.count - 1) * spacing
     }
     static var height: CGFloat { voiceProfile.max() ?? barWidth }
 
-    /// いまの音量を高さの比（0…1）にする。`fullLevel` で 1。
+    /// いまの音量を高さの比（0…1）にする。`voiceFloor` 以下で 0、`fullLevel` で 1。
     static func ratio(level: Float) -> CGFloat {
-        CGFloat(min(1, max(0, level) / fullLevel))
+        span(level, upTo: fullLevel)
     }
 
-    /// いまの音量を色の比（0…1）にする。`colorFullLevel` で 1——高さより先に赤になりきる。
+    /// いまの音量を色の比（0…1）にする。`voiceFloor` 以下で 0、`colorFullLevel` で 1——
+    /// 高さより先に赤になりきる。
     static func colorRatio(level: Float) -> CGFloat {
-        CGFloat(min(1, max(0, level) / colorFullLevel))
+        span(level, upTo: colorFullLevel)
+    }
+
+    /// 環境音の下限から基準までを 0…1 に写す。
+    private static func span(_ level: Float, upTo full: Float) -> CGFloat {
+        CGFloat(min(1, max(0, level - voiceFloor) / (full - voiceFloor)))
     }
 
     /// 5 本それぞれの高さ（pt）。
