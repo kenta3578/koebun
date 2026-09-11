@@ -315,28 +315,51 @@ struct LevelBarsView: View {
     /// 通常の発話は 0.3〜0.6（`AudioRecorder.normalizedLevel`）。
     static let fullLevel: Float = 0.6
 
+    /// 黙っているときに赤へ重ねる灰の濃さ（Issue #182）。喋るほど薄くなり、赤が冴える。
+    ///
+    /// **黙っていても赤系のまま残す。** 灰まで落とすと «録音中» の赤が消える。
+    /// 候補（濃さ／くすんだ赤／ピンク寄り／灰→赤）をライト・ダークで描いて選んだ値。
+    static let quietMuting: CGFloat = 0.55
+
     static var width: CGFloat {
         CGFloat(voiceProfile.count) * barWidth + CGFloat(voiceProfile.count - 1) * spacing
     }
     static var height: CGFloat { voiceProfile.max() ?? barWidth }
 
+    /// いまの音量を 0…1 の比にする。**高さと色が同じ比で動く**——二択で色を切り替えると
+    /// そこでチカチカするので、合図は高さ 1 つのまま色が付いてくる形にする。
+    static func ratio(level: Float) -> CGFloat {
+        CGFloat(min(1, max(0, level) / fullLevel))
+    }
+
     /// 5 本それぞれの高さ（pt）。
     static func heights(level: Float, isProcessing: Bool) -> [CGFloat] {
         if isProcessing { return processingProfile }
-        let ratio = CGFloat(min(1, max(0, level) / fullLevel))
+        let ratio = ratio(level: level)
         return voiceProfile.map { barWidth + ($0 - barWidth) * ratio }
+    }
+
+    /// 棒の上に重ねる灰の濃さ（0…`quietMuting`）。文字起こし中の青には重ねない。
+    static func muting(level: Float, isProcessing: Bool) -> CGFloat {
+        if isProcessing { return 0 }
+        return quietMuting * (1 - ratio(level: level))
     }
 
     var body: some View {
         Canvas { context, size in
             let mid = size.height / 2
+            let muting = Self.muting(level: level, isProcessing: isProcessing)
             for (index, height) in Self.heights(level: level, isProcessing: isProcessing).enumerated() {
                 let rect = CGRect(x: CGFloat(index) * (Self.barWidth + Self.spacing),
                                   y: mid - height / 2,
                                   width: Self.barWidth,
                                   height: height)
-                context.fill(Path(roundedRect: rect, cornerRadius: Self.barWidth / 2),
-                             with: .color(color))
+                let bar = Path(roundedRect: rect, cornerRadius: Self.barWidth / 2)
+                context.fill(bar, with: .color(color))
+                // 赤の上に灰を重ねる＝赤と灰を混ぜた色。システム色なのでライト・ダークに追従する。
+                if muting > 0 {
+                    context.fill(bar, with: .color(Color(nsColor: .systemGray).opacity(muting)))
+                }
             }
         }
         .frame(width: Self.width, height: Self.height)
