@@ -84,12 +84,12 @@ struct RecordingHUDView: View {
     }
 
     // 最小表示: 状態と経過時間だけの細いバー（Issue #35）。
-    // 状態は**色と形の両方**で示す（メニューバーと同じシンボルを使うので、
-    // 録音中＝マイク・文字起こし中＝波形で色が読めなくても区別できる）。
+    // 状態は**色と形の両方**で示す。録音中＝赤い棒が声で伸び縮み、文字起こし中＝同じ棒が
+    // 青い波形の形で止まる（Issue #180）。それ以外はメニューバーと同じシンボル。
     // 停止・キャンセルはホバーで出す＝常時は場所を取らない。
     private var minimalContent: some View {
         HStack(spacing: 6) {
-            statusIcon(size: 10, width: 12)
+            minimalIndicator
             Text(model.elapsedText)
                 .font(.system(size: 11, design: .monospaced))
                 .monospacedDigit()
@@ -98,6 +98,21 @@ struct RecordingHUDView: View {
                 iconButton("stop.fill", help: "停止して文字起こし", action: onStop)
                 iconButton("xmark", help: "キャンセル（Esc）", action: onRequestCancel)
             }
+        }
+    }
+
+    /// 最小表示の左端。録音中と文字起こし中は «5 本の棒»、それ以外は状態アイコン（Issue #180）。
+    @ViewBuilder
+    private var minimalIndicator: some View {
+        switch model.status {
+        case .recording:
+            LevelBarsView(level: model.currentLevel, isProcessing: false, color: statusColor)
+                .accessibilityLabel(model.status.accessibilityLabel)
+        case .processing:
+            LevelBarsView(level: 0, isProcessing: true, color: statusColor)
+                .accessibilityLabel(model.status.accessibilityLabel)
+        default:
+            statusIcon(size: 10, width: 12)
         }
     }
 
@@ -270,6 +285,61 @@ private struct WaveformView: View {
             }
         }
         .accessibilityLabel("入力レベル")
+    }
+}
+
+/// 最小表示の «5 本の棒»（Issue #180、30 案の 14）。
+///
+/// **読み取らせたいことは 1 つ——声の大きさ。** 録音中は声の大きさで高さが変わり、
+/// 文字起こし中は同じ 5 本が青い波形記号の形で止まる（棒が波形になって処理へ移る）。
+///
+/// **時間で勝手に動く要素を足さない。** #146〜#176 で重ねるほど読めなくなり、
+/// #178 で全部戻した。動くのは届いた音量だけ。
+///
+/// テストから高さの決め方を確かめられるよう `private` にしていない。
+struct LevelBarsView: View {
+    /// いまの音量（0…1）。文字起こし中は使わない。
+    let level: Float
+    /// 文字起こし中か。true なら声に関係なく波形記号の形で止める。
+    let isProcessing: Bool
+    let color: Color
+
+    /// 声が大きいときの形（pt）。中央ほど高くして、5 本を 1 つの «波形» として読ませる。
+    static let voiceProfile: [CGFloat] = [7, 12, 16, 12, 7]
+    /// 文字起こし中の形。SF Symbols の `waveform` に寄せる（メニューバー・通常表示と同じ読み）。
+    static let processingProfile: [CGFloat] = [5, 9, 13, 9, 5]
+    /// 棒の幅。黙っているときの高さもこれ＝点。0 にすると «消えた» に見える。
+    static let barWidth: CGFloat = 3
+    static let spacing: CGFloat = 2
+    /// この音量で形いっぱいになる。レベルは −50dB…0dB を 0…1 に写した値で、
+    /// 通常の発話は 0.3〜0.6（`AudioRecorder.normalizedLevel`）。
+    static let fullLevel: Float = 0.6
+
+    static var width: CGFloat {
+        CGFloat(voiceProfile.count) * barWidth + CGFloat(voiceProfile.count - 1) * spacing
+    }
+    static var height: CGFloat { voiceProfile.max() ?? barWidth }
+
+    /// 5 本それぞれの高さ（pt）。
+    static func heights(level: Float, isProcessing: Bool) -> [CGFloat] {
+        if isProcessing { return processingProfile }
+        let ratio = CGFloat(min(1, max(0, level) / fullLevel))
+        return voiceProfile.map { barWidth + ($0 - barWidth) * ratio }
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            let mid = size.height / 2
+            for (index, height) in Self.heights(level: level, isProcessing: isProcessing).enumerated() {
+                let rect = CGRect(x: CGFloat(index) * (Self.barWidth + Self.spacing),
+                                  y: mid - height / 2,
+                                  width: Self.barWidth,
+                                  height: height)
+                context.fill(Path(roundedRect: rect, cornerRadius: Self.barWidth / 2),
+                             with: .color(color))
+            }
+        }
+        .frame(width: Self.width, height: Self.height)
     }
 }
 

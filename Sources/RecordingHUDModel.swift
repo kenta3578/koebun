@@ -79,6 +79,14 @@ final class RecordingHUDModel: ObservableObject {
         return levels.suffix(Self.silenceWindow).allSatisfy { $0 < Self.silenceLevel }
     }
 
+    /// 棒の高さに使う «いまの音量»（Issue #180）。直近 `peakWindow` 回分の最大値。
+    ///
+    /// レベルはマイクのバッファごと（約 85ms）に届き、音節ごとに跳ねる。生の値だと
+    /// 音節の切れ目ごとに棒が点に潰れてチカチカする。**時間で動かす演出ではなく、
+    /// 届いたデータの窓**なので、速さのつまみは増えない。
+    var currentLevel: Float { levels.suffix(Self.peakWindow).max() ?? 0 }
+    static let peakWindow = 3
+
     var elapsedText: String {
         let total = Int(elapsed)
         return String(format: "%d:%02d", total / 60, total % 60)
