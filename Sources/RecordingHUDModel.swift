@@ -18,20 +18,6 @@ final class RecordingHUDModel: ObservableObject {
     private static let silenceLevel: Float = 0.02
 
     @Published private(set) var levels: [Float] = Array(repeating: 0, count: barCount)
-
-    /// 最小表示を閉じるまでの待ち（Issue #160）。
-    ///
-    /// **最小表示は素早く閉じる。** «アイコンと経過時間だけのピル» が居残ると、
-    /// その居残り自体が «まだ終わっていない» と読まれる。通常表示は
-    /// 「挿入しました ✓」を読ませる必要があるので別（`AppStatus.doneDisplayDuration`）。
-    static let minimalCloseDelay: TimeInterval = 0.34
-
-    /// 波を出すか。**録音中だけ**（Issue #170）。
-    ///
-    /// 文字起こし中も出していたことがあるが、その間は新しいレベルが届かないので
-    /// 波形が固まったまま残り «止まった» ように見える。処理中は状態アイコンが示す。
-    var showsWave: Bool { status == .recording }
-
     @Published private(set) var elapsed: TimeInterval = 0
     /// キャンセル確認を表示中か。
     @Published var isConfirmingCancel = false
@@ -62,9 +48,7 @@ final class RecordingHUDModel: ObservableObject {
     }
 
     /// 無音判定を「起動直後の空バッファ」で誤発火させないためのカウンタ。
-    /// レベルが届いた回数。**波を進める唯一の «時計»**（Issue #172）。
-    /// 経過時間で波を動かすと速さのつまみが要る。コマ数なら要らない。
-    @Published private(set) var pushCount = 0
+    private var pushCount = 0
 
     func push(level: Float) {
         levels.removeFirst()
