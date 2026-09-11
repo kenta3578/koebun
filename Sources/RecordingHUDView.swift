@@ -30,7 +30,8 @@ struct RecordingHUDView: View {
                         .strokeBorder(Color.primary.opacity(0.12))
                 )
             content
-                .padding(.horizontal, model.usesMinimalBar ? 10 : 14)
+                // 最小表示は余白を詰めて、中身をパネルいっぱいに使う（Issue #191）。
+                .padding(.horizontal, model.usesMinimalBar ? 8 : 14)
         }
         .frame(width: size.width, height: size.height)
     }
@@ -90,9 +91,13 @@ struct RecordingHUDView: View {
     private var minimalContent: some View {
         HStack(spacing: 6) {
             minimalIndicator
+            // 13pt に上げた（Issue #191）。10 分を超えて «12:34» の 5 文字になっても
+            // 折り返さないよう 1 行に固定し、収まらないときだけ少し縮める。
             Text(model.elapsedText)
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: 13, design: .monospaced))
                 .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .foregroundStyle(.secondary)
             if model.isHovering {
                 iconButton("stop.fill", help: "停止して文字起こし", action: onStop)
@@ -288,7 +293,7 @@ private struct WaveformView: View {
     }
 }
 
-/// 最小表示の «棒»（Issue #180、30 案の 14。#189 で 5 本 → 7 本）。
+/// 最小表示の «棒»（Issue #180、30 案の 14。#189 で 7 本、#191 で 10 本）。
 ///
 /// **読み取らせたいことは 1 つ——声の大きさ。** 録音中は声の大きさで高さが変わり、
 /// 文字起こし中は同じ棒が青い波形記号の形で止まる（棒が波形になって処理へ移る）。
@@ -306,14 +311,18 @@ struct LevelBarsView: View {
 
     /// 声が大きいときの形（pt）。中央ほど高くして、並んだ棒を 1 つの «波形» として読ませる。
     ///
-    /// **本数は奇数にする**——中央の山を 1 つにして左右対称を保つ。«マス数を 1.5 倍» で
-    /// 5 本 → 7 本、パネルの縦 1.2 倍に合わせて最大 16 → 19pt にした（Issue #189）。
-    static let voiceProfile: [CGFloat] = [6, 10, 15, 19, 15, 10, 6]
+    /// **10 本**（Issue #191）。偶数なので中央の山は同じ高さの 2 本で作り、左右対称は保つ。
+    /// パネル（144×34）を広げただけでは中身が小さいまま余白が残ったので、棒そのものを
+    /// 大きくした。最大 24pt でパネルの上下に 5pt を残す。
+    static let voiceProfile: [CGFloat] = [8, 11, 15, 19, 24, 24, 19, 15, 11, 8]
     /// 文字起こし中の形。SF Symbols の `waveform` に寄せる（メニューバー・通常表示と同じ読み）。
-    static let processingProfile: [CGFloat] = [5, 8, 12, 15, 12, 8, 5]
+    static let processingProfile: [CGFloat] = [6, 9, 12, 16, 20, 20, 16, 12, 9, 6]
     /// 棒の幅。黙っているときの高さもこれ＝点。0 にすると «消えた» に見える。
-    static let barWidth: CGFloat = 3
-    static let spacing: CGFloat = 2
+    ///
+    /// 幅 5・間隔 4 で 10 本が 86pt。経過時間（13pt・4 文字）と並べてパネルの余白が 10pt ほどに
+    /// なる値を、候補を描き出して選んだ（Issue #191）。
+    static let barWidth: CGFloat = 5
+    static let spacing: CGFloat = 4
     /// 声とみなす下限（Issue #187）。これ未満は環境音として、棒も色も動かさない。
     ///
     /// 履歴の録音 619 件を実測すると、85ms 窓の 64% がこれ未満に入る（環境音と声の境目）。
