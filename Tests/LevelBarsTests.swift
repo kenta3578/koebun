@@ -50,33 +50,38 @@ struct LevelBarsTests {
         #expect(LevelBarsView.height <= HUDMetrics.minimalPanelSize.height - 8)
     }
 
-    /// 黙っているときはくすんだ赤、通常の発話の上の端で赤そのもの（Issue #182）。
+    /// 黙っているときはくすんだ赤、喋るほど赤が冴える（Issue #182）。
     @Test("黙るとくすみ、喋るほど赤が冴える")
     func speechClearsTheMuting() {
         #expect(LevelBarsView.muting(level: 0, isProcessing: false) == LevelBarsView.quietMuting)
         #expect(LevelBarsView.muting(level: LevelBarsView.fullLevel, isProcessing: false) == 0)
-        #expect(LevelBarsView.muting(level: 0.15, isProcessing: false)
-                > LevelBarsView.muting(level: 0.45, isProcessing: false))
+        #expect(LevelBarsView.muting(level: 0.1, isProcessing: false)
+                > LevelBarsView.muting(level: 0.25, isProcessing: false))
     }
 
-    /// 灰まで落とすと «録音中» の赤が消える。黙っていても赤系のまま残す。
-    @Test("黙っていても赤は残る")
-    func silenceKeepsRed() {
-        #expect(LevelBarsView.quietMuting > 0.3)
-        #expect(LevelBarsView.quietMuting < 0.8)
+    /// 差が弱いと読めない（Issue #184）が、灰まで落とすと «録音中» の赤が消える。
+    @Test("黙っているときはしっかりくすむが、赤みは残る")
+    func silenceIsMutedButStillRed() {
+        #expect(LevelBarsView.quietMuting >= 0.7)
+        #expect(LevelBarsView.quietMuting < 1)
     }
 
-    /// 二択で切り替えるとチカチカする。色は高さと同じ比で連続的に動く。
-    @Test("色と高さは同じ比で動く")
-    func tintFollowsTheSameRatioAsHeight() {
-        for level in stride(from: Float(0), through: 0.6, by: 0.05) {
-            let ratio = LevelBarsView.ratio(level: level)
-            #expect(abs(LevelBarsView.muting(level: level, isProcessing: false)
-                        - LevelBarsView.quietMuting * (1 - ratio)) < 1e-9)
-            let center = LevelBarsView.heights(level: level, isProcessing: false)[2]
-            let expected = LevelBarsView.barWidth + (LevelBarsView.voiceProfile[2] - LevelBarsView.barWidth) * ratio
-            #expect(abs(center - expected) < 1e-9)
-        }
+    /// 普段の声でくすんだままだと «差が弱い»（Issue #184）。色は高さより先に赤になりきる。
+    @Test("通常の発話で赤になりきる")
+    func normalSpeechIsFullyRed() {
+        #expect(LevelBarsView.colorFullLevel <= 0.3)
+        #expect(LevelBarsView.colorFullLevel < LevelBarsView.fullLevel)
+        #expect(LevelBarsView.muting(level: 0.3, isProcessing: false) == 0)
+    }
+
+    /// 二択で切り替えるとチカチカする。色は音量から連続的に変わる。
+    @Test("色は音量から連続的に変わる")
+    func tintChangesContinuously() {
+        let values = stride(from: Float(0), through: LevelBarsView.colorFullLevel, by: 0.01)
+            .map { LevelBarsView.muting(level: $0, isProcessing: false) }
+        let steps = zip(values, values.dropFirst()).map { $0 - $1 }
+        #expect(steps.allSatisfy { $0 >= 0 })      // 喋るほど減る
+        #expect((steps.max() ?? 1) < 0.05)         // 一度に大きく跳ばない
     }
 
     @Test("文字起こし中の青はくすませない")

@@ -315,21 +315,32 @@ struct LevelBarsView: View {
     /// 通常の発話は 0.3〜0.6（`AudioRecorder.normalizedLevel`）。
     static let fullLevel: Float = 0.6
 
-    /// 黙っているときに赤へ重ねる灰の濃さ（Issue #182）。喋るほど薄くなり、赤が冴える。
+    /// 黙っているときに赤へ重ねる灰の濃さ（Issue #182 / #184）。喋るほど薄くなり、赤が冴える。
     ///
-    /// **黙っていても赤系のまま残す。** 灰まで落とすと «録音中» の赤が消える。
-    /// 候補（濃さ／くすんだ赤／ピンク寄り／灰→赤）をライト・ダークで描いて選んだ値。
-    static let quietMuting: CGFloat = 0.55
+    /// **黙っていても赤みをわずかに残す。** 1.0（灰そのもの）にすると «録音中» の赤が消える。
+    /// 0.55 では «差が弱い» と言われた。黙っているときは 3pt の点で色の違いが目に入りにくく、
+    /// 0.8 以上はほぼ同じに見えたので、赤みが残る 0.8 にしている。
+    static let quietMuting: CGFloat = 0.8
+
+    /// この音量で赤になりきる（Issue #184）。**高さの `fullLevel` とは別の値。**
+    ///
+    /// 高さと同じ 0.6 にすると、通常の発話（0.3〜0.35）でも灰が残り、黙っているときとの差が
+    /// 小さかった。色だけ先に赤になりきらせる。音量から連続的に決めるので、切り替えのチカチカはない。
+    static let colorFullLevel: Float = 0.3
 
     static var width: CGFloat {
         CGFloat(voiceProfile.count) * barWidth + CGFloat(voiceProfile.count - 1) * spacing
     }
     static var height: CGFloat { voiceProfile.max() ?? barWidth }
 
-    /// いまの音量を 0…1 の比にする。**高さと色が同じ比で動く**——二択で色を切り替えると
-    /// そこでチカチカするので、合図は高さ 1 つのまま色が付いてくる形にする。
+    /// いまの音量を高さの比（0…1）にする。`fullLevel` で 1。
     static func ratio(level: Float) -> CGFloat {
         CGFloat(min(1, max(0, level) / fullLevel))
+    }
+
+    /// いまの音量を色の比（0…1）にする。`colorFullLevel` で 1——高さより先に赤になりきる。
+    static func colorRatio(level: Float) -> CGFloat {
+        CGFloat(min(1, max(0, level) / colorFullLevel))
     }
 
     /// 5 本それぞれの高さ（pt）。
@@ -340,9 +351,12 @@ struct LevelBarsView: View {
     }
 
     /// 棒の上に重ねる灰の濃さ（0…`quietMuting`）。文字起こし中の青には重ねない。
+    ///
+    /// **音量から連続的に決め、二択で切り替えない。** 切り替えるとそこでチカチカする。
+    /// 合図は «声の大きさ» 1 つのまま、高さと一緒に色が付いてくる。
     static func muting(level: Float, isProcessing: Bool) -> CGFloat {
         if isProcessing { return 0 }
-        return quietMuting * (1 - ratio(level: level))
+        return quietMuting * (1 - colorRatio(level: level))
     }
 
     var body: some View {
