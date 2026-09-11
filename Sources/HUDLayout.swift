@@ -45,9 +45,13 @@ enum HUDSize: String, CaseIterable, Identifiable {
 enum HUDMetrics {
     static let panelSize = CGSize(width: 340, height: 64)
     /// 最小表示（状態アイコン＋経過時間）の細いバー。
-    static let minimalPanelSize = CGSize(width: 96, height: 28)
+    ///
+    /// 96×28 から横 1.5 倍・縦 1.2 倍にした（Issue #189）。«もう少し大きく» への対応。
+    /// 角丸は高さの半分なので自動で追従する。
+    static let minimalPanelSize = CGSize(width: 144, height: 34)
     /// 最小表示にマウスが乗って、停止・キャンセルが出ているときのサイズ。
-    static let minimalHoverPanelSize = CGSize(width: 156, height: 28)
+    /// ボタン 2 つぶんの 60pt を足す（`minimalPanelSize` を大きくしても、ボタンの余白は変えない）。
+    static let minimalHoverPanelSize = CGSize(width: 204, height: 34)
     /// 挿入結果を残しているときのサイズ（本文＋操作ボタンぶん高くする）。
     static let resultPanelSize = CGSize(width: 380, height: 160)
 }
