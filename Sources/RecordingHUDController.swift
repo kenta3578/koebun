@@ -152,16 +152,9 @@ final class RecordingHUDController {
         startedAt = nil
         guard isVisible else { return }
 
-        // **最小表示は素早く閉じる。** «アイコンと経過時間だけのピル» が残ると、
-        // その居残りが «遅い» と読まれる。通常表示は「挿入しました ✓」を
-        // 読ませる必要があるので従来どおり（Issue #160）。
-        let delay: Duration = model.usesMinimalBar
-            ? .milliseconds(Int(RecordingHUDModel.minimalCloseDelay * 1000))
-            : AppStatus.doneDisplayDuration
-
         cancelAutoHide()
         autoHideTask = Task { [weak self] in
-            try? await Task.sleep(for: delay)
+            try? await Task.sleep(for: AppStatus.doneDisplayDuration)
             guard !Task.isCancelled else { return }
             self?.hide()
         }
@@ -320,8 +313,7 @@ final class RecordingHUDController {
         // 画面より大きいパネルは想定しないが、その場合は左下に寄せる。
         let x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
         let y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
-        // 整数の座標に置く（Issue #154）。ドラッグや画面端のクランプで半端な値になりうる。
-        return CGPoint(x: x.rounded(), y: y.rounded())
+        return CGPoint(x: x, y: y)
     }
 
     // MARK: 経過時間

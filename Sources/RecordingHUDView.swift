@@ -64,7 +64,7 @@ struct RecordingHUDView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 10) {
                 statusIcon
-                WaveformView(levels: model.levels)
+                WaveformView(levels: model.levels, color: statusColor)
                     .frame(maxWidth: .infinity, minHeight: 24)
                 Text(model.elapsedText)
                     .font(.system(size: 12, design: .monospaced))
@@ -90,20 +90,6 @@ struct RecordingHUDView: View {
     private var minimalContent: some View {
         HStack(spacing: 6) {
             statusIcon(size: 10, width: 12)
-            // 最小表示でも「生きている」ことが分かるように出す（Issue #148 / #152）。
-            // **棒ではなく線。** 細いバーを並べると «つぶつぶ» に見えて波として読めなかった。
-            //
-            // **録音中から送り出しまで途切れさせない**（Issue #158）。以前は録音中だけに
-            // していたが、止めた瞬間に波が消えると «送り出した» 動きが作れない。
-            // 出しっぱなしではなく、送り出しの動きが終わったら自分で消える。
-            if model.showsWave {
-                // 色は状態色ではなく «声を拾ったか» で決める（Issue #176）。
-                // 録音中であることは左のマイクアイコンの赤が示す。
-                LiveWaveformView(levels: model.levels,
-                                 pushCount: model.pushCount)
-                    .frame(width: HUDMetrics.minimalWaveSize.width,
-                           height: HUDMetrics.minimalWaveSize.height)
-            }
             Text(model.elapsedText)
                 .font(.system(size: 11, design: .monospaced))
                 .monospacedDigit()
@@ -263,18 +249,9 @@ struct RecordingHUDView: View {
 }
 
 /// 録音レベルの履歴を左右対称のバーで描く。動いていれば「マイクは拾えている」が一目で分かる。
-///
-/// **時間から決まる動きを持たない**（Issue #170）。以前は無音のときに波が流れ、
-/// 全体が脈打っていた（#146 / #150）。«生きていると分かるように» のつもりだったが、
-/// 音と無関係に動くものは «自分がいま何を見ているのか» が読めない。拾えていない
-/// ことは `looksSilent` の警告が言葉で伝える。最小表示の `LiveWaveformView` と同じ方針。
-/// テストから高さの決め方を確かめられるよう `private` にしていない（Issue #170）。
-struct WaveformView: View {
+private struct WaveformView: View {
     let levels: [Float]
-
-    /// 無音のときの底上げ（高さに対する比）。**谷でもバーが生きている**ようにする。
-    /// 0 にすると波の谷が 2pt の点に潰れ、「波」ではなく「点が並んでいる」絵になる。
-    private static let idleBase: CGFloat = 0.18
+    let color: Color
 
     var body: some View {
         Canvas { context, size in
@@ -283,28 +260,18 @@ struct WaveformView: View {
             let barWidth = max(1.5, slot * 0.55)
             let mid = size.height / 2
             for (index, level) in levels.enumerated() {
-                let height = max(2, Self.ratio(level: CGFloat(level)) * size.height)
+                let height = max(2, CGFloat(level) * size.height)
                 let rect = CGRect(x: CGFloat(index) * slot + (slot - barWidth) / 2,
                                   y: mid - height / 2,
                                   width: barWidth,
                                   height: height)
-                // 声を拾ったバーだけ紫（Issue #176）。灰の上に重ねて、境目をじわっと色づかせる。
-                // 最小表示と同じ規則にそろえる——表示サイズで色の意味が変わらないように。
-                let bar = Path(roundedRect: rect, cornerRadius: barWidth / 2)
-                let voice = WaveTint.amount(level: min(1, CGFloat(level) * LiveWaveformView.gain))
-                context.fill(bar, with: .color(WaveTint.quiet))
-                context.fill(bar, with: .color(WaveTint.voice.opacity(voice)))
+                context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2),
+                             with: .color(color))
             }
         }
         .accessibilityLabel("入力レベル")
     }
-
-    /// そのバーの高さ（高さに対する比）。**実レベルそのもの**に、谷で潰れないだけの底上げ。
-    static func ratio(level: CGFloat) -> CGFloat {
-        max(idleBase, level)
-    }
 }
-
 
 // MARK: - パネル
 
