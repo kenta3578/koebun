@@ -2,7 +2,7 @@ import Testing
 import SwiftUI
 @testable import koebun
 
-/// 最小表示の «棒»（Issue #180、30 案の 14。#189 で 7 本、#191 で 10 本）。
+/// 最小表示の «棒»（Issue #180、30 案の 14。#189 で 7 本、#191 で 10 本、#193 で 7 本へ）。
 ///
 /// 読み取らせたいことは «声の大きさ» の 1 つだけ。動くのは届いた音量だけで、
 /// 時間で勝手に動く要素は持たない（#146〜#176 で重ねて読めなくなり、#178 で戻した）。
@@ -44,19 +44,20 @@ struct LevelBarsTests {
         #expect(processing == Array(processing.reversed()))
     }
 
-    /// «10 本にしてくれる？»（Issue #191）。文字起こし中も同じ本数で、形だけ変わる。
-    @Test("棒は 10 本で、文字起こし中も同じ本数")
-    func barCountIsTen() {
-        #expect(LevelBarsView.voiceProfile.count == 10)
+    /// 10 本は «やりすぎ» で 7 本へ戻した（Issue #193）。文字起こし中も同じ本数で、形だけ変わる。
+    @Test("棒は 7 本で、文字起こし中も同じ本数")
+    func barCountIsSeven() {
+        #expect(LevelBarsView.voiceProfile.count == 7)
         #expect(LevelBarsView.processingProfile.count == LevelBarsView.voiceProfile.count)
     }
 
-    /// パネルだけ広げると «余計な padding» に見えた（Issue #191）。棒がパネルの幅の半分以上を使う。
-    @Test("棒は最小表示の幅の半分以上を使う")
+    /// パネルだけ広げると «余計な padding» に見え（Issue #191）、詰めすぎると «やりすぎ»（#193）。
+    /// 棒が主役に見える下限だけ縛り、余白の広さは値で決める。
+    @Test("棒は最小表示の幅の 4 割以上を使い、ホバー時にも収まる")
     func barsFillTheMinimalBar() {
-        #expect(LevelBarsView.width >= HUDMetrics.minimalPanelSize.width * 0.5)
-        // 経過時間（13pt・5 文字でおよそ 40pt）と間隔 6pt、左右の余白 8pt を足してもホバー時に収まる。
-        #expect(LevelBarsView.width + 6 + 40 + 6 + 22 + 6 + 22 + 16 <= HUDMetrics.minimalHoverPanelSize.width)
+        #expect(LevelBarsView.width >= HUDMetrics.minimalPanelSize.width * 0.4)
+        // 経過時間（13pt・5 文字でおよそ 40pt）と間隔 6pt、左右の余白 12pt を足してもホバー時に収まる。
+        #expect(LevelBarsView.width + 6 + 40 + 6 + 22 + 6 + 22 + 24 <= HUDMetrics.minimalHoverPanelSize.width)
     }
 
     /// 横 1.5 倍・縦 1.2 倍にしても、ホバー時の停止・キャンセルの余白は変えない（Issue #189）。

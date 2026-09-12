@@ -30,8 +30,9 @@ struct RecordingHUDView: View {
                         .strokeBorder(Color.primary.opacity(0.12))
                 )
             content
-                // 最小表示は余白を詰めて、中身をパネルいっぱいに使う（Issue #191）。
-                .padding(.horizontal, model.usesMinimalBar ? 8 : 14)
+                // 最小表示の余白。10 → 8（Issue #191）→ 12（#193）。棒を 7 本に戻したぶん、
+                // 余白を広げて詰まりすぎないようにする。
+                .padding(.horizontal, model.usesMinimalBar ? 12 : 14)
         }
         .frame(width: size.width, height: size.height)
     }
@@ -293,7 +294,7 @@ private struct WaveformView: View {
     }
 }
 
-/// 最小表示の «棒»（Issue #180、30 案の 14。#189 で 7 本、#191 で 10 本）。
+/// 最小表示の «棒»（Issue #180、30 案の 14。#189 で 7 本、#191 で 10 本、#193 で 7 本へ）。
 ///
 /// **読み取らせたいことは 1 つ——声の大きさ。** 録音中は声の大きさで高さが変わり、
 /// 文字起こし中は同じ棒が青い波形記号の形で止まる（棒が波形になって処理へ移る）。
@@ -311,16 +312,15 @@ struct LevelBarsView: View {
 
     /// 声が大きいときの形（pt）。中央ほど高くして、並んだ棒を 1 つの «波形» として読ませる。
     ///
-    /// **10 本**（Issue #191）。偶数なので中央の山は同じ高さの 2 本で作り、左右対称は保つ。
-    /// パネル（144×34）を広げただけでは中身が小さいまま余白が残ったので、棒そのものを
-    /// 大きくした。最大 24pt でパネルの上下に 5pt を残す。
-    static let voiceProfile: [CGFloat] = [8, 11, 15, 19, 24, 24, 19, 15, 11, 8]
+    /// **7 本**（Issue #193）。10 本は «やりすぎ» だったので戻した。奇数なので中央の山は 1 本。
+    /// 棒の太さ（#191 で 3 → 5pt）はそのままなので、並びは 86 → 59pt になり余白が広がる。
+    /// 最大 24pt でパネル（144×34）の上下に 5pt を残す。
+    static let voiceProfile: [CGFloat] = [10, 15, 20, 24, 20, 15, 10]
     /// 文字起こし中の形。SF Symbols の `waveform` に寄せる（メニューバー・通常表示と同じ読み）。
-    static let processingProfile: [CGFloat] = [6, 9, 12, 16, 20, 20, 16, 12, 9, 6]
+    static let processingProfile: [CGFloat] = [8, 12, 16, 20, 16, 12, 8]
     /// 棒の幅。黙っているときの高さもこれ＝点。0 にすると «消えた» に見える。
     ///
-    /// 幅 5・間隔 4 で 10 本が 86pt。経過時間（13pt・4 文字）と並べてパネルの余白が 10pt ほどに
-    /// なる値を、候補を描き出して選んだ（Issue #191）。
+    /// 幅 5・間隔 4。候補を描き出して選んだ太さ（Issue #191）。7 本で並びは 59pt（#193）。
     static let barWidth: CGFloat = 5
     static let spacing: CGFloat = 4
     /// 声とみなす下限（Issue #187）。これ未満は環境音として、棒も色も動かさない。
