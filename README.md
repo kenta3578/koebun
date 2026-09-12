@@ -193,6 +193,8 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 
 ## ドキュメント
 
+- [docs/MANUAL.md](docs/MANUAL.md) — 説明書（設定項目と「やりたいこと → どこを触る」）
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 中の作り（処理の流れ・ファイルの責務・状態機械・読む順番）
 - [BUILD.md](BUILD.md) — ソースからのビルドと実行
 - [RELEASING.md](RELEASING.md) — 署名・notarization・配布の手順
 - [CLAUDE.md](CLAUDE.md) — このリポジトリで作業する AI エージェント向けの設計メモ
