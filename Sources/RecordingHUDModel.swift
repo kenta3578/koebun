@@ -104,10 +104,13 @@ final class RecordingHUDModel: ObservableObject {
     // MARK: 状態の見分け（Issue #200）
 
     /// 棒で見せる状態か。録音中・文字起こし中・完了の 3 つは、同じビューのまま入力値だけ変えて繋ぐ。
+    ///
+    /// **`default` で拾わない**（Issue #204）。状態が増えたときにコンパイルエラーで «棒か
+    /// アイコンか» の判断を迫るため、`AppStatus` の全ケースを並べる（`AppState` の分岐と同じ作り）。
     var showsBars: Bool {
         switch status {
-        case .recording, .processing, .done: return true
-        default:                             return false
+        case .recording, .processing, .done:            return true
+        case .loadingModel, .idle, .warned, .failed:    return false
         }
     }
 
@@ -117,7 +120,9 @@ final class RecordingHUDModel: ObservableObject {
         return false
     }
 
-    /// 挿入まで終わったか。棒を点に畳んでからチェックを出す。
+    /// 挿入まで終わったか。棒を点に畳んで緑にする。
+    /// **チェックは出さない**（Issue #202）——完了の瞬間は視線が挿入先にあり、視界の隅で
+    /// 緑が見えれば足りる。ここを読んで記号を足し戻さない。
     var isFinished: Bool {
         if case .done = status { return true }
         return false
