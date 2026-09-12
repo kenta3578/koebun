@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 北極星（ai_docs/north-star.md）のゴール KPI「平日 1 日あたりの挿入回数」を履歴から集計する。
+# ゴール KPI「平日 1 日あたりの挿入回数」を履歴から集計する。
 #
 #   ./scripts/kpi.sh            # 直近 14 日の日別表と、転換条件の進捗
 #   ./scripts/kpi.sh --days 30  # 期間を変える

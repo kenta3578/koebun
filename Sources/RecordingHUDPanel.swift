@@ -3,7 +3,7 @@ import AppKit
 
 /// HUD パネルの生成・配置と、パネルに張る監視（ホバー / Esc）。
 ///
-/// `RecordingHUDController` から分けてあるのは関心が違うため（Issue #65 / refactor-report S1）。
+/// `RecordingHUDController` から分けてあるのは関心が違うため（Issue #65）。
 /// あちらは「いま何を見せるか」の状態遷移、こちらは AppKit のウィンドウとイベントの面倒を見る。
 /// borderless な NSPanel は既定で key になれずボタンが反応しないため、key 化だけ許す。
 /// `.nonactivatingPanel` なのでアプリ自体はアクティブにならず、

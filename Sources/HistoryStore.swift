@@ -5,7 +5,7 @@ import os
 /// 1発話ぶんの履歴（`meta.json` の実体）。
 ///
 /// **生テキストを必ず残す**のがこの構造の芯。整形 LLM（Issue #10）は事実を書き換えうる
-/// （`ai_docs/design-rationale.md` §2: 請求額 4,217→4,270 の改変、
+/// （`docs/design-rationale.md` §2: 請求額 4,217→4,270 の改変、
 /// 「メールをチェックする**前に**」→「チェック**せずに**」の意味反転。どちらも警告は出ない）。
 /// 生テキストと送信プロンプトが残っていなければ、書き換えられたことに気づく手段がない。
 struct HistoryEntry: Codable, Identifiable, Equatable {

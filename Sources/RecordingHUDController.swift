@@ -90,7 +90,7 @@ final class RecordingHUDController {
     /// 置き直すのは**位置**の設定が変わったときだけ。サイズだけの変更でドラッグ位置を
     /// 中央へ戻さない（Issue #57）。非表示中に位置が変わったら、次に出すときに置く。
     /// 表示サイズと状態を Model へ移す。**Model が共有シングルトンを直読みしない**代わりに、
-    /// 環境が変わりうるところで必ずここを通す（Issue #65 / refactor-report S3）。
+    /// 環境が変わりうるところで必ずここを通す（Issue #65）。
     func syncEnvironment() {
         model.hudSize = SettingsStore.shared.hudSize
         model.status = AppState.shared.status

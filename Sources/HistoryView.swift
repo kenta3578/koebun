@@ -10,7 +10,7 @@ extension Notification.Name {
 /// 履歴ウィンドウ。メニューバーの「履歴…」から開く。
 ///
 /// 目的は**整形 AI の書き換えをユーザーが自力で検証できるようにすること**
-/// （`ai_docs/design-rationale.md` §7）。そのために
+/// （`docs/design-rationale.md` §7）。そのために
 /// 生 / 置換後 / 整形後 のトグル表示・送信プロンプト全文・録音ファイルを1画面に置く。
 struct HistoryView: View {
     /// 表示するテキストの種類。

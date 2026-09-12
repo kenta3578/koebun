@@ -77,7 +77,7 @@ koebun は**何も落とさない状態を出発点**にして、機能を足し
 - 音声認識は Apple が **292ms**、WhisperKit が **3,906ms** でした。しかも Apple 側は**句読点を自前で付けてくる**ので、整形の仕事の相当部分が認識の時点で済みます
 - Apple の音声認識には弱点があります。英数字・URL・メールアドレスは 3 回とも別々の壊れ方をしました。**壊れ方が毎回違うので辞書置換では救えません。** ここが重要な用途では WhisperKit に切り替えてください（同じ発話で WhisperKit は両方とも正しく取れています）
 
-かつては LLM 整形（Qwen3 / Apple Foundation Models）も持っていましたが、**実使用で一度も必要にならなかったので削除しました。** 認識側が句読点を付けてくるうえ、整形を挟むと 2.8 秒の待ちが増えます。経緯は `ai_docs/north-star.md` と `ai_docs/engine-benchmark.md` にあります。
+かつては LLM 整形（Qwen3 / Apple Foundation Models）も持っていましたが、**実使用で一度も必要にならなかったので削除しました。** 認識側が句読点を付けてくるうえ、整形を挟むと 2.8 秒の待ちが増えます。経緯は [`docs/engine-benchmark.md`](docs/engine-benchmark.md) にあります。
 
 ---
 
@@ -201,7 +201,7 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 
 ## ロードマップ
 
-設計の根拠は [`ai_docs/design-rationale.md`](ai_docs/design-rationale.md)、経緯は [`ai_docs/research-log.md`](ai_docs/research-log.md) にあります。
+設計の根拠は [`docs/design-rationale.md`](docs/design-rationale.md) にあります。
 
 残っている大きなものは **署名済みバイナリの配布（[#91](https://github.com/kenta3578/koebun/issues/91)）** です。ダウンロード不要で試せる既定にしたので、`.dmg` を配れば「落として起動して喋る」まで一直線になります。
 
