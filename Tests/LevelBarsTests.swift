@@ -70,6 +70,30 @@ struct LevelBarsTests {
         #expect(HUDMetrics.minimalHoverPanelSize.height == HUDMetrics.minimalPanelSize.height)
     }
 
+    /// 完了は棒を点に畳んでからチェックを出す（T2「畳んでから点灯」、Issue #200）。
+    @Test("完了では棒が点に畳まれる")
+    func finishedCollapsesToDots() {
+        let heights = LevelBarsView.heights(level: 0.3, isProcessing: false, isFinished: true)
+        #expect(heights.allSatisfy { $0 == LevelBarsView.barWidth })
+        #expect(heights.count == LevelBarsView.voiceProfile.count)
+        // 緑になるので、くすませない。
+        #expect(LevelBarsView.muting(level: 0.3, isProcessing: false, isFinished: true) == 0)
+    }
+
+    /// 3 状態は同じビューのまま繋ぐ（Issue #200）。どれを棒で見せるかはモデルが決める。
+    @Test("棒で見せるのは録音中・文字起こし中・完了")
+    func barsCoverTheThreeStates() {
+        let model = RecordingHUDModel()
+        model.status = .recording
+        #expect(model.showsBars && !model.isTranscribing && !model.isFinished)
+        model.status = .processing
+        #expect(model.showsBars && model.isTranscribing && !model.isFinished)
+        model.status = .done(message: "挿入しました ✓")
+        #expect(model.showsBars && !model.isTranscribing && model.isFinished)
+        model.status = .idle
+        #expect(!model.showsBars && !model.isFinished)
+    }
+
     /// 文字起こし中は «青く固まる»。声が残っていても形は変えない。
     @Test("文字起こし中は声に関係なく波形の形で止まる")
     func processingIsFixed() {
