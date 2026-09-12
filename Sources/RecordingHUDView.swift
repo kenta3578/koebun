@@ -118,7 +118,10 @@ struct RecordingHUDView: View {
             LevelBarsView(level: 0, isProcessing: true, color: statusColor)
                 .accessibilityLabel(model.status.accessibilityLabel)
         default:
-            statusIcon(size: 10, width: 12)
+            // **左端の幅は録音中の棒と同じに固定する**（Issue #198）。12pt に縮むと中身が
+            // 中央寄せで並び直し、経過時間の位置まで動いてガタつく。完了だけでなく
+            // 警告・読み込み中でも同じ。幅は棒の定義を参照するので、太さや本数を変えても揃う。
+            statusIcon(size: 15, width: LevelBarsView.width)
         }
     }
 
