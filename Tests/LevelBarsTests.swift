@@ -70,7 +70,7 @@ struct LevelBarsTests {
         #expect(HUDMetrics.minimalHoverPanelSize.height == HUDMetrics.minimalPanelSize.height)
     }
 
-    /// 完了は棒を点に畳んでからチェックを出す（T2「畳んでから点灯」、Issue #200）。
+    /// 完了は棒を点に畳んで緑にするだけ。チェックは出さない（Issue #202）。
     @Test("完了では棒が点に畳まれる")
     func finishedCollapsesToDots() {
         let heights = LevelBarsView.heights(level: 0.3, isProcessing: false, isFinished: true)

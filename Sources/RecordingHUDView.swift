@@ -135,6 +135,10 @@ struct RecordingHUDView: View {
         }
         .frame(width: LevelBarsView.width)
         .animation(.easeOut(duration: 0.2), value: model.status)
+        // **読み上げの要素をここで 1 つ作る**（Issue #204）。コンテナ自体は要素にならず、
+        // 棒の側の子孫（`HStack` と `Capsule`）も要素を作らないので、これが無いと
+        // 録音中だけラベルの付く先が無くなる。色が読めない環境向けの 3 つ目の手がかり。
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(model.status.accessibilityLabel)
     }
 
