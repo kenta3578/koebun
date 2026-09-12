@@ -32,11 +32,11 @@ enum AppleTranscriberError: LocalizedError {
 /// 認識モデルは OS のアセットで、`AssetInventory` は未インストールのときだけ OS に取りに行かせる
 /// （HuggingFace から約2.9GB を引く WhisperKit とは別物）。常駐メモリもアプリは持たない。
 ///
-/// 精度は `ai_docs/research-log.md` §4 で「妥協」として不採用にしたが、その判断は
+/// かつて「精度は妥協」として不採用にしていたが、その判断の根拠は
 /// 他者の英語ベンチに基づくもので日本語・実利用では検証していない。それを測るための実装。
 @available(macOS 26.0, *)
 actor AppleTranscriber: SpeechEngine {
-    /// 日本語固定。koebun は多言語を明示的に捨てている（`ai_docs/design-rationale.md` §3）。
+    /// 日本語固定。koebun は多言語を明示的に捨てている（`docs/design-rationale.md` §3）。
     private static let requestedLocale = Locale(identifier: "ja-JP")
 
     /// `AudioRecorder` が出力するサンプルレート。比較のため入力側は WhisperKit と揃える。

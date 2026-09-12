@@ -8,7 +8,7 @@
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 中を読む人 | 処理の流れ・31 ファイルの責務・状態機械・読む順番・触ると危ない場所 |
 | [`SWIFT-NOTES.md`](SWIFT-NOTES.md) | Web 側の言語から来た人 | Swift / SwiftUI を TypeScript・Vue/React・Node.js の言葉に置き換えた地図 |
 
-設計の**理由**（なぜこの作りにしたか）は `ai_docs/` 側にある。ここは「何がどうなっているか」まで。
+設計の**理由**（なぜこの作りにしたか）は [design-rationale.md](design-rationale.md) にある。ここは「何がどうなっているか」まで。
 
 ## 画像の TODO（Issue #16 / #197）
 

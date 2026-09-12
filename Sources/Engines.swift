@@ -8,7 +8,7 @@ import Foundation
 /// 実測（1台1回・Issue #31）の結果、**既定は Apple 音声認識**に決めた。
 /// 認識は Apple 292ms / WhisperKit 3,906ms で、Apple は句読点まで自前で付けてくる。
 /// ただし Apple は URL・メール・英数字を毎回違う壊し方で崩すので、そこが要る発話のために
-/// WhisperKit を残す（`ai_docs/engine-benchmark.md` §2）。
+/// WhisperKit を残す（`docs/engine-benchmark.md` §2）。
 ///
 /// 整形 LLM は #62 の判定で削除した（#131）。用途が言えるのは WhisperKit だけ、という整理。
 ///

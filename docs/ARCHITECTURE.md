@@ -2,7 +2,7 @@
 
 **この文書が答えること**: 右⌥を押してから文字が入るまでに何がどの順で起き、どのファイルがどこを担い、どこを触ると壊れるか。
 
-Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）。設計の**理由**は `ai_docs/design-rationale.md`、Swift の**記法**は [SWIFT-NOTES.md](SWIFT-NOTES.md)、使い方は [MANUAL.md](MANUAL.md) にある。ここは**構造**だけを扱う。
+Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）。設計の**理由**は `ai_design-rationale.md`、Swift の**記法**は [SWIFT-NOTES.md](SWIFT-NOTES.md)、使い方は [MANUAL.md](MANUAL.md) にある。ここは**構造**だけを扱う。
 
 ---
 

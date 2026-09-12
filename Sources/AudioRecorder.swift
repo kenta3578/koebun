@@ -26,7 +26,7 @@ enum AudioRecorderError: LocalizedError {
 /// **API は MainActor に隔離し、オーディオスレッドが触る状態は `TapBuffer` だけに閉じる**
 /// （Issue #103）。tap のブロックは `self` を捕まえず、この箱と値だけを受け取る。
 /// 以前は `samples` を `NSLock` で守る一方 `lastLevelSentAt` は素通しで、
-/// メインスレッドとオーディオスレッドの両方から書いていた（refactor-report M4）。
+/// メインスレッドとオーディオスレッドの両方から書いていた。
 @MainActor
 final class AudioRecorder {
     /// オーディオスレッドとメインスレッドが共有する唯一の状態。

@@ -8,7 +8,7 @@ import Foundation
 ///
 /// `AppController` 側に残すのは **呼ぶ → 挿入 → 表示 → 履歴** だけ。以前は 1 メソッドに
 /// 「エンジン解決・計時・置換・挿入・状態分岐・履歴・HUD 分岐」が全部あり、どこを変えても
-/// 全部を読み直す必要があった（`ai_docs/refactor-report.md` S2）。
+/// 全部を読み直す必要があった。
 enum DictationPipeline {
     /// 文字起こしと後処理の結果。**挿入も表示も履歴も含まない**（呼び出し側の仕事）。
     struct Output: Sendable, Equatable {

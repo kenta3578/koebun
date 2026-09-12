@@ -236,7 +236,7 @@ final class AppController {
     /// 文字起こし → 挿入 → 表示 → 履歴。**例外を外に出さない**（発話を失わないため）。
     ///
     /// 文字起こしと後処理そのものは `DictationPipeline` に閉じている。ここに残すのは
-    /// 「挿入する・見せる・残す」という副作用の側だけ（`ai_docs/refactor-report.md` S2）。
+    /// 「挿入する・見せる・残す」という副作用の側だけ。
     private func runPipeline(samples: [Float],
                              expectedBundleId: String?,
                              deviceChanged: Bool,

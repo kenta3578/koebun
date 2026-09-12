@@ -6,7 +6,7 @@
 
 Mac（Apple Silicon / 実機は M5 Pro・48GB メモリ）で、音声 → 文字起こし → カーソルへ直挿し までをすべてオンデバイスで完結させる個人用ツール。クラウド不要・サブスク不要・音声を外部に出さない。
 
-**差は認識エンジンではなく「入り口と出口」にある**（`ai_docs/north-star.md`）。認識は macOS 内蔵の SpeechAnalyzer そのものなので、価値は右⌥トグル・開始音／停止音・フィラー除去・辞書置換・確実な挿入・履歴の側にある。**薄さが価値なので、機能を足すたびに価値が減る。**
+**差は認識エンジンではなく「入り口と出口」にある**。認識は macOS 内蔵の SpeechAnalyzer そのものなので、価値は右⌥トグル・開始音／停止音・フィラー除去・辞書置換・確実な挿入・履歴の側にある。**薄さが価値なので、機能を足すたびに価値が減る。**
 
 ## Tech Stack
 
@@ -28,7 +28,6 @@ Mac（Apple Silicon / 実機は M5 Pro・48GB メモリ）で、音声 → 文�
 ## Directory Structure
 
 ```
-├── ai_docs/         # AI用ドキュメント（調査ログ・設計判断）
 ├── local_docs/      # ローカル専用（git管理外）
 ├── .claude/rules/   # パス限定の規約（該当ファイルを触るときだけロード）
 └── ...
@@ -38,7 +37,7 @@ Mac（Apple Silicon / 実機は M5 Pro・48GB メモリ）で、音声 → 文�
 
 - **完全ローカル前提**: クラウド送信・外部API依存を増やさない。音声・テキストは端末外に出さない
 - **低遅延優先**: 認識は Apple 内蔵で 292ms（実測）。重い処理をホットパスに足さない
-- **機能を足さない**: LLM 整形・5 モード・コンテキスト注入・アプリ別自動切替・整形差分ガードは #62 の判定で削除済み（#128〜#131）。**同じものを戻す前に `ai_docs/north-star.md` の「帰結: 薄さが価値」を読む**
+- **機能を足さない**: LLM 整形・5 モード・コンテキスト注入・アプリ別自動切替・整形差分ガードは #62 の判定で削除済み（#128〜#131）。**同じものを戻す前に、冒頭の「薄さが価値」を読む**
 - **並行性の警告を 0 に保つ**: `SWIFT_STRICT_CONCURRENCY: complete`（Issue #103）。`@unchecked Sendable` を増やさず、`@MainActor` か `OSAllocatedUnfairLock` で隔離する。未注釈ライブラリ由来だけ `@preconcurrency import` で抑える
 - **ネイティブAPIで素直に書く**: ホットキー/マイク/注入は macOS ネイティブAPIをそのまま使う（ブリッジ越しに無理しない）
 
@@ -65,7 +64,7 @@ Mac（Apple Silicon / 実機は M5 Pro・48GB メモリ）で、音声 → 文�
 4. `ExitWorktree`（remove）→ `git pull --ff-only origin develop`
 5. **`./scripts/install-local.sh`** で実機へ入れて起動する（Release ビルド → `koebun-dev` 署名 → `/Applications` 置換 → 起動）
 6. 実機で確認する。`pgrep -x koebun` で起動を確かめ、UI 変更はスクリーンショットで見る
-7. ユーザーの実機フィードバックは、その場で次の Issue にする（`ai_docs/` に書かない）
+7. ユーザーの実機フィードバックは、その場で次の Issue にする（メモに溜めない）
 
 複数の小さな Issue は1つの worktree・1つの PR にまとめてよいが、**コミットは Issue 単位**に分ける。ドキュメントだけの変更は 5〜6 を省いてよい。
 
@@ -87,5 +86,5 @@ pgrep -x koebun                                     # 起動確認
 ./scripts/model-manifest.sh                         # WhisperKit の重みのマニフェストを作り直す（Issue #106）
 tccutil reset Accessibility com.kenta3578.koebun    # 権限トグルが効かないときの一度きりのリセット
 log stream --predicate 'subsystem == "com.kenta3578.koebun"' --level info   # ログ（category: audio/asr/hotkey/history/store/inject）
-gh issue list --state open                          # 候補プール（ai_docs ではなく Issue に置く）
+gh issue list --state open                          # 候補プール（Issue が唯一の置き場）
 ```

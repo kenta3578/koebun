@@ -23,7 +23,7 @@ final class RecordingHUDModel: ObservableObject {
     @Published var isConfirmingCancel = false
     /// 挿入できなかった（または確認できなかった）結果。ここに残っている間は HUD を閉じない。
     @Published var pendingResult: PendingResult?
-    /// 表示サイズと状態は**注入する**（Issue #65 / refactor-report S3）。
+    /// 表示サイズと状態は**注入する**（Issue #65）。
     /// 以前は Model が `SettingsStore.shared` / `AppState.shared` を直読みしていたので、
     /// 無関係な設定を変えただけで HUD 全体が描き直されていた。
     @Published var hudSize: HUDSize = .normal
