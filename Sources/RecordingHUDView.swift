@@ -111,7 +111,11 @@ struct RecordingHUDView: View {
     ///
     /// **状態で `switch` して別のビューを返さない**（Issue #200）。返すと SwiftUI が «別物» と
     /// 見なして補間しないので、状態が変わる瞬間に絵が飛ぶ。同じビューを置いたまま入力値だけ
-    /// 変えると、高さ・色が 0.2 秒で繋がる。完了は「畳む（前半）→ チェックが出る（後半）」の 2 段。
+    /// 変えると、高さ・色が 0.2 秒で繋がる。
+    ///
+    /// **完了にチェックは出さない**（Issue #202）。完了の瞬間、ユーザーの視線は挿入先にある。
+    /// 記号を置いても読み戻させる必要はなく、存在感だけが増える。棒が最小（点）に畳まれて
+    /// 緑になるだけにする——**増やすのではなく静かに減らす**。視界の隅で «終わった» は伝わる。
     ///
     /// **左端の幅は録音中の棒と同じに固定する**（Issue #198）。12pt に縮むと中身が中央寄せで
     /// 並び直し、経過時間の位置まで動いてガタつく。幅は棒の定義を参照するので自動で揃う。
@@ -125,13 +129,6 @@ struct RecordingHUDView: View {
                               isProcessing: model.isTranscribing,
                               isFinished: model.isFinished,
                               color: statusColor)
-                    .opacity(model.isFinished ? 0 : 1)
-                    .animation(Self.finishAnimation, value: model.isFinished)
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(statusColor)
-                    .opacity(model.isFinished ? 1 : 0)
-                    .animation(Self.finishAnimation, value: model.isFinished)
             } else {
                 statusIcon(size: 15, width: LevelBarsView.width)
             }
@@ -140,10 +137,6 @@ struct RecordingHUDView: View {
         .animation(.easeOut(duration: 0.2), value: model.status)
         .accessibilityLabel(model.status.accessibilityLabel)
     }
-
-    /// 完了のチェックは、棒が畳み終わってから現れる（T2「畳んでから点灯」）。
-    /// 同時に動かすと棒とチェックが重なって «ちらつき» に見える。
-    private static let finishAnimation: Animation = .easeOut(duration: 0.12).delay(0.14)
 
     // 文字起こし中: HUD は残したまま処理中を見せる
     private var processingContent: some View {
@@ -342,7 +335,8 @@ struct LevelBarsView: View {
     static let voiceProfile: [CGFloat] = [8, 12, 17, 20, 17, 12, 8]
     /// 文字起こし中の形。SF Symbols の `waveform` に寄せる（メニューバー・通常表示と同じ読み）。
     static let processingProfile: [CGFloat] = [7, 10, 13, 17, 13, 10, 7]
-    /// 完了の形（Issue #200）。全部が点に畳まれてからチェックが現れる（T2「畳んでから点灯」）。
+    /// 完了の形（Issue #200 / #202）。全部を点に畳む。
+    /// **チェックは出さない**——完了の瞬間は視線が挿入先にあり、視界の隅で緑が見えれば足りる。
     static let finishedProfile: [CGFloat] = Array(repeating: barWidth, count: voiceProfile.count)
     /// 棒の幅。黙っているときの高さもこれ＝点。0 にすると «消えた» に見える。
     ///
