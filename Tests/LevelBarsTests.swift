@@ -51,13 +51,16 @@ struct LevelBarsTests {
         #expect(LevelBarsView.processingProfile.count == LevelBarsView.voiceProfile.count)
     }
 
-    /// パネルだけ広げると «余計な padding» に見え（Issue #191）、詰めすぎると «やりすぎ»（#193）。
-    /// 棒が主役に見える下限だけ縛り、余白の広さは値で決める。
-    @Test("棒は最小表示の幅の 4 割以上を使い、ホバー時にも収まる")
-    func barsFillTheMinimalBar() {
-        #expect(LevelBarsView.width >= HUDMetrics.minimalPanelSize.width * 0.4)
-        // 経過時間（13pt・5 文字でおよそ 40pt）と間隔 6pt、左右の余白 12pt を足してもホバー時に収まる。
-        #expect(LevelBarsView.width + 6 + 40 + 6 + 22 + 6 + 22 + 24 <= HUDMetrics.minimalHoverPanelSize.width)
+    /// 広げすぎると «余計な padding»（#191）、詰めすぎると «やりすぎ»（#193）、
+    /// 大きすぎると «フォントが大きすぎる»（#195）。見た目の好みは値で決め、
+    /// **テストで縛るのは «はみ出さない» ことだけ**にする。
+    @Test("棒と経過時間が最小表示に収まる")
+    func contentFitsTheMinimalBar() {
+        // 経過時間（12pt・5 文字でおよそ 38pt）＋ 棒との間隔 6pt ＋ 左右の余白 12pt。
+        let content = LevelBarsView.width + 6 + 38 + 24
+        #expect(content <= HUDMetrics.minimalPanelSize.width)
+        // ホバー時は停止・キャンセル（22pt ＋ 間隔 6pt が 2 つ）ぶん増える。
+        #expect(content + (6 + 22) * 2 <= HUDMetrics.minimalHoverPanelSize.width)
     }
 
     /// 横 1.5 倍・縦 1.2 倍にしても、ホバー時の停止・キャンセルの余白は変えない（Issue #189）。

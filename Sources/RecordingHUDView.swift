@@ -92,10 +92,10 @@ struct RecordingHUDView: View {
     private var minimalContent: some View {
         HStack(spacing: 6) {
             minimalIndicator
-            // 13pt に上げた（Issue #191）。10 分を超えて «12:34» の 5 文字になっても
-            // 折り返さないよう 1 行に固定し、収まらないときだけ少し縮める。
+            // 11 → 13pt（Issue #191）→ 12pt（#195 の候補 A。13pt は «大きすぎる»）。
+            // «12:34» の 5 文字でも折り返さないよう 1 行に固定し、収まらないときだけ少し縮める。
             Text(model.elapsedText)
-                .font(.system(size: 13, design: .monospaced))
+                .font(.system(size: 12, design: .monospaced))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -312,17 +312,17 @@ struct LevelBarsView: View {
 
     /// 声が大きいときの形（pt）。中央ほど高くして、並んだ棒を 1 つの «波形» として読ませる。
     ///
-    /// **7 本**（Issue #193）。10 本は «やりすぎ» だったので戻した。奇数なので中央の山は 1 本。
-    /// 棒の太さ（#191 で 3 → 5pt）はそのままなので、並びは 86 → 59pt になり余白が広がる。
-    /// 最大 24pt でパネル（144×34）の上下に 5pt を残す。
-    static let voiceProfile: [CGFloat] = [10, 15, 20, 24, 20, 15, 10]
+    /// **7 本**（Issue #193）。奇数なので中央の山は 1 本で、左右対称。
+    /// 最大 20pt（Issue #195 の候補 A で 24 → 20）。パネル（144×34）の上下に 7pt を残す。
+    static let voiceProfile: [CGFloat] = [8, 12, 17, 20, 17, 12, 8]
     /// 文字起こし中の形。SF Symbols の `waveform` に寄せる（メニューバー・通常表示と同じ読み）。
-    static let processingProfile: [CGFloat] = [8, 12, 16, 20, 16, 12, 8]
+    static let processingProfile: [CGFloat] = [7, 10, 13, 17, 13, 10, 7]
     /// 棒の幅。黙っているときの高さもこれ＝点。0 にすると «消えた» に見える。
     ///
-    /// 幅 5・間隔 4。候補を描き出して選んだ太さ（Issue #191）。7 本で並びは 59pt（#193）。
-    static let barWidth: CGFloat = 5
-    static let spacing: CGFloat = 4
+    /// 幅 4・間隔 3（Issue #195 の候補 A）。#191 の 幅5・間隔4 は «大きすぎる» と言われた。
+    /// 7 本で並びは 46pt。
+    static let barWidth: CGFloat = 4
+    static let spacing: CGFloat = 3
     /// 声とみなす下限（Issue #187）。これ未満は環境音として、棒も色も動かさない。
     ///
     /// 履歴の録音 619 件を実測すると、85ms 窓の 64% がこれ未満に入る（環境音と声の境目）。
