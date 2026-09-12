@@ -107,23 +107,43 @@ struct RecordingHUDView: View {
         }
     }
 
-    /// 最小表示の左端。録音中と文字起こし中は «棒»、それ以外は状態アイコン（Issue #180）。
-    @ViewBuilder
+    /// 最小表示の左端。録音中・文字起こし中・完了は «棒»、それ以外は状態アイコン。
+    ///
+    /// **状態で `switch` して別のビューを返さない**（Issue #200）。返すと SwiftUI が «別物» と
+    /// 見なして補間しないので、状態が変わる瞬間に絵が飛ぶ。同じビューを置いたまま入力値だけ
+    /// 変えると、高さ・色が 0.2 秒で繋がる。完了は「畳む（前半）→ チェックが出る（後半）」の 2 段。
+    ///
+    /// **左端の幅は録音中の棒と同じに固定する**（Issue #198）。12pt に縮むと中身が中央寄せで
+    /// 並び直し、経過時間の位置まで動いてガタつく。幅は棒の定義を参照するので自動で揃う。
+    ///
+    /// アニメーションは**状態が変わったときだけ**。音量による高さの変化には掛けない
+    /// （毎 85ms の値に掛けると遅れて見える）。
     private var minimalIndicator: some View {
-        switch model.status {
-        case .recording:
-            LevelBarsView(level: model.currentLevel, isProcessing: false, color: statusColor)
-                .accessibilityLabel(model.status.accessibilityLabel)
-        case .processing:
-            LevelBarsView(level: 0, isProcessing: true, color: statusColor)
-                .accessibilityLabel(model.status.accessibilityLabel)
-        default:
-            // **左端の幅は録音中の棒と同じに固定する**（Issue #198）。12pt に縮むと中身が
-            // 中央寄せで並び直し、経過時間の位置まで動いてガタつく。完了だけでなく
-            // 警告・読み込み中でも同じ。幅は棒の定義を参照するので、太さや本数を変えても揃う。
-            statusIcon(size: 15, width: LevelBarsView.width)
+        ZStack {
+            if model.showsBars {
+                LevelBarsView(level: model.currentLevel,
+                              isProcessing: model.isTranscribing,
+                              isFinished: model.isFinished,
+                              color: statusColor)
+                    .opacity(model.isFinished ? 0 : 1)
+                    .animation(Self.finishAnimation, value: model.isFinished)
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(statusColor)
+                    .opacity(model.isFinished ? 1 : 0)
+                    .animation(Self.finishAnimation, value: model.isFinished)
+            } else {
+                statusIcon(size: 15, width: LevelBarsView.width)
+            }
         }
+        .frame(width: LevelBarsView.width)
+        .animation(.easeOut(duration: 0.2), value: model.status)
+        .accessibilityLabel(model.status.accessibilityLabel)
     }
+
+    /// 完了のチェックは、棒が畳み終わってから現れる（T2「畳んでから点灯」）。
+    /// 同時に動かすと棒とチェックが重なって «ちらつき» に見える。
+    private static let finishAnimation: Animation = .easeOut(duration: 0.12).delay(0.14)
 
     // 文字起こし中: HUD は残したまま処理中を見せる
     private var processingContent: some View {
@@ -311,6 +331,8 @@ struct LevelBarsView: View {
     let level: Float
     /// 文字起こし中か。true なら声に関係なく波形記号の形で止める。
     let isProcessing: Bool
+    /// 挿入まで終わったか（Issue #200）。true なら棒を «点の列» に畳む。
+    var isFinished: Bool = false
     let color: Color
 
     /// 声が大きいときの形（pt）。中央ほど高くして、並んだ棒を 1 つの «波形» として読ませる。
@@ -320,6 +342,8 @@ struct LevelBarsView: View {
     static let voiceProfile: [CGFloat] = [8, 12, 17, 20, 17, 12, 8]
     /// 文字起こし中の形。SF Symbols の `waveform` に寄せる（メニューバー・通常表示と同じ読み）。
     static let processingProfile: [CGFloat] = [7, 10, 13, 17, 13, 10, 7]
+    /// 完了の形（Issue #200）。全部が点に畳まれてからチェックが現れる（T2「畳んでから点灯」）。
+    static let finishedProfile: [CGFloat] = Array(repeating: barWidth, count: voiceProfile.count)
     /// 棒の幅。黙っているときの高さもこれ＝点。0 にすると «消えた» に見える。
     ///
     /// 幅 4・間隔 3（Issue #195 の候補 A）。#191 の 幅5・間隔4 は «大きすぎる» と言われた。
@@ -374,7 +398,8 @@ struct LevelBarsView: View {
     }
 
     /// 棒それぞれの高さ（pt）。
-    static func heights(level: Float, isProcessing: Bool) -> [CGFloat] {
+    static func heights(level: Float, isProcessing: Bool, isFinished: Bool = false) -> [CGFloat] {
+        if isFinished { return finishedProfile }
         if isProcessing { return processingProfile }
         let ratio = ratio(level: level)
         return voiceProfile.map { barWidth + ($0 - barWidth) * ratio }
@@ -384,26 +409,24 @@ struct LevelBarsView: View {
     ///
     /// **音量から連続的に決め、二択で切り替えない。** 切り替えるとそこでチカチカする。
     /// 合図は «声の大きさ» 1 つのまま、高さと一緒に色が付いてくる。
-    static func muting(level: Float, isProcessing: Bool) -> CGFloat {
-        if isProcessing { return 0 }
+    static func muting(level: Float, isProcessing: Bool, isFinished: Bool = false) -> CGFloat {
+        if isProcessing || isFinished { return 0 }
         return quietMuting * (1 - colorRatio(level: level))
     }
 
     var body: some View {
-        Canvas { context, size in
-            let mid = size.height / 2
-            let muting = Self.muting(level: level, isProcessing: isProcessing)
-            for (index, height) in Self.heights(level: level, isProcessing: isProcessing).enumerated() {
-                let rect = CGRect(x: CGFloat(index) * (Self.barWidth + Self.spacing),
-                                  y: mid - height / 2,
-                                  width: Self.barWidth,
-                                  height: height)
-                let bar = Path(roundedRect: rect, cornerRadius: Self.barWidth / 2)
-                context.fill(bar, with: .color(color))
-                // 赤の上に灰を重ねる＝赤と灰を混ぜた色。システム色なのでライト・ダークに追従する。
-                if muting > 0 {
-                    context.fill(bar, with: .color(Color(nsColor: .systemGray).opacity(muting)))
-                }
+        // **`Canvas` で一括描画しない**（Issue #200）。Canvas は高さが変わっても途中の値を
+        // 補間しないので、状態が変わる瞬間に別の絵へ飛ぶ。1 本ずつのビューにすると、
+        // 高さと色の変化を SwiftUI が繋いでくれる。見た目（寸法・角丸）は同じ。
+        let heights = Self.heights(level: level, isProcessing: isProcessing, isFinished: isFinished)
+        let muting = Self.muting(level: level, isProcessing: isProcessing, isFinished: isFinished)
+        return HStack(spacing: Self.spacing) {
+            ForEach(heights.indices, id: \.self) { index in
+                Capsule(style: .continuous)
+                    .fill(color)
+                    // 赤の上に灰を重ねる＝赤と灰を混ぜた色。システム色なので明暗に追従する。
+                    .overlay(Capsule(style: .continuous).fill(Color(nsColor: .systemGray).opacity(muting)))
+                    .frame(width: Self.barWidth, height: heights[index])
             }
         }
         .frame(width: Self.width, height: Self.height)

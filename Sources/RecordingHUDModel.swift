@@ -101,6 +101,28 @@ final class RecordingHUDModel: ObservableObject {
     var currentLevel: Float { levels.suffix(Self.peakWindow).max() ?? 0 }
     static let peakWindow = 3
 
+    // MARK: 状態の見分け（Issue #200）
+
+    /// 棒で見せる状態か。録音中・文字起こし中・完了の 3 つは、同じビューのまま入力値だけ変えて繋ぐ。
+    var showsBars: Bool {
+        switch status {
+        case .recording, .processing, .done: return true
+        default:                             return false
+        }
+    }
+
+    /// 文字起こし中か。棒を波形記号の形で止める。
+    var isTranscribing: Bool {
+        if case .processing = status { return true }
+        return false
+    }
+
+    /// 挿入まで終わったか。棒を点に畳んでからチェックを出す。
+    var isFinished: Bool {
+        if case .done = status { return true }
+        return false
+    }
+
     var elapsedText: String {
         let total = Int(elapsed)
         return String(format: "%d:%02d", total / 60, total % 60)
