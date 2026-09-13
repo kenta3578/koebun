@@ -53,7 +53,7 @@
 
 | 機能 | 状態 |
 |---|---|
-| 署名済みバイナリの配布（Releases / Homebrew） | 未配布 — [#91](https://github.com/kenta3578/koebun/issues/91) |
+| 署名済みバイナリの配布（Releases / Homebrew） | 未配布 |
 
 **他ツールとの速度・精度の比較は書きません。** 「Superwhisper より速い／正確」といった主張は現時点で一切していません。
 
@@ -203,7 +203,7 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 
 設計の根拠は [`docs/design-rationale.md`](docs/design-rationale.md) にあります。
 
-残っている大きなものは **署名済みバイナリの配布（[#91](https://github.com/kenta3578/koebun/issues/91)）** です。ダウンロード不要で試せる既定にしたので、`.dmg` を配れば「落として起動して喋る」まで一直線になります。
+残っている大きなものは **署名済みバイナリの配布** です。ダウンロード不要で試せる既定にしたので、`.dmg` を配れば「落として起動して喋る」まで一直線になります。
 
 明確に作らないもの: 会議録音・話者分離・iOS/Windows 版・多言語対応・クラウドモデル。
 
