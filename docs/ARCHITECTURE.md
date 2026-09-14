@@ -105,14 +105,14 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 | `HUDLayout.swift` | 57 | HUD の表示位置・表示サイズ（非表示 / 最小 / 通常）の定義 |
 | `SettingsView.swift` | 552 | 設定画面（タブ構成） |
 | `SettingsWindow.swift` | 57 | 設定ウィンドウを自前の `NSWindow` で開く（SwiftUI の `Settings` は使えない） |
-| `HistoryView.swift` | 475 | 履歴ウィンドウ。再生・再挿入・コピー・削除 |
+| `HistoryView.swift` | 430 | 履歴ウィンドウ。再挿入・コピー・辞書に登録・削除 |
 
 ### 保存
 
 | ファイル | 行 | 役割 |
 |---|---:|---|
 | `SettingsStore.swift` | 455 | 設定の永続化（UserDefaults）と共有状態 |
-| `HistoryStore.swift` | 489 | `~/koebun/history/<時刻>/` に `meta.json` ＋ `audio.wav`。保存期間の掃除 |
+| `HistoryStore.swift` | 440 | `~/koebun/history/<時刻>/meta.json`（音声は残さない）。保存期間の掃除 |
 | `SoundPlayer.swift` | 200 | 開始音 / 停止音。同梱の koebun の音・`~/koebun/sounds/` の自分の音・システム音 |
 | `LoginItem.swift` | 92 | ログイン時の自動起動（`SMAppService`。真偽値を自前で持たない） |
 
@@ -120,8 +120,7 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 
 ```
 ~/koebun/
-├── history/<yyyyMMdd'T'HHmmss.SSS'Z'>/   meta.json（生テキスト・置換後・所要時間・エンジン）
-│                                        audio.wav（16kHz mono）  ※ 0700 で作る
+├── history/<yyyyMMdd'T'HHmmss.SSS'Z'>/   meta.json（生テキスト・置換後・所要時間・エンジン）  ※ 0700 で作る
 ├── replacements.json                    辞書置換ルール
 ├── fillers.json                         フィラー語
 └── sounds/                              自分で入れた開始音・停止音（aiff / wav / mp3 / m4a / caf）

@@ -249,8 +249,6 @@ struct GeneralSettingsView: View {
                     HistoryStore.shared.purgeExpired()
                 }
 
-                Toggle("録音した音声も保存する", isOn: $settings.saveAudio)
-
                 HStack {
                     Text("保存先")
                     Spacer()
@@ -268,9 +266,8 @@ struct GeneralSettingsView: View {
                     Button("削除…", role: .destructive) { isConfirmingDeleteAll = true }
                 }
 
-                Text("1発話ごとに録音・生テキスト・置換後テキスト・送信プロンプトを保存します。"
-                     + "整形 AI が事実を書き換えていないか、生テキストと突き合わせて確認できます。"
-                     + "送信プロンプトからは選択テキストとクリップボードの中身を除いて保存します。")
+                Text("1発話ごとに生テキストと置換後テキストを保存します（録音した音声は残しません）。"
+                     + "辞書置換やフィラー除去が何を変えたか、生テキストと突き合わせて確認できます。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -291,7 +288,7 @@ struct GeneralSettingsView: View {
             Button("削除", role: .destructive) { HistoryStore.shared.deleteAll() }
             Button("キャンセル", role: .cancel) {}
         } message: {
-            Text("録音・生テキスト・送信プロンプトがすべて消えます。取り消せません。")
+            Text("これまでの文字起こし結果がすべて消えます。取り消せません。")
         }
     }
 

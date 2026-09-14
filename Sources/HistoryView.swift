@@ -1,11 +1,5 @@
 import SwiftUI
 import AppKit
-import AVFoundation
-
-extension Notification.Name {
-    /// 履歴ウィンドウが閉じられた。再生中の音声を止めるために使う（Issue #84）。
-    static let historyWindowWillClose = Notification.Name("koebun.historyWindowWillClose")
-}
 
 /// 履歴ウィンドウ。メニューバーの「履歴…」から開く。
 ///
@@ -38,13 +32,12 @@ struct HistoryView: View {
     @ObservedObject private var store = HistoryStore.shared
     @State private var selection: HistoryEntry.ID?
     @State private var variant: Variant = .raw
-    @State private var player: AVAudioPlayer?
     @State private var message: String?
     /// 「辞書に登録」ポップオーバー（Issue #60）。
     @State private var isAddingRule = false
     @State private var newRuleFrom = ""
     @State private var newRuleTo = ""
-    /// 削除の確認待ち。テキスト・送信プロンプト・録音がディスクごと消えて取り消せないので、
+    /// 削除の確認待ち。テキストがディスクごと消えて取り消せないので、
     /// ワンクリックでは実行しない（しかもこのボタンの隣は「辞書に登録…」）。Issue #84。
     @State private var pendingDeletion: HistoryEntry?
 
@@ -179,11 +172,6 @@ struct HistoryView: View {
         }
         .onChange(of: entry.id) { _, _ in
             message = nil
-            stopPlayback()
-        }
-        // ウィンドウを閉じても .onDisappear は発火しないので、通知で止める（Issue #84）。
-        .onReceive(NotificationCenter.default.publisher(for: .historyWindowWillClose)) { _ in
-            stopPlayback()
         }
     }
 
@@ -196,9 +184,6 @@ struct HistoryView: View {
                 Label("置換 \(entry.durations.replaceMs)ms", systemImage: "character.book.closed")
                 if let formatMs = entry.durations.formatMs {
                     Label("整形 \(formatMs)ms", systemImage: "sparkles")
-                }
-                if let audio = entry.audio {
-                    Label(String(format: "%.1f秒", audio.durationSeconds), systemImage: "mic")
                 }
                 // どのエンジンで処理したか（Issue #27）。エンジンを切り替えて同じ発話を通したとき、
                 // どちらの結果を見ているのかがここで分かる。
@@ -250,10 +235,6 @@ struct HistoryView: View {
             Button("再挿入") { reinsert(entry) }
                 .disabled((variant.text(of: entry) ?? "").isEmpty)
                 .help("ウィンドウを閉じて、直前に使っていたアプリのカーソル位置に挿入します")
-
-            if entry.audio != nil {
-                Button(player?.isPlaying == true ? "停止" : "録音を再生") { togglePlayback(entry) }
-            }
 
             Button("辞書に登録…") { beginAddingRule(entry) }
                 .help("誤認識された語を辞書置換に登録します。文中の語を選んで ⌘C してから押すと、読みが埋まります")
@@ -368,7 +349,6 @@ struct HistoryView: View {
     /// ウィンドウを閉じてフォーカスが直前のアプリへ戻るのを待ってから挿入する。
     private func reinsert(_ entry: HistoryEntry) {
         guard let text = variant.text(of: entry), !text.isEmpty else { return }
-        stopPlayback()
         HistoryWindowController.shared.close()
         NSApp.hide(nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -382,27 +362,6 @@ struct HistoryView: View {
                     : outcome.summary
             }
         }
-    }
-
-    private func togglePlayback(_ entry: HistoryEntry) {
-        if player?.isPlaying == true {
-            stopPlayback()
-            return
-        }
-        guard let audio = entry.audio else { return }
-        let url = HistoryFiles.directoryURL(for: entry.id).appendingPathComponent(audio.fileName)
-        do {
-            let newPlayer = try AVAudioPlayer(contentsOf: url)
-            newPlayer.play()
-            player = newPlayer
-        } catch {
-            message = "録音を再生できませんでした: \(error.localizedDescription)"
-        }
-    }
-
-    private func stopPlayback() {
-        player?.stop()
-        player = nil
     }
 
     // MARK: - 表示
@@ -433,15 +392,6 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
 
     private override init() { super.init() }
-
-    /// ウィンドウを閉じるときの後始末。
-    ///
-    /// `isReleasedWhenClosed = false` でウィンドウを使い回すため、閉じても SwiftUI の
-    /// `.onDisappear` は発火しない。止めないと `@State` の `AVAudioPlayer` が生き残り、
-    /// **自分の肉声が最後まで再生され続ける**（画面上に止める手段が無い）。Issue #84。
-    func windowWillClose(_ notification: Notification) {
-        NotificationCenter.default.post(name: .historyWindowWillClose, object: nil)
-    }
 
     func show() {
         HistoryStore.shared.reload()

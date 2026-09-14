@@ -301,7 +301,6 @@ final class AppController {
         // 履歴は挿入のあとにバックグラウンドで書き出す（保存が挿入を遅らせない）。
         // 無音だった発話は `record` 側で弾く（Issue #81）。
         HistoryStore.shared.record(
-            samples: samples,
             rawText: output.rawText,
             replacedText: output.replacedText,
             // どのエンジンで処理したかを残す。これがエンジン比較（Issue #27）の一次データ。

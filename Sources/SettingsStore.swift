@@ -60,12 +60,6 @@ final class SettingsStore: ObservableObject {
     @Published var historyRetentionDays: Int {
         didSet { UserDefaults.standard.set(historyRetentionDays, forKey: "historyRetentionDays") }
     }
-    /// 録音した音声を履歴に残すか。**既定は残す**（再文字起こしとエンジン比較に要る）。
-    /// OFF ならテキストだけが残る。他人に配る以上、「発話した音声が全部ディスクに残る」
-    /// ことをユーザーが選べるようにする（Issue #81）。
-    @Published var saveAudio: Bool {
-        didSet { UserDefaults.standard.set(saveAudio, forKey: "saveAudio") }
-    }
     /// フィラー（えっと・あの・まあ…）を決定的に取り除く（Issue #59）。LLM を使わず遅延ゼロ。
     /// 語彙は `~/koebun/fillers.json`。履歴には生テキストが残るので OFF に戻せば元どおり。
     @Published var fillerRemovalEnabled: Bool {
@@ -151,7 +145,6 @@ final class SettingsStore: ObservableObject {
         }
         // 0（無期限）と未設定を区別するため object で取り出す。
         historyRetentionDays = UserDefaults.standard.object(forKey: "historyRetentionDays") as? Int ?? 30
-        saveAudio = UserDefaults.standard.object(forKey: "saveAudio") as? Bool ?? true
         fillerRemovalEnabled = UserDefaults.standard.object(forKey: "fillerRemovalEnabled") as? Bool ?? true
 
         // 音声認識の既定は Apple（Issue #31）。ダウンロードが 0 で、実測でも WhisperKit より速く、
