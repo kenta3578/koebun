@@ -82,7 +82,7 @@ xcodebuild test -project koebun.xcodeproj -scheme koebun \
   2>&1 | grep -E "✘|Test run|TEST (SUCCEEDED|FAILED)"     # 単体テスト（0.1秒未満。守備範囲は Tests/README.md）
 ./scripts/install-local.sh                          # 実機へインストールして起動（マージ後に必ず）
 pgrep -x koebun                                     # 起動確認
-./scripts/kpi.sh                                    # 北極星の KPI（平日の挿入回数）を履歴から集計
+./scripts/kpi.sh [--target N]                       # 北極星の KPI（平日の挿入回数）を履歴から集計。目標値は引数で渡す
 ./scripts/model-manifest.sh                         # WhisperKit の重みのマニフェストを作り直す（Issue #106）
 tccutil reset Accessibility com.kenta3578.koebun    # 権限トグルが効かないときの一度きりのリセット
 log stream --predicate 'subsystem == "com.kenta3578.koebun"' --level info   # ログ（category: audio/asr/hotkey/history/store/inject）
