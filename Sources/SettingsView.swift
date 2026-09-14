@@ -126,9 +126,9 @@ struct GeneralSettingsView: View {
                 }
 
                 Text("選び直すと鳴ります。試聴ボタンでいまの音を聞き直せます。"
+                     + "「koebun の音」はアプリに入っている音です。"
                      + "「音を追加…」で選んだ音声ファイル（aiff / wav / mp3 / m4a / caf）は "
-                     + "\(SoundPlayer.customDirectory.path) にコピーされます"
-                     + "（scripts/make-sounds.py でも候補を作れます）。"
+                     + "\(SoundPlayer.customDirectory.path) にコピーされ、「自分の音」に出ます。"
                      + "削除はゴミ箱に入れるだけなので戻せます。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -303,12 +303,15 @@ struct GeneralSettingsView: View {
     }
 
     /// 音のピッカーと試聴ボタンの1行（Issue #48）。
-    /// 選択肢は「なし」→ 自分の音（~/koebun/sounds/）→ システム音（Issue #71）。
+    /// 選択肢は「なし」→ koebun の音（同梱）→ 自分の音（~/koebun/sounds/）→ システム音（Issue #71, #2）。
     private func soundRow(_ title: String, selection: Binding<String>) -> some View {
         let custom = customSounds
         return HStack {
             Picker(title, selection: selection) {
                 Text(SoundPlayer.none).tag(SoundPlayer.none)
+                Section("koebun の音") {
+                    ForEach(SoundPlayer.bundledSounds, id: \.self) { Text($0).tag($0) }
+                }
                 if !custom.isEmpty {
                     Section("自分の音") {
                         ForEach(custom, id: \.self) { Text($0).tag($0) }

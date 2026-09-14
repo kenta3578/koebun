@@ -113,7 +113,7 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 |---|---:|---|
 | `SettingsStore.swift` | 455 | 設定の永続化（UserDefaults）と共有状態 |
 | `HistoryStore.swift` | 489 | `~/koebun/history/<時刻>/` に `meta.json` ＋ `audio.wav`。保存期間の掃除 |
-| `SoundPlayer.swift` | 174 | 開始音 / 停止音。システム音と `~/koebun/sounds/` の自作音 |
+| `SoundPlayer.swift` | 200 | 開始音 / 停止音。同梱の koebun の音・`~/koebun/sounds/` の自分の音・システム音 |
 | `LoginItem.swift` | 92 | ログイン時の自動起動（`SMAppService`。真偽値を自前で持たない） |
 
 ### ディスク上の置き場

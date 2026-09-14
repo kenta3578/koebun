@@ -2,12 +2,27 @@ import AppKit
 
 /// 録音開始音・停止音の一覧と再生（Issue #71）、自分で作った音の取り込み（Issue #124）。
 ///
-/// 選択肢は「なし」＋ macOS 同梱のシステム音＋ `~/koebun/sounds/` に置いた音声ファイル。
+/// 選択肢は出どころで分ける（Issue #2）: 「なし」→ koebun の音（アプリに同梱）
+/// → 自分の音（`~/koebun/sounds/` に置いた音声ファイル）→ macOS のシステム音。
 /// 設定に保存するのは名前の文字列だけ（システム音は `NSSound(named:)` の名前、
-/// 自分の音は拡張子を除いたファイル名）。自分の音が同名なら自分の音を優先する。
+/// それ以外は拡張子を除いたファイル名）。鳴らすときは自分の音 → koebun の音 → システム音の順に探す。
 @MainActor
 enum SoundPlayer {
     static let none = "なし"
+
+    /// アプリに同梱した音（`Resources/Sounds/*.wav`、`scripts/make-sounds.py` の BUNDLED と同じ）。
+    /// 開始と停止のペアが隣に並ぶ順にしてある。
+    static let bundledSounds: [String] = [
+        "koebun-up", "koebun-down",
+        "chime-open", "chime-close",
+        "marimba-high", "marimba-low",
+        "classic-start", "classic-stop"
+    ]
+
+    static func bundledFileURL(for name: String) -> URL? {
+        guard bundledSounds.contains(name) else { return nil }
+        return Bundle.main.url(forResource: name, withExtension: "wav", subdirectory: "Sounds")
+    }
 
     static let systemSounds: [String] = [
         "Basso", "Blow", "Bottle", "Frog", "Funk",
@@ -25,6 +40,7 @@ enum SoundPlayer {
     nonisolated static let supportedExtensions: Set<String> = ["aiff", "aif", "wav", "mp3", "m4a", "caf"]
 
     /// `~/koebun/sounds/` にある音の名前（拡張子なし、名前順）。
+    /// koebun の音と同じ名前は除く（以前は同梱せず、ここへ生成していたため。一覧が二重にならないように）。
     static func customSounds() -> [String] {
         guard let items = try? FileManager.default.contentsOfDirectory(
             at: customDirectory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
@@ -32,17 +48,19 @@ enum SoundPlayer {
         return items
             .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
             .map { $0.deletingPathExtension().lastPathComponent }
+            .filter { !bundledSounds.contains($0) }
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
-    /// 設定の選択肢。「なし」→ 自分の音 → システム音。
+    /// 設定の選択肢。「なし」→ koebun の音 → 自分の音 → システム音。
     static func choices() -> [String] {
-        [none] + customSounds() + systemSounds
+        [none] + bundledSounds + customSounds() + systemSounds
     }
 
     /// 名前が今も選べるか（ファイルを消したあとの設定を「なし」に戻すために使う）。
     static func isAvailable(_ name: String) -> Bool {
-        name == none || systemSounds.contains(name) || customFileURL(for: name) != nil
+        name == none || systemSounds.contains(name)
+            || customFileURL(for: name) != nil || bundledFileURL(for: name) != nil
     }
 
     /// 音を鳴らし、その長さ（秒）を返す。「なし」や読めなかったときは 0。
@@ -51,7 +69,8 @@ enum SoundPlayer {
     @discardableResult
     static func play(_ name: String) -> TimeInterval {
         guard name != none else { return 0 }
-        if let url = customFileURL(for: name) {
+        // 同名なら手元で作り直した音を優先する（make-sounds.py で調整して試せるように）。
+        if let url = customFileURL(for: name) ?? bundledFileURL(for: name) {
             // 前の再生が終わる前に次を鳴らしても切れないよう、毎回インスタンスを作る。
             let sound = NSSound(contentsOf: url, byReference: true)
             sound?.play()
@@ -145,7 +164,7 @@ enum SoundPlayer {
         return name.isEmpty ? "音" : name
     }
 
-    /// 既存の自分の音ともシステム音とも重ならない名前を返す（ピッカーの選択肢が重複しないように）。
+    /// 既存のどの音とも重ならない名前を返す（ピッカーの選択肢が重複しないように）。
     private static func availableName(basedOn base: String) -> String {
         var candidate = base
         var suffix = 2
@@ -157,7 +176,7 @@ enum SoundPlayer {
     }
 
     private static func isTaken(_ name: String) -> Bool {
-        name == none || systemSounds.contains(name) || customFileURL(for: name) != nil
+        isAvailable(name) || bundledSounds.contains(name)
     }
 
     /// `NSSound(contentsOf:)` は参照を保持しないと再生途中で解放されることがある。
