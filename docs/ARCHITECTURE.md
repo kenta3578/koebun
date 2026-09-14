@@ -84,6 +84,7 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 | `ModelIntegrity.swift` | 132 | WhisperKit の重みが開発時に確かめたものと同じかを SHA-256 で照合 |
 | `Replacements.swift` | 140 | 辞書置換のルールと `~/koebun/replacements.json` の読み書き |
 | `FillerRemover.swift` | 153 | フィラー語の決定的な除去（`~/koebun/fillers.json`）。語を足さず、数値・URL・英単語には触れない |
+| `JSONFileSync.swift` | 140 | `replacements.json` / `fillers.json` の読み書きと、外での編集の監視・読み直し（外の編集を上書きしない） |
 
 ### 出力（挿入）
 

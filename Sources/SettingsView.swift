@@ -439,12 +439,14 @@ struct ReplacementsSettingsView: View {
                     .help("削除した記号ルールだけを戻します（既存のルールは変更しません）")
             }
 
-            Text(ReplacementStore.fileURL.path)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .textSelection(.enabled)
+            EditableFileRow(url: ReplacementStore.fileURL, problem: store.fileProblem)
         }
         .padding()
+        // 監視を取りこぼしても、設定を開けば外の編集が反映されるようにする。
+        .onAppear {
+            store.reloadFromDisk()
+            fillers.reloadFromDisk()
+        }
     }
 
     /// ルール 1 行ぶんの高さ（角丸テキストフィールド + 上下パディング）。
@@ -471,10 +473,7 @@ struct ReplacementsSettingsView: View {
                     .controlSize(.small)
                     .disabled(fillers.list == .default)
             }
-            Text(FillerStore.fileURL.path)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .textSelection(.enabled)
+            EditableFileRow(url: FillerStore.fileURL, problem: fillers.fileProblem)
         }
     }
 
@@ -488,6 +487,40 @@ struct ReplacementsSettingsView: View {
         let missing = ReplacementStore.defaultRules.filter { !existing.contains($0.from.lowercased()) }
         guard !missing.isEmpty else { return }
         store.rules.append(contentsOf: missing)
+    }
+}
+
+/// 設定ファイルの場所と、外で編集するための導線（Issue #7）。
+///
+/// 辞書置換・フィラー語はエディタや Claude Code でまとめて直す使い方を想定する。
+/// 保存すればアプリが読み直すので、再起動は要らない。
+private struct EditableFileRow: View {
+    let url: URL
+    let problem: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Text(url.path)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Button("ファイルを開く") { NSWorkspace.shared.open(url) }
+                    .controlSize(.small)
+                    .help("既定のエディタで開きます。保存すると再起動せずに反映されます")
+                Button("Finder で表示") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    .controlSize(.small)
+            }
+            if let problem {
+                Text(problem)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 
