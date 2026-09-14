@@ -48,40 +48,11 @@ struct RecordingHUDView: View {
             resultContent(result)
         } else if model.isConfirmingCancel {
             cancelConfirmation
-        } else if model.usesMinimalBar {
-            minimalContent
+        } else if case .failed(let reason, let hint) = model.status {
+            failedContent(reason, hint: hint)
         } else {
-            switch model.status {
-            case .recording:            recordingContent
-            case .processing:           processingContent
-            case .done(let message), .warned(let message): simpleRow(message)
-            case .failed(let reason, let hint): failedContent(reason, hint: hint)
-            default:                    simpleRow(model.status.accessibilityLabel)
-            }
-        }
-    }
-
-    // 録音中: 波形・経過時間・停止・キャンセル
-    private var recordingContent: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 10) {
-                statusIcon
-                WaveformView(levels: model.levels, color: statusColor)
-                    .frame(maxWidth: .infinity, minHeight: 24)
-                Text(model.elapsedText)
-                    .font(.system(size: 12, design: .monospaced))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                iconButton("stop.fill", help: "停止して文字起こし", action: onStop)
-                iconButton("xmark", help: "キャンセル（Esc）", action: onRequestCancel)
-            }
-            if model.looksSilent {
-                Label("音を拾えていません。マイクの権限と入力デバイスを確認してください",
-                      systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.orange)
-                    .lineLimit(1)
-            }
+            // 「通常」表示は Issue #6 で削除した。結果・確認・失敗以外はすべて細いバー。
+            minimalContent
         }
     }
 
@@ -122,9 +93,17 @@ struct RecordingHUDView: View {
     ///
     /// アニメーションは**状態が変わったときだけ**。音量による高さの変化には掛けない
     /// （毎 85ms の値に掛けると遅れて見える）。
+    ///
+    /// **録音を始めてから一度も音を拾っていないときだけ**、棒をマイク斜線に替える（Issue #6）。
+    /// 考えながら黙った程度では出さない（`looksSilent` の判定）。
     private var minimalIndicator: some View {
         ZStack {
-            if model.showsBars {
+            if model.showsSilenceWarning {
+                Image(systemName: "mic.slash.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.orange)
+                    .frame(width: LevelBarsView.width)
+            } else if model.showsBars {
                 LevelBarsView(level: model.currentLevel,
                               isProcessing: model.isTranscribing,
                               isFinished: model.isFinished,
@@ -139,17 +118,7 @@ struct RecordingHUDView: View {
         // 棒の側の子孫（`HStack` と `Capsule`）も要素を作らないので、これが無いと
         // 録音中だけラベルの付く先が無くなる。色が読めない環境向けの 3 つ目の手がかり。
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(model.status.accessibilityLabel)
-    }
-
-    // 文字起こし中: HUD は残したまま処理中を見せる
-    private var processingContent: some View {
-        HStack(spacing: 10) {
-            statusIcon
-            Text("文字起こし中…").font(.system(size: 12))
-            Spacer()
-            ProgressView().controlSize(.small)
-        }
+        .accessibilityLabel(model.indicatorAccessibilityLabel)
     }
 
     // 失敗（結果テキストを伴わないもの＝文字起こし失敗・録音開始失敗など）。
@@ -186,14 +155,6 @@ struct RecordingHUDView: View {
             }
             Button("閉じる", action: onDismiss)
                 .controlSize(.small)
-        }
-    }
-
-    private func simpleRow(_ text: String) -> some View {
-        HStack(spacing: 10) {
-            statusIcon
-            Text(text).font(.system(size: 12))
-            Spacer()
         }
     }
 
@@ -260,8 +221,6 @@ struct RecordingHUDView: View {
         .padding(.vertical, 10)
     }
 
-    private var statusIcon: some View { statusIcon(size: 13, width: 18) }
-
     /// 状態アイコン。メニューバーと同じシンボルと色で、**色と形の両方**で状態を示す。
     private func statusIcon(size: CGFloat, width: CGFloat) -> some View {
         Image(systemName: model.status.symbolName)
@@ -289,31 +248,6 @@ struct RecordingHUDView: View {
     }
 }
 
-/// 録音レベルの履歴を左右対称のバーで描く。動いていれば「マイクは拾えている」が一目で分かる。
-private struct WaveformView: View {
-    let levels: [Float]
-    let color: Color
-
-    var body: some View {
-        Canvas { context, size in
-            guard !levels.isEmpty else { return }
-            let slot = size.width / CGFloat(levels.count)
-            let barWidth = max(1.5, slot * 0.55)
-            let mid = size.height / 2
-            for (index, level) in levels.enumerated() {
-                let height = max(2, CGFloat(level) * size.height)
-                let rect = CGRect(x: CGFloat(index) * slot + (slot - barWidth) / 2,
-                                  y: mid - height / 2,
-                                  width: barWidth,
-                                  height: height)
-                context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2),
-                             with: .color(color))
-            }
-        }
-        .accessibilityLabel("入力レベル")
-    }
-}
-
 /// 最小表示の «棒»（Issue #180、30 案の 14。#189 で 7 本、#191 で 10 本、#193 で 7 本へ）。
 ///
 /// **読み取らせたいことは 1 つ——声の大きさ。** 録音中は声の大きさで高さが変わり、
@@ -337,7 +271,7 @@ struct LevelBarsView: View {
     /// **7 本**（Issue #193）。奇数なので中央の山は 1 本で、左右対称。
     /// 最大 20pt（Issue #195 の候補 A で 24 → 20）。パネル（144×34）の上下に 7pt を残す。
     static let voiceProfile: [CGFloat] = [8, 12, 17, 20, 17, 12, 8]
-    /// 文字起こし中の形。SF Symbols の `waveform` に寄せる（メニューバー・通常表示と同じ読み）。
+    /// 文字起こし中の形。SF Symbols の `waveform` に寄せる（メニューバーと同じ読み）。
     static let processingProfile: [CGFloat] = [7, 10, 13, 17, 13, 10, 7]
     /// 完了の形（Issue #200 / #202）。全部を点に畳む。
     /// **チェックは出さない**——完了の瞬間は視線が挿入先にあり、視界の隅で緑が見えれば足りる。

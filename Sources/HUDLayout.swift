@@ -18,22 +18,28 @@ enum HUDPosition: String, CaseIterable, Identifiable {
     }
 }
 
-/// HUD の大きさ。**既存の「録音中に HUD を表示」トグルはこの3択に統合してある**
+/// HUD の大きさ。**既存の「録音中に HUD を表示」トグルはこの選択に統合してある**
 /// （設定を二重に持たない）。`.hidden` でも開始音・停止音は鳴り、
 /// 挿入できなかった／確認できなかった結果だけは出す（結果を失わせない）。
+///
+/// 以前は波形とボタンを常に並べる「通常」もあったが、最小表示の作り直し（#180〜#204）に
+/// 追従しておらず古く見えたので削除した（Issue #6）。
 enum HUDSize: String, CaseIterable, Identifiable {
-    case hidden
     case minimal
-    case normal
+    case hidden
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .hidden:  return "非表示"
         case .minimal: return "最小"
-        case .normal:  return "通常"
+        case .hidden:  return "非表示"
         }
+    }
+
+    /// 保存値から読む。削除した「通常」（`normal`）は「最小」に読み替える。
+    static func fromStored(_ raw: String) -> HUDSize? {
+        raw == "normal" ? .minimal : HUDSize(rawValue: raw)
     }
 }
 
@@ -43,6 +49,7 @@ enum HUDSize: String, CaseIterable, Identifiable {
 /// `RecordingHUDController` ではなくここに置くのは、`RecordingHUDModel` が
 /// パネルの大きさを決めるのに Controller を逆参照していたため（Issue #65）。
 enum HUDMetrics {
+    /// 失敗・キャンセル確認のパネル（細いバーには理由が収まらない）。
     static let panelSize = CGSize(width: 340, height: 64)
     /// 最小表示（状態アイコン＋経過時間）の細いバー。
     ///

@@ -176,19 +176,20 @@ final class SettingsStore: ObservableObject {
     /// HUD の大きさを読む。**旧「録音中に HUD を表示」トグル（`showRecordingHUD`）からの移行**を
     /// ここで吸収する（Issue #35）。
     ///
-    /// - `hudSize` が保存済みならそれを使う（新しい選択が常に優先）
+    /// - `hudSize` が保存済みならそれを使う（新しい選択が常に優先）。削除した「通常」は「最小」に読み替えて書き戻す（Issue #6）
     /// - 未保存で旧トグルが `false` なら「非表示」＝ HUD を出さない意思を引き継ぐ
-    /// - それ以外（未設定・旧トグルが true）は既定の「通常」
+    /// - それ以外（未設定・旧トグルが true）は既定の「最小」
     ///
     /// 旧キーは読むだけで消さない。ここで一度だけ新キーへ書き出すので、次回以降は上の1本目で決まる。
     private static func storedHUDSize() -> HUDSize {
         let defaults = UserDefaults.standard
-        if let raw = defaults.string(forKey: "hudSize"), let size = HUDSize(rawValue: raw) {
+        if let raw = defaults.string(forKey: "hudSize"), let size = HUDSize.fromStored(raw) {
+            if size.rawValue != raw { defaults.set(size.rawValue, forKey: "hudSize") }
             return size
         }
         let migrated: HUDSize = (defaults.object(forKey: "showRecordingHUD") as? Bool == false)
             ? .hidden
-            : .normal
+            : .minimal
         defaults.set(migrated.rawValue, forKey: "hudSize")
         return migrated
     }

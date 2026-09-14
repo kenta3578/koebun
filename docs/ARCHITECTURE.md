@@ -101,8 +101,8 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 | `RecordingHUDController.swift` | 385 | HUD の状態遷移。「いま何を見せるか」（パネルは作り直さず使い回す） |
 | `RecordingHUDPanel.swift` | 152 | HUD の `NSPanel` 生成・配置と、ホバー / Esc の監視。AppKit 側の面倒 |
 | `RecordingHUDModel.swift` | 165 | HUD の表示モデル。20fps で更新されるので `AppState` とは分けてある |
-| `RecordingHUDView.swift` | 436 | HUD の中身（SwiftUI）。棒グラフ・時間・結果パネル |
-| `HUDLayout.swift` | 57 | HUD の表示位置・表示サイズ（非表示 / 最小 / 通常）の定義 |
+| `RecordingHUDView.swift` | 380 | HUD の中身（SwiftUI）。最小表示の棒・時間・失敗・結果パネル |
+| `HUDLayout.swift` | 65 | HUD の表示位置・表示サイズ（最小 / 非表示）の定義 |
 | `SettingsView.swift` | 552 | 設定画面（タブ構成） |
 | `SettingsWindow.swift` | 57 | 設定ウィンドウを自前の `NSWindow` で開く（SwiftUI の `Settings` は使えない） |
 | `HistoryView.swift` | 430 | 履歴ウィンドウ。再挿入・コピー・辞書に登録・削除 |
