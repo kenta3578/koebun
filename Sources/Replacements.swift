@@ -81,8 +81,17 @@ final class ReplacementStore: ObservableObject {
         case .unchanged, .missing:
             return
         case .changed(let loaded):
+            // `id` は永続化しないので読み直すたびに採番し直される。同じ位置で中身が同じ行は
+            // id を引き継ぎ、編集中の行が作り直されて入力欄のフォーカスが飛ばないようにする。
+            let merged = loaded.enumerated().map { index, rule -> ReplacementRule in
+                guard rules.indices.contains(index),
+                      rules[index].from == rule.from, rules[index].to == rule.to else { return rule }
+                var kept = rule
+                kept.id = rules[index].id
+                return kept
+            }
             isApplyingExternalChange = true
-            rules = loaded
+            rules = merged
             isApplyingExternalChange = false
             fileProblem = nil
         case .broken(let reason):

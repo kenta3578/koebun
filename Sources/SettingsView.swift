@@ -403,10 +403,12 @@ struct ReplacementsSettingsView: View {
             // 枠と交互色は自前で描けば、間隔は `spacing` のとおりになる。
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array($store.rules.enumerated()), id: \.element.id) { index, $rule in
+                    // 添字の Binding にしない。外の編集の読み直し（Issue #7）で配列が縮むと、
+                    // 編集中の入力欄が古い添字へ書き戻して範囲外で落ちる。id で引き直す。
+                    ForEach(Array(store.rules.enumerated()), id: \.element.id) { index, rule in
                         HStack(spacing: 8) {
-                            TextField("カーズ桜", text: $rule.from)
-                            TextField("河津桜", text: $rule.to)
+                            TextField("カーズ桜", text: ruleBinding(rule.id, \.from))
+                            TextField("河津桜", text: ruleBinding(rule.id, \.to))
                             Button {
                                 store.rules.removeAll { $0.id == rule.id }
                             } label: {
@@ -479,6 +481,18 @@ struct ReplacementsSettingsView: View {
 
     private func fillerField(_ title: String, words: Binding<[String]>) -> some View {
         FillerWordsField(title: title, words: words)
+    }
+
+    /// ルールの 1 欄を id で引く Binding。行が消えていたら読みは空・書きは捨てる。
+    private func ruleBinding(_ id: ReplacementRule.ID,
+                             _ keyPath: WritableKeyPath<ReplacementRule, String>) -> Binding<String> {
+        Binding(
+            get: { store.rules.first { $0.id == id }?[keyPath: keyPath] ?? "" },
+            set: { value in
+                guard let index = store.rules.firstIndex(where: { $0.id == id }) else { return }
+                store.rules[index][keyPath: keyPath] = value
+            }
+        )
     }
 
     /// 既定の記号ルールのうち、`from` が未登録のものだけを追加する。
