@@ -391,8 +391,9 @@ struct ReplacementsSettingsView: View {
             HStack(spacing: 8) {
                 Text("読み（発話される語）").frame(maxWidth: .infinity, alignment: .leading)
                 Text("置換後").frame(maxWidth: .infinity, alignment: .leading)
-                // 削除ボタンぶんの余白
-                Color.clear.frame(width: 22)
+                // 削除ボタンぶんの余白。**高さは 0 に固定する**——`Color.clear` は縦にも伸びるので、
+                // 放っておくと見出し行がルール一覧と余った高さを分け合い、上下に空白ができる（Issue #9）。
+                Color.clear.frame(width: 22, height: 0)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -508,26 +509,24 @@ struct ReplacementsSettingsView: View {
 ///
 /// 辞書置換・フィラー語はエディタや Claude Code でまとめて直す使い方を想定する。
 /// 保存すればアプリが読み直すので、再起動は要らない。
+/// **ボタンは並べず、パスそのものをリンクにする**（Issue #9。2 つずつ並べると重かった）。
 private struct EditableFileRow: View {
     let url: URL
     let problem: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
-                Text(url.path)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .textSelection(.enabled)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer()
-                Button("ファイルを開く") { NSWorkspace.shared.open(url) }
-                    .controlSize(.small)
-                    .help("既定のエディタで開きます。保存すると再起動せずに反映されます")
-                Button("Finder で表示") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                    .controlSize(.small)
-            }
+            Button(url.path) { NSWorkspace.shared.open(url) }
+                .buttonStyle(.link)
+                .font(.caption2)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help("クリックで既定のエディタで開きます。保存すると再起動せずに反映されます")
+                .contextMenu {
+                    Button("ファイルを開く") { NSWorkspace.shared.open(url) }
+                    Button("Finder で表示") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    Button("パスをコピー") { TextInjector.copyToPasteboard(url.path) }
+                }
             if let problem {
                 Text(problem)
                     .font(.caption)
