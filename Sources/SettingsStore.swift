@@ -21,11 +21,6 @@ final class SettingsStore: ObservableObject {
     @Published var hudPosition: HUDPosition {
         didSet { UserDefaults.standard.set(hudPosition.rawValue, forKey: "hudPosition") }
     }
-    /// ⌘V の代わりに1文字ずつキーを送出する。ペーストを受け付けないアプリ向けのフォールバック。
-    /// この方式はクリップボードを一切触らない。
-    @Published var simulateKeypresses: Bool {
-        didSet { UserDefaults.standard.set(simulateKeypresses, forKey: "simulateKeypresses") }
-    }
     /// 挿入できなかった結果をどこに残すか（Issue #67）。
     ///
     /// 以前は `showResultPanel` と `keepResultOnClipboardWhenUnsure` の 2 つの Bool に
@@ -64,12 +59,6 @@ final class SettingsStore: ObservableObject {
     /// 履歴の保存日数。0 = 無期限。
     @Published var historyRetentionDays: Int {
         didSet { UserDefaults.standard.set(historyRetentionDays, forKey: "historyRetentionDays") }
-    }
-    /// 録音した音声を履歴に残すか。**既定は残す**（再文字起こしとエンジン比較に要る）。
-    /// OFF ならテキストだけが残る。他人に配る以上、「発話した音声が全部ディスクに残る」
-    /// ことをユーザーが選べるようにする（Issue #81）。
-    @Published var saveAudio: Bool {
-        didSet { UserDefaults.standard.set(saveAudio, forKey: "saveAudio") }
     }
     /// フィラー（えっと・あの・まあ…）を決定的に取り除く（Issue #59）。LLM を使わず遅延ゼロ。
     /// 語彙は `~/koebun/fillers.json`。履歴には生テキストが残るので OFF に戻せば元どおり。
@@ -143,7 +132,6 @@ final class SettingsStore: ObservableObject {
         hudSize = Self.storedHUDSize()
         hudPosition = UserDefaults.standard.string(forKey: "hudPosition")
             .flatMap(HUDPosition.init(rawValue:)) ?? .bottomCenter
-        simulateKeypresses = UserDefaults.standard.bool(forKey: "simulateKeypresses")
         resultRetention = Self.storedResultRetention()
         let storedExtra = (UserDefaults.standard.object(forKey: "hotKeyExtraKeyCode") as? Int).flatMap(UInt16.init(exactly:))
         let storedModifiers = Self.storedHotKeyModifiers()
@@ -157,7 +145,6 @@ final class SettingsStore: ObservableObject {
         }
         // 0（無期限）と未設定を区別するため object で取り出す。
         historyRetentionDays = UserDefaults.standard.object(forKey: "historyRetentionDays") as? Int ?? 30
-        saveAudio = UserDefaults.standard.object(forKey: "saveAudio") as? Bool ?? true
         fillerRemovalEnabled = UserDefaults.standard.object(forKey: "fillerRemovalEnabled") as? Bool ?? true
 
         // 音声認識の既定は Apple（Issue #31）。ダウンロードが 0 で、実測でも WhisperKit より速く、
@@ -189,19 +176,20 @@ final class SettingsStore: ObservableObject {
     /// HUD の大きさを読む。**旧「録音中に HUD を表示」トグル（`showRecordingHUD`）からの移行**を
     /// ここで吸収する（Issue #35）。
     ///
-    /// - `hudSize` が保存済みならそれを使う（新しい選択が常に優先）
+    /// - `hudSize` が保存済みならそれを使う（新しい選択が常に優先）。削除した「通常」は「最小」に読み替えて書き戻す（Issue #6）
     /// - 未保存で旧トグルが `false` なら「非表示」＝ HUD を出さない意思を引き継ぐ
-    /// - それ以外（未設定・旧トグルが true）は既定の「通常」
+    /// - それ以外（未設定・旧トグルが true）は既定の「最小」
     ///
     /// 旧キーは読むだけで消さない。ここで一度だけ新キーへ書き出すので、次回以降は上の1本目で決まる。
     private static func storedHUDSize() -> HUDSize {
         let defaults = UserDefaults.standard
-        if let raw = defaults.string(forKey: "hudSize"), let size = HUDSize(rawValue: raw) {
+        if let raw = defaults.string(forKey: "hudSize"), let size = HUDSize.fromStored(raw) {
+            if size.rawValue != raw { defaults.set(size.rawValue, forKey: "hudSize") }
             return size
         }
         let migrated: HUDSize = (defaults.object(forKey: "showRecordingHUD") as? Bool == false)
             ? .hidden
-            : .normal
+            : .minimal
         defaults.set(migrated.rawValue, forKey: "hudSize")
         return migrated
     }

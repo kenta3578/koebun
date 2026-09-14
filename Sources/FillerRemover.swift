@@ -106,8 +106,15 @@ final class FillerStore: ObservableObject {
     static let shared = FillerStore()
 
     @Published var list: FillerList {
-        didSet { save() }
+        didSet {
+            // 外の編集を読み直して入れたときは書き戻さない。値が同じなら書かない。
+            guard !isApplyingExternalChange, list != oldValue else { return }
+            save()
+        }
     }
+
+    /// ファイルを読めなかった・外の編集とぶつかったときの説明（Issue #7）。
+    @Published private(set) var fileProblem: String?
 
     static var fileURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -115,39 +122,45 @@ final class FillerStore: ObservableObject {
             .appendingPathComponent("fillers.json")
     }
 
+    private let file = JSONFileSync<FillerList>(url: FillerStore.fileURL)
+    private var isApplyingExternalChange = false
+
     private init() {
-        list = Self.load()
-        if !FileManager.default.fileExists(atPath: Self.fileURL.path) { save() }
+        list = file.loadAtStartup(default: .default)
+        if !file.fileExists { save() }
+        file.startWatching { [weak self] in self?.reloadFromDisk() }
     }
 
     func apply(_ text: String) -> String {
         FillerRemover.apply(text, fillers: list)
     }
 
-    private static func load() -> FillerList {
-        let url = fileURL
-        guard let data = try? Data(contentsOf: url) else { return .default }
-        do {
-            return try JSONDecoder().decode(FillerList.self, from: data)
-        } catch {
-            let backup = url.appendingPathExtension("broken")
-            try? FileManager.default.removeItem(at: backup)
-            try? FileManager.default.moveItem(at: url, to: backup)
-            Log.store.error("fillers.json を読めないため退避しました: \(backup.lastPathComponent) / \(error.localizedDescription)")
-            return .default
+    /// 外で変わっていれば読み直す。壊れていたら**いまの語のまま**動かし、理由を出す。
+    func reloadFromDisk() {
+        switch file.readIfChanged() {
+        case .unchanged, .missing:
+            return
+        case .changed(let loaded):
+            isApplyingExternalChange = true
+            list = loaded
+            isApplyingExternalChange = false
+            fileProblem = nil
+        case .broken(let reason):
+            fileProblem = "fillers.json を読めないため、直前の語で動いています（\(reason)）"
         }
     }
 
     private func save() {
-        let url = Self.fileURL
-        do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                    withIntermediateDirectories: true)
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
-            try encoder.encode(list).write(to: url, options: .atomic)
-        } catch {
-            Log.store.error("fillers.json を保存できませんでした: \(error.localizedDescription)")
+        switch file.write(list) {
+        case .written:
+            fileProblem = nil
+        case .conflict:
+            reloadFromDisk()
+            if fileProblem == nil {
+                fileProblem = "fillers.json が外で編集されていたので読み直しました。直前の変更はもう一度行ってください"
+            }
+        case .failed(let reason):
+            fileProblem = "fillers.json を保存できませんでした（\(reason)）"
         }
     }
 }

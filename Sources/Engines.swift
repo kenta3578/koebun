@@ -67,8 +67,7 @@ enum EngineSupport {
 /// 音声認識エンジン。実装は actor（`Transcriber` = WhisperKit / `AppleTranscriber` = SpeechAnalyzer）。
 ///
 /// **どちらの実装も同じ入力を受ける**契約にする——`AudioRecorder` が作る
-/// 16kHz / mono / Float32 の `[Float]`。比較のとき入力側が揃っていないと意味が無い
-/// （履歴の `audio.wav` もこの形式で保存されるので、あとから同じ音声を再投入できる）。
+/// 16kHz / mono / Float32 の `[Float]`。比較のとき入力側が揃っていないと意味が無い。
 protocol SpeechEngine: Sendable {
     /// 認識の準備をする。WhisperKit は約2.9GB のダウンロードと常駐、
     /// Apple は OS 内蔵アセットの確認だけで、アプリ側のダウンロードは発生しない。

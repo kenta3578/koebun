@@ -187,8 +187,8 @@ struct GeneralSettingsView: View {
                     AppController.shared.refreshHUDLayout(positionChanged: true)
                 }
 
-                Text("「通常」は波形でマイクが拾えているかを確認でき、停止・キャンセルもできます。"
-                     + "「最小」は状態と経過時間だけの細いバーで、マウスを乗せると停止・キャンセルが出ます。"
+                Text("「最小」は声の大きさと経過時間だけの細いバーで、マウスを乗せると停止・キャンセルが出ます。"
+                     + "録音を始めてもマイクが一度も音を拾わないときは、棒がオレンジのマイク斜線に替わります。"
                      + "「非表示」でも開始音・完了音は鳴ります"
                      + "（キャンセルは HUD からのみ。挿入できなかった結果は「挿入」の設定に従って表示します）。")
                     .font(.caption)
@@ -197,13 +197,6 @@ struct GeneralSettingsView: View {
             }
 
             Section("挿入") {
-                Toggle("キー送出で入力する（Simulate Keypresses）", isOn: $settings.simulateKeypresses)
-                Text("⌘V を受け付けないアプリ向けのフォールバックです。1文字ずつ送るため長文はやや遅くなりますが、"
-                     + "クリップボードには一切触れません。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 Picker("挿入できなかった結果", selection: $settings.resultRetention) {
                     ForEach(SettingsStore.ResultRetention.allCases) { retention in
                         Text(retention.label).tag(retention)
@@ -256,8 +249,6 @@ struct GeneralSettingsView: View {
                     HistoryStore.shared.purgeExpired()
                 }
 
-                Toggle("録音した音声も保存する", isOn: $settings.saveAudio)
-
                 HStack {
                     Text("保存先")
                     Spacer()
@@ -275,9 +266,8 @@ struct GeneralSettingsView: View {
                     Button("削除…", role: .destructive) { isConfirmingDeleteAll = true }
                 }
 
-                Text("1発話ごとに録音・生テキスト・置換後テキスト・送信プロンプトを保存します。"
-                     + "整形 AI が事実を書き換えていないか、生テキストと突き合わせて確認できます。"
-                     + "送信プロンプトからは選択テキストとクリップボードの中身を除いて保存します。")
+                Text("1発話ごとに生テキストと置換後テキストを保存します（録音した音声は残しません）。"
+                     + "辞書置換やフィラー除去が何を変えたか、生テキストと突き合わせて確認できます。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -298,7 +288,7 @@ struct GeneralSettingsView: View {
             Button("削除", role: .destructive) { HistoryStore.shared.deleteAll() }
             Button("キャンセル", role: .cancel) {}
         } message: {
-            Text("録音・生テキスト・送信プロンプトがすべて消えます。取り消せません。")
+            Text("これまでの文字起こし結果がすべて消えます。取り消せません。")
         }
     }
 
@@ -413,10 +403,12 @@ struct ReplacementsSettingsView: View {
             // 枠と交互色は自前で描けば、間隔は `spacing` のとおりになる。
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array($store.rules.enumerated()), id: \.element.id) { index, $rule in
+                    // 添字の Binding にしない。外の編集の読み直し（Issue #7）で配列が縮むと、
+                    // 編集中の入力欄が古い添字へ書き戻して範囲外で落ちる。id で引き直す。
+                    ForEach(Array(store.rules.enumerated()), id: \.element.id) { index, rule in
                         HStack(spacing: 8) {
-                            TextField("カーズ桜", text: $rule.from)
-                            TextField("河津桜", text: $rule.to)
+                            TextField("カーズ桜", text: ruleBinding(rule.id, \.from))
+                            TextField("河津桜", text: ruleBinding(rule.id, \.to))
                             Button {
                                 store.rules.removeAll { $0.id == rule.id }
                             } label: {
@@ -449,12 +441,14 @@ struct ReplacementsSettingsView: View {
                     .help("削除した記号ルールだけを戻します（既存のルールは変更しません）")
             }
 
-            Text(ReplacementStore.fileURL.path)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .textSelection(.enabled)
+            EditableFileRow(url: ReplacementStore.fileURL, problem: store.fileProblem)
         }
         .padding()
+        // 監視を取りこぼしても、設定を開けば外の編集が反映されるようにする。
+        .onAppear {
+            store.reloadFromDisk()
+            fillers.reloadFromDisk()
+        }
     }
 
     /// ルール 1 行ぶんの高さ（角丸テキストフィールド + 上下パディング）。
@@ -481,15 +475,24 @@ struct ReplacementsSettingsView: View {
                     .controlSize(.small)
                     .disabled(fillers.list == .default)
             }
-            Text(FillerStore.fileURL.path)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .textSelection(.enabled)
+            EditableFileRow(url: FillerStore.fileURL, problem: fillers.fileProblem)
         }
     }
 
     private func fillerField(_ title: String, words: Binding<[String]>) -> some View {
         FillerWordsField(title: title, words: words)
+    }
+
+    /// ルールの 1 欄を id で引く Binding。行が消えていたら読みは空・書きは捨てる。
+    private func ruleBinding(_ id: ReplacementRule.ID,
+                             _ keyPath: WritableKeyPath<ReplacementRule, String>) -> Binding<String> {
+        Binding(
+            get: { store.rules.first { $0.id == id }?[keyPath: keyPath] ?? "" },
+            set: { value in
+                guard let index = store.rules.firstIndex(where: { $0.id == id }) else { return }
+                store.rules[index][keyPath: keyPath] = value
+            }
+        )
     }
 
     /// 既定の記号ルールのうち、`from` が未登録のものだけを追加する。
@@ -498,6 +501,40 @@ struct ReplacementsSettingsView: View {
         let missing = ReplacementStore.defaultRules.filter { !existing.contains($0.from.lowercased()) }
         guard !missing.isEmpty else { return }
         store.rules.append(contentsOf: missing)
+    }
+}
+
+/// 設定ファイルの場所と、外で編集するための導線（Issue #7）。
+///
+/// 辞書置換・フィラー語はエディタや Claude Code でまとめて直す使い方を想定する。
+/// 保存すればアプリが読み直すので、再起動は要らない。
+private struct EditableFileRow: View {
+    let url: URL
+    let problem: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Text(url.path)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Button("ファイルを開く") { NSWorkspace.shared.open(url) }
+                    .controlSize(.small)
+                    .help("既定のエディタで開きます。保存すると再起動せずに反映されます")
+                Button("Finder で表示") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    .controlSize(.small)
+            }
+            if let problem {
+                Text(problem)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 

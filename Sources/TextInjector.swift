@@ -68,16 +68,15 @@ enum InsertionOutcome: Equatable {
 
 /// 文字起こし結果を最前面アプリのカーソル位置に挿入する。
 ///
-/// 方式は2つ（設定で切替）:
-///   - 既定: クリップボードに一時セット → ⌘V を合成送出 → **成功と判断できたときだけ**復元
-///   - Simulate Keypresses: 1文字ずつ `CGEvent` で送出（クリップボードに触れない）
+/// クリップボードに一時セット → ⌘V を合成送出 → 判定のあとに元の内容へ復元する。
+/// 1文字ずつキーを送る方式もあったが、一度も使われなかったので削除した（Issue #5）。
 ///
-/// どちらも Accessibility 権限が要る。挿入後は Accessibility API で挿入先の文字数・caret を
+/// Accessibility 権限が要る。挿入後は Accessibility API で挿入先の文字数・caret を
 /// 見比べて成否を判定し、確信が持てなければ `.uncertain` を返して結果を保全する
 /// （`docs/design-rationale.md` §4）。
 @MainActor
 enum TextInjector {
-    /// ペースト/キー送出が挿入先に反映されるのを待つ時間。
+    /// ペーストが挿入先に反映されるのを待つ時間。
     private static let settleDelay: Duration = .milliseconds(350)
     /// 判定後、クリップボードを復元するまでの追加待ち（合計 0.6 秒＝従来の復元タイミング）。
     private static let restoreDelay: Duration = .milliseconds(250)
@@ -155,13 +154,6 @@ enum TextInjector {
         }
 
         let before = FocusSnapshot.capture()
-
-        if settings.simulateKeypresses {
-            await typeText(text)
-            // キー送出はクリップボードを一切触らない（この方式を選ぶ理由がそこにあるため）。
-            // 失敗しても結果は HUD に残り、そこからコピーできる。
-            return await verifyAfterSettle(text: text, before: before)
-        }
 
         let pasteboard = NSPasteboard.general
         // **全 type** を退避する。プレーンテキストだけを覚えていると、スクショ・ファイル・
@@ -323,53 +315,6 @@ enum TextInjector {
             }
             return nil
         }
-    }
-
-    /// 1文字ずつキーを送出する。`keyboardSetUnicodeString` を使うので
-    /// キーボード配列に無い文字（日本語・絵文字）でも壊れない。
-    ///
-    /// virtualKey は 0 固定。**flags は明示的に空にする**
-    /// （ホットキーの修飾キー（右⌥ など）を押したままでも、送出文字に混ざらないように）。
-    private static func typeText(_ text: String) async {
-        let source = CGEventSource(stateID: .combinedSessionState)
-        for chunk in chunks(of: text) {
-            let units = Array(chunk.utf16)
-            guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
-                  let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
-            else { continue }
-            keyDown.flags = []
-            keyUp.flags = []
-            units.withUnsafeBufferPointer { buffer in
-                keyDown.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
-                keyUp.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
-            }
-            keyDown.post(tap: .cghidEventTap)
-            keyUp.post(tap: .cghidEventTap)
-            // 送出が速すぎると取りこぼすアプリがあるので間隔を空ける。
-            try? await Task.sleep(for: .milliseconds(6))
-        }
-    }
-
-    /// 1イベントあたりの UTF-16 単位の目安。
-    /// **Character 単位で切る**ので、サロゲートペア（絵文字）や結合文字が分断されない。
-    private static let chunkLimit = 16
-
-    private static func chunks(of text: String) -> [String] {
-        var result: [String] = []
-        var current = ""
-        var count = 0
-        for character in text {
-            let width = String(character).utf16.count
-            if count > 0, count + width > chunkLimit {
-                result.append(current)
-                current = ""
-                count = 0
-            }
-            current.append(character)
-            count += width
-        }
-        if !current.isEmpty { result.append(current) }
-        return result
     }
 
     // MARK: - 成否判定

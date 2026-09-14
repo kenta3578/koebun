@@ -84,12 +84,13 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 | `ModelIntegrity.swift` | 132 | WhisperKit の重みが開発時に確かめたものと同じかを SHA-256 で照合 |
 | `Replacements.swift` | 140 | 辞書置換のルールと `~/koebun/replacements.json` の読み書き |
 | `FillerRemover.swift` | 153 | フィラー語の決定的な除去（`~/koebun/fillers.json`）。語を足さず、数値・URL・英単語には触れない |
+| `JSONFileSync.swift` | 140 | `replacements.json` / `fillers.json` の読み書きと、外での編集の監視・読み直し（外の編集を上書きしない） |
 
 ### 出力（挿入）
 
 | ファイル | 行 | 役割 |
 |---|---:|---|
-| `TextInjector.swift` | 545 | **挿入の本体**。前面照合・セキュア入力回避・⌘V 合成 / キー送出・成否判定・クリップボード復元 |
+| `TextInjector.swift` | 545 | **挿入の本体**。前面照合・セキュア入力回避・⌘V 合成・成否判定・クリップボード復元 |
 | `Pasteboard.swift` | 69 | クリップボードの「機密・一時」目印（nspasteboard.org の慣習）と全 type のスナップショット |
 | `InsertionPresentation.swift` | 63 | 挿入結果 → メニューバー状態 ＋ HUD の動き。**1 か所で導出**して二重分岐を防ぐ |
 
@@ -101,18 +102,18 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 | `RecordingHUDController.swift` | 385 | HUD の状態遷移。「いま何を見せるか」（パネルは作り直さず使い回す） |
 | `RecordingHUDPanel.swift` | 152 | HUD の `NSPanel` 生成・配置と、ホバー / Esc の監視。AppKit 側の面倒 |
 | `RecordingHUDModel.swift` | 165 | HUD の表示モデル。20fps で更新されるので `AppState` とは分けてある |
-| `RecordingHUDView.swift` | 436 | HUD の中身（SwiftUI）。棒グラフ・時間・結果パネル |
-| `HUDLayout.swift` | 57 | HUD の表示位置・表示サイズ（非表示 / 最小 / 通常）の定義 |
+| `RecordingHUDView.swift` | 380 | HUD の中身（SwiftUI）。最小表示の棒・時間・失敗・結果パネル |
+| `HUDLayout.swift` | 65 | HUD の表示位置・表示サイズ（最小 / 非表示）の定義 |
 | `SettingsView.swift` | 552 | 設定画面（タブ構成） |
 | `SettingsWindow.swift` | 57 | 設定ウィンドウを自前の `NSWindow` で開く（SwiftUI の `Settings` は使えない） |
-| `HistoryView.swift` | 475 | 履歴ウィンドウ。再生・再挿入・コピー・削除 |
+| `HistoryView.swift` | 430 | 履歴ウィンドウ。再挿入・コピー・辞書に登録・削除 |
 
 ### 保存
 
 | ファイル | 行 | 役割 |
 |---|---:|---|
 | `SettingsStore.swift` | 455 | 設定の永続化（UserDefaults）と共有状態 |
-| `HistoryStore.swift` | 489 | `~/koebun/history/<時刻>/` に `meta.json` ＋ `audio.wav`。保存期間の掃除 |
+| `HistoryStore.swift` | 440 | `~/koebun/history/<時刻>/meta.json`（音声は残さない）。保存期間の掃除 |
 | `SoundPlayer.swift` | 200 | 開始音 / 停止音。同梱の koebun の音・`~/koebun/sounds/` の自分の音・システム音 |
 | `LoginItem.swift` | 92 | ログイン時の自動起動（`SMAppService`。真偽値を自前で持たない） |
 
@@ -120,8 +121,7 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 
 ```
 ~/koebun/
-├── history/<yyyyMMdd'T'HHmmss.SSS'Z'>/   meta.json（生テキスト・置換後・所要時間・エンジン）
-│                                        audio.wav（16kHz mono）  ※ 0700 で作る
+├── history/<yyyyMMdd'T'HHmmss.SSS'Z'>/   meta.json（生テキスト・置換後・所要時間・エンジン）  ※ 0700 で作る
 ├── replacements.json                    辞書置換ルール
 ├── fillers.json                         フィラー語
 └── sounds/                              自分で入れた開始音・停止音（aiff / wav / mp3 / m4a / caf）

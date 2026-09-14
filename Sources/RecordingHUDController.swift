@@ -40,7 +40,7 @@ final class RecordingHUDController {
     var isVisible: Bool { panel?.isVisible == true }
 
     init() {
-        // 状態が変わるとレイアウトも変わりうる（最小表示でも失敗だけは通常の大きさで出す）。
+        // 状態が変わるとレイアウトも変わりうる（失敗だけは細いバーでなく大きいパネルで出す）。
         // 失敗は AppController が状態だけ更新して HUD を呼ばない経路があるので、ここで拾う。
         // `@Published` は値が入る**前**に流れてくるので、次のターンで読み直す。
         statusObserver = AppState.shared.$status.sink { [weak self] status in
@@ -55,7 +55,7 @@ final class RecordingHUDController {
         model.reset()
         syncEnvironment()
         startedAt = Date()
-        // 経過時間は**非表示でも数える**。録音の途中で「最小/通常」へ切り替えたときに
+        // 経過時間は**非表示でも数える**。録音の途中で「最小」へ切り替えたときに
         // 0 から数え直したように見えないようにする。
         startTicking()
 
@@ -89,10 +89,9 @@ final class RecordingHUDController {
     ///
     /// 置き直すのは**位置**の設定が変わったときだけ。サイズだけの変更でドラッグ位置を
     /// 中央へ戻さない（Issue #57）。非表示中に位置が変わったら、次に出すときに置く。
-    /// 表示サイズと状態を Model へ移す。**Model が共有シングルトンを直読みしない**代わりに、
+    /// 状態を Model へ移す。**Model が共有シングルトンを直読みしない**代わりに、
     /// 環境が変わりうるところで必ずここを通す（Issue #65）。
     func syncEnvironment() {
-        model.hudSize = SettingsStore.shared.hudSize
         model.status = AppState.shared.status
     }
 

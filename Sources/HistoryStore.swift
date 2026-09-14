@@ -17,7 +17,8 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
         var formatMs: Int? = nil
     }
 
-    /// 保存した録音の情報。書き出しに失敗したときは nil。
+    /// 保存した録音の情報。**古い履歴を読むためだけに残す。**
+    /// 音声の保存は Issue #4 で削除したので、新しい履歴では常に nil。
     struct Audio: Codable, Equatable {
         var fileName: String
         var sampleRate: Int
@@ -98,10 +99,6 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
 enum HistoryFiles {
     static let schemaVersion = 3
     static let metaFileName = "meta.json"
-    static let audioFileName = "audio.wav"
-    /// AudioRecorder が出力する形式（16kHz / mono / Float32）。
-    static let sampleRate = 16_000
-    static let channels = 1
     /// 一覧に読み込む上限。古いものは削除されるまでディスクには残る。
     static let listLimit = 500
 
@@ -147,35 +144,12 @@ enum HistoryFiles {
 
     // MARK: - 書き出し
 
-    /// 1発話ぶんを `~/koebun/history/<timestamp>/` に書き出す。
-    ///
-    /// **meta.json を先に書く。** 音声を先に書くと、ディスクが逼迫したときに
-    /// 「audio.wav だけがある」状態になり、一覧にも出ず削除もできない孤児が残る
-    /// （10 分の録音で約 38MB、`.atomic` は一時ファイル + rename なので一時的に 2 倍の
-    /// 空きを要求する。大きい方が通って後の小さい方が落ちるのは典型パターン）。
-    /// 先に書けば「メタが無い＝存在しない履歴」という不変条件が保てる（Issue #81）。
-    static func write(_ entry: HistoryEntry, samples: [Float]) throws -> HistoryEntry {
-        var entry = entry
+    /// 1発話ぶんを `~/koebun/history/<timestamp>/meta.json` に書き出す。
+    /// 録音した音声は残さない（Issue #4。声は履歴の中で最も機微で、使い道も無かった）。
+    static func write(_ entry: HistoryEntry) throws -> HistoryEntry {
         let dir = directoryURL(for: entry.id)
         try createPrivateDirectory(at: dir)
-        let metaURL = dir.appendingPathComponent(metaFileName)
-
-        try encoder.encode(entry).write(to: metaURL, options: .atomic)
-
-        guard !samples.isEmpty else { return entry }
-        do {
-            try wavData(from: samples).write(to: dir.appendingPathComponent(audioFileName), options: .atomic)
-            entry.audio = HistoryEntry.Audio(
-                fileName: audioFileName,
-                sampleRate: sampleRate,
-                channels: channels,
-                durationSeconds: Double(samples.count) / Double(sampleRate)
-            )
-            // 音声の情報を含めて書き直す。
-            try encoder.encode(entry).write(to: metaURL, options: .atomic)
-        } catch {
-            Log.history.error("音声を書き出せませんでした: \(error.localizedDescription)")
-        }
+        try encoder.encode(entry).write(to: dir.appendingPathComponent(metaFileName), options: .atomic)
         return entry
     }
 
@@ -200,43 +174,6 @@ enum HistoryFiles {
         for url in [rootURL.deletingLastPathComponent(), rootURL] {
             try? manager.setAttributes(privateAttributes, ofItemAtPath: url.path)
         }
-    }
-
-    /// 16kHz / mono / Float32 のサンプルを WAV（IEEE float, fmt tag 3）にする。
-    ///
-    /// Int16 に落とさないのは、整形 LLM が入ったあとの再文字起こしで
-    /// **録音時とビット単位で同じ入力**を再現できるようにするため。
-    /// 非 PCM 形式なので fmt チャンクは 18 バイト（cbSize 付き）＋ fact チャンクを付ける。
-    static func wavData(from samples: [Float]) -> Data {
-        let bitsPerSample = 32
-        let blockAlign = channels * bitsPerSample / 8
-        let byteRate = sampleRate * blockAlign
-        let dataSize = samples.count * blockAlign
-        // 4("WAVE") + 8+18(fmt) + 8+4(fact) + 8+dataSize
-        let riffSize = 50 + dataSize
-
-        var data = Data(capacity: riffSize + 8)
-        func append(_ ascii: String) { data.append(contentsOf: Array(ascii.utf8)) }
-        func append(_ value: UInt32) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
-        func append(_ value: UInt16) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
-
-        append("RIFF"); append(UInt32(riffSize)); append("WAVE")
-
-        append("fmt "); append(UInt32(18))
-        append(UInt16(3))                    // WAVE_FORMAT_IEEE_FLOAT
-        append(UInt16(channels))
-        append(UInt32(sampleRate))
-        append(UInt32(byteRate))
-        append(UInt16(blockAlign))
-        append(UInt16(bitsPerSample))
-        append(UInt16(0))                    // cbSize
-
-        append("fact"); append(UInt32(4)); append(UInt32(samples.count))
-
-        append("data"); append(UInt32(dataSize))
-        // macOS（Apple Silicon / Intel）はリトルエンディアンなのでそのまま流し込める。
-        samples.withUnsafeBufferPointer { data.append(Data(buffer: $0)) }
-        return data
     }
 
     // MARK: - 読み込み・削除
@@ -371,15 +308,13 @@ final class HistoryStore: ObservableObject {
     ///   - prompt: 整形 LLM に送ったシステムプロンプト全文（整形が通ったときのみ）。
     ///   - speechEngine: 文字起こしに使ったエンジン（`SpeechEngineKind.rawValue`）。
     func record(
-        samples: [Float],
         rawText: String,
         replacedText: String,
         speechEngine: String? = nil,
         durations: HistoryEntry.Durations,
         inserted: Bool
     ) {
-        // 無音（文字起こしが何も返さなかった）は残さない。誤爆した録音の WAV が
-        // 溜まり続けるだけで、後から見ても何も分からない（Issue #81）。
+        // 無音（文字起こしが何も返さなかった）は残さない。後から見ても何も分からない（Issue #81）。
         guard !rawText.isEmpty || !replacedText.isEmpty else { return }
 
         let createdAt = Date()
@@ -396,12 +331,9 @@ final class HistoryStore: ObservableObject {
         entries.insert(entry, at: 0)
         writing[entry.id] = entry
 
-        // 音声を残すかは設定で選べる。他人に配る前提だと「発話した音声が全部ディスクに
-        // 残る」ことがユーザーの選択になっていないので、切れるようにする（Issue #81）。
-        let saveAudio = SettingsStore.shared.saveAudio
         Task.detached(priority: .utility) {
             do {
-                let written = try HistoryFiles.write(entry, samples: saveAudio ? samples : [])
+                let written = try HistoryFiles.write(entry)
                 await MainActor.run { HistoryStore.shared.finishWriting(written) }
             } catch {
                 Log.history.error("保存できませんでした: \(error.localizedDescription)")
@@ -410,7 +342,7 @@ final class HistoryStore: ObservableObject {
         }
     }
 
-    /// 書き出し後の内容（音声情報など）を一覧側に反映し、書き込み中の印を外す。
+    /// 書き出し後の内容を一覧側に反映し、書き込み中の印を外す。
     private func finishWriting(_ entry: HistoryEntry) {
         writing[entry.id] = nil
         // 書き出しの最中に削除されていたら、書き上がったものを消し直す。

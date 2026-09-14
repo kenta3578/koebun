@@ -77,6 +77,25 @@ struct HistoryEntryTests {
         #expect(entry.formattingEngineLabel == nil)
     }
 
+    /// 音声の保存は Issue #4 で削除した。それ以前の履歴には `audio` が付いている。
+    @Test("音声付きの古い meta.json も読める")
+    func legacyEntryWithAudioDecodes() throws {
+        let entry = try decode("""
+        {
+          "version": 3,
+          "createdAt": "2026-09-13T09:00:00Z",
+          "rawText": "こんにちは",
+          "replacedText": "こんにちは",
+          "durations": { "transcribeMs": 300, "replaceMs": 1 },
+          "speechEngine": "apple",
+          "audio": { "fileName": "audio.wav", "sampleRate": 16000, "channels": 1, "durationSeconds": 1.5 },
+          "inserted": true
+        }
+        """)
+        #expect(entry.rawText == "こんにちは")
+        #expect(entry.audio?.durationSeconds == 1.5)
+    }
+
     @Test("書き出し → 読み戻しで内容が変わらない")
     func roundTrips() throws {
         let original = try decode(legacy)
