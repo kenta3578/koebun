@@ -21,11 +21,6 @@ final class SettingsStore: ObservableObject {
     @Published var hudPosition: HUDPosition {
         didSet { UserDefaults.standard.set(hudPosition.rawValue, forKey: "hudPosition") }
     }
-    /// ⌘V の代わりに1文字ずつキーを送出する。ペーストを受け付けないアプリ向けのフォールバック。
-    /// この方式はクリップボードを一切触らない。
-    @Published var simulateKeypresses: Bool {
-        didSet { UserDefaults.standard.set(simulateKeypresses, forKey: "simulateKeypresses") }
-    }
     /// 挿入できなかった結果をどこに残すか（Issue #67）。
     ///
     /// 以前は `showResultPanel` と `keepResultOnClipboardWhenUnsure` の 2 つの Bool に
@@ -143,7 +138,6 @@ final class SettingsStore: ObservableObject {
         hudSize = Self.storedHUDSize()
         hudPosition = UserDefaults.standard.string(forKey: "hudPosition")
             .flatMap(HUDPosition.init(rawValue:)) ?? .bottomCenter
-        simulateKeypresses = UserDefaults.standard.bool(forKey: "simulateKeypresses")
         resultRetention = Self.storedResultRetention()
         let storedExtra = (UserDefaults.standard.object(forKey: "hotKeyExtraKeyCode") as? Int).flatMap(UInt16.init(exactly:))
         let storedModifiers = Self.storedHotKeyModifiers()

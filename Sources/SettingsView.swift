@@ -197,13 +197,6 @@ struct GeneralSettingsView: View {
             }
 
             Section("挿入") {
-                Toggle("キー送出で入力する（Simulate Keypresses）", isOn: $settings.simulateKeypresses)
-                Text("⌘V を受け付けないアプリ向けのフォールバックです。1文字ずつ送るため長文はやや遅くなりますが、"
-                     + "クリップボードには一切触れません。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 Picker("挿入できなかった結果", selection: $settings.resultRetention) {
                     ForEach(SettingsStore.ResultRetention.allCases) { retention in
                         Text(retention.label).tag(retention)
