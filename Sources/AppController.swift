@@ -306,7 +306,7 @@ final class AppController {
             // どのエンジンで処理したかを残す。これがエンジン比較（Issue #27）の一次データ。
             speechEngine: speechKind.rawValue,
             durations: output.durations,
-            inserted: !text.isEmpty && outcome.isSucceeded
+            insertion: text.isEmpty ? nil : HistoryEntry.Insertion(outcome)
         )
 
         guard case .present(let replay) = completion else {

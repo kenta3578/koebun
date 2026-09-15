@@ -96,6 +96,51 @@ struct HistoryEntryTests {
         #expect(entry.audio?.durationSeconds == 1.5)
     }
 
+    /// v3 以前は `inserted` しか無い。false は未確認・失敗・空を区別できないので失敗にしない（Issue #15）。
+    @Test("挿入結果を持たない古い meta.json は、inserted から結果を導く", arguments: [
+        (true, HistoryEntry.Insertion.succeeded),
+        (false, nil),
+    ])
+    func legacyInsertionResult(inserted: Bool, expected: HistoryEntry.Insertion?) throws {
+        let entry = try decode("""
+        {
+          "version": 3,
+          "createdAt": "2026-09-14T09:00:00Z",
+          "rawText": "こんにちは",
+          "replacedText": "こんにちは",
+          "durations": { "transcribeMs": 300, "replaceMs": 1 },
+          "inserted": \(inserted)
+        }
+        """)
+        #expect(entry.insertion == nil)
+        #expect(entry.insertionResult == expected)
+    }
+
+    @Test("挿入結果を持つ meta.json は、inserted より insertion を優先する", arguments: [
+        HistoryEntry.Insertion.succeeded, .uncertain, .failed,
+    ])
+    func insertionResultDecodes(insertion: HistoryEntry.Insertion) throws {
+        let entry = try decode("""
+        {
+          "version": 4,
+          "createdAt": "2026-09-15T09:00:00Z",
+          "rawText": "こんにちは",
+          "replacedText": "こんにちは",
+          "durations": { "transcribeMs": 300, "replaceMs": 1 },
+          "inserted": \(insertion == .succeeded),
+          "insertion": "\(insertion.rawValue)"
+        }
+        """)
+        #expect(entry.insertionResult == insertion)
+    }
+
+    @Test("挿入の成否は、失敗と断定できたときだけ failed になる")
+    func insertionFromOutcome() {
+        #expect(HistoryEntry.Insertion(.succeeded) == .succeeded)
+        #expect(HistoryEntry.Insertion(.uncertain(detail: "読めない")) == .uncertain)
+        #expect(HistoryEntry.Insertion(.failed(reason: "権限なし")) == .failed)
+    }
+
     @Test("書き出し → 読み戻しで内容が変わらない")
     func roundTrips() throws {
         let original = try decode(legacy)

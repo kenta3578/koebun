@@ -28,6 +28,7 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
 
     /// meta.json のスキーマ版。整形 LLM を足したあとも古い履歴を読み分けられるようにする。
     /// 3 = 使用したエンジン（`speechEngine` / `formattingEngine` / `formattingModelId`）を追加（Issue #27）。
+    /// 4 = 挿入結果（`insertion`）を追加（Issue #15）。
     var version: Int = HistoryFiles.schemaVersion
     var createdAt: Date
     /// 文字起こしの生出力。**上書きしない**。
@@ -55,15 +56,40 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     /// 同じ mlx でも 4B と 32B では比較の意味が変わるので、エンジン名とは別に残す。
     var formattingModelId: String?
     var audio: Audio?
-    /// 挿入まで到達したか（無音・挿入失敗と区別する）。
+    /// 挿入を確認できたか（`InsertionOutcome.succeeded` のときだけ true）。
+    /// 未確認と失敗を区別できないので、表示には `insertionResult` を使う。
     var inserted: Bool
+    /// 挿入結果（v4 から）。挿入する文字が残らなかった発話と v3 以前の履歴は nil。
+    var insertion: Insertion? = nil
 
     /// 保存先ディレクトリ名。ディレクトリ名が正なので meta.json には書かない。
     var id: String = ""
 
+    /// 履歴に残す挿入結果。`InsertionOutcome` から理由と手がかりを落としたもの。
+    enum Insertion: String, Codable, Equatable {
+        case succeeded, uncertain, failed
+
+        init(_ outcome: InsertionOutcome) {
+            switch outcome {
+            case .succeeded: self = .succeeded
+            case .uncertain: self = .uncertain
+            case .failed:    self = .failed
+            }
+        }
+    }
+
     private enum CodingKeys: String, CodingKey {
         case version, createdAt, rawText, replacedText, formattedText, modeName, prompt, durations
-        case speechEngine, formattingEngine, formattingModelId, audio, inserted
+        case speechEngine, formattingEngine, formattingModelId, audio, inserted, insertion
+    }
+
+    /// 表示に使う挿入結果。
+    ///
+    /// ターミナルは AX が反映を返さないので `.uncertain` が常態。`inserted` だけで見ると
+    /// そこへの口述がすべて「未挿入」に見えていた（Issue #15）。v3 以前の `inserted: false` は
+    /// 未確認・失敗・空のどれか分からないので、失敗と断定せず nil にする。
+    var insertionResult: Insertion? {
+        insertion ?? (inserted ? .succeeded : nil)
     }
 
     /// 履歴に出す音声認識エンジン名。v2 以前の履歴（エンジンが1つしか無かった頃）は nil。
@@ -97,7 +123,7 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
 /// 保存は挿入をブロックしてはいけない（挿入の体感速度がこのアプリの価値）ので、
 /// ここの関数はバックグラウンドの `Task.detached` から呼ばれる。
 enum HistoryFiles {
-    static let schemaVersion = 3
+    static let schemaVersion = 4
     static let metaFileName = "meta.json"
     /// 一覧に読み込む上限。古いものは削除されるまでディスクには残る。
     static let listLimit = 500
@@ -307,12 +333,13 @@ final class HistoryStore: ObservableObject {
     /// - Parameters:
     ///   - prompt: 整形 LLM に送ったシステムプロンプト全文（整形が通ったときのみ）。
     ///   - speechEngine: 文字起こしに使ったエンジン（`SpeechEngineKind.rawValue`）。
+    ///   - insertion: 挿入結果。挿入する文字が残らなかった発話は nil。
     func record(
         rawText: String,
         replacedText: String,
         speechEngine: String? = nil,
         durations: HistoryEntry.Durations,
-        inserted: Bool
+        insertion: HistoryEntry.Insertion?
     ) {
         // 無音（文字起こしが何も返さなかった）は残さない。後から見ても何も分からない（Issue #81）。
         guard !rawText.isEmpty || !replacedText.isEmpty else { return }
@@ -325,7 +352,8 @@ final class HistoryStore: ObservableObject {
             durations: durations,
             speechEngine: speechEngine,
             audio: nil,
-            inserted: inserted
+            inserted: insertion == .succeeded,
+            insertion: insertion
         )
         entry.id = HistoryFiles.directoryName(for: createdAt)
         entries.insert(entry, at: 0)
