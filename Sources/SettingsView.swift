@@ -378,6 +378,14 @@ struct ReplacementsSettingsView: View {
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var fillers = FillerStore.shared
 
+    /// 直前の取り込みの結果。
+    @State private var importMessage: ImportMessage?
+
+    private struct ImportMessage {
+        let text: String
+        let isError: Bool
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             fillerSection
@@ -437,9 +445,18 @@ struct ReplacementsSettingsView: View {
                 Button("ルールを追加") {
                     store.rules.append(ReplacementRule(from: "", to: ""))
                 }
+                Button("ファイルから読み込む…") { importRules() }
+                    .help("JSON のルールファイルをまとめて追加します（同じ読みのルールは飛ばし、既存のルールは変更しません）")
                 Spacer()
                 Button("記号の初期ルールを追加") { addMissingDefaults() }
                     .help("削除した記号ルールだけを戻します（既存のルールは変更しません）")
+            }
+
+            if let importMessage {
+                Text(importMessage.text)
+                    .font(.caption)
+                    .foregroundStyle(importMessage.isError ? Color.red : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             EditableFileRow(url: ReplacementStore.fileURL, problem: store.fileProblem)
@@ -498,10 +515,44 @@ struct ReplacementsSettingsView: View {
 
     /// 既定の記号ルールのうち、`from` が未登録のものだけを追加する。
     private func addMissingDefaults() {
-        let existing = Set(store.rules.map { $0.from.lowercased() })
-        let missing = ReplacementStore.defaultRules.filter { !existing.contains($0.from.lowercased()) }
+        let missing = ReplacementStore.merge(ReplacementStore.defaultRules, into: store.rules).added
         guard !missing.isEmpty else { return }
         store.rules.append(contentsOf: missing)
+    }
+
+    /// JSON のルールファイルを選んで一括追加する（Issue #13）。既存ルールは書き換えない。
+    private func importRules() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.json]
+        panel.prompt = "読み込む"
+        panel.message = "replacements.json と同じ形式（[{\"from\": \"…\", \"to\": \"…\"}]）のファイルを選びます"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let result = try ReplacementStore.importRules(from: Data(contentsOf: url), into: store.rules)
+            if !result.added.isEmpty {
+                store.rules.append(contentsOf: result.added)
+                // 保存が外の編集とぶつかると読み直しで消え、ファイルが壊れていると保存されない。
+                // どちらも fileProblem が立つので、「追加しました」と言わない。
+                if store.fileProblem != nil {
+                    importMessage = ImportMessage(
+                        text: "\(url.lastPathComponent) の取り込みを保存できませんでした。下の表示を確認してから、もう一度読み込んでください",
+                        isError: true)
+                    return
+                }
+            }
+            importMessage = ImportMessage(
+                text: "\(url.lastPathComponent): \(result.added.count) 件を追加"
+                    + (result.skipped > 0 ? "、同じ読みがある \(result.skipped) 件は飛ばしました" : "しました"),
+                isError: false)
+        } catch {
+            importMessage = ImportMessage(
+                text: "\(url.lastPathComponent) を読み込めないため、何も追加していません（\(error.localizedDescription)）",
+                isError: true)
+        }
     }
 }
 
