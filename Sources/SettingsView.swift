@@ -533,7 +533,17 @@ struct ReplacementsSettingsView: View {
 
         do {
             let result = try ReplacementStore.importRules(from: Data(contentsOf: url), into: store.rules)
-            if !result.added.isEmpty { store.rules.append(contentsOf: result.added) }
+            if !result.added.isEmpty {
+                store.rules.append(contentsOf: result.added)
+                // 保存が外の編集とぶつかると読み直しで消え、ファイルが壊れていると保存されない。
+                // どちらも fileProblem が立つので、「追加しました」と言わない。
+                if store.fileProblem != nil {
+                    importMessage = ImportMessage(
+                        text: "\(url.lastPathComponent) の取り込みを保存できませんでした。下の表示を確認してから、もう一度読み込んでください",
+                        isError: true)
+                    return
+                }
+            }
             importMessage = ImportMessage(
                 text: "\(url.lastPathComponent): \(result.added.count) 件を追加"
                     + (result.skipped > 0 ? "、同じ読みがある \(result.skipped) 件は飛ばしました" : "しました"),
