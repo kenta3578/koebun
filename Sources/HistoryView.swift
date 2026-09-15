@@ -97,11 +97,9 @@ struct HistoryView: View {
                         .font(.system(size: 12))
                     HStack(spacing: 6) {
                         Text(Self.listDateFormatter.string(from: entry.createdAt))
-                        if !entry.inserted {
-                            Text("未挿入").foregroundStyle(.orange)
-                        }
-                        if entry.formattedText == nil {
-                            Text("整形なし")
+                        // 警告色は失敗と断定できたときだけ（未確認はターミナルで常態。Issue #15）。
+                        if entry.insertionResult == .failed {
+                            Text("挿入失敗").foregroundStyle(.orange)
                         }
                     }
                     .font(.caption2)
@@ -193,11 +191,25 @@ struct HistoryView: View {
                 if let engine = entry.formattingEngineLabel {
                     Label("整形 \(engine)", systemImage: "wand.and.stars")
                 }
-                Label(entry.inserted ? "挿入済み" : "未挿入",
-                      systemImage: entry.inserted ? "checkmark.circle" : "xmark.circle")
+                insertionLabel(entry.insertionResult)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func insertionLabel(_ result: HistoryEntry.Insertion?) -> some View {
+        switch result {
+        case .succeeded:
+            Label("挿入済み", systemImage: "checkmark.circle")
+        case .uncertain:
+            Label("挿入しました（反映は未確認）", systemImage: "checkmark.circle")
+        case .failed:
+            Label("挿入失敗", systemImage: "xmark.circle").foregroundStyle(.orange)
+        case nil:
+            // 挿入する文字が残らなかった発話、または結果を区別して残す前（v3 以前）の履歴。
+            EmptyView()
         }
     }
 
