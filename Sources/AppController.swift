@@ -26,6 +26,11 @@ final class AppController {
     /// 変わった時点でエンジンは止まり、以降の発話はサンプルに入らないので、
     /// 「途中までで処理した」ことを結果表示に必ず出す。停止処理で読んで false に戻す。
     private var audioDeviceChangedDuringRecording = false
+    /// 録音が上限（`RecordingLimit.maxDuration`）に達して止めたか（Issue #17）。
+    /// 止め忘れた録音は挿入しない。停止処理で読んで false に戻す。
+    private var recordingLimitReached = false
+    /// 上限で録音を止めるタスク。停止・破棄のたびに外す（前の録音のタイマーが次の録音を止めないため）。
+    private var recordingLimitTask: Task<Void, Never>?
     /// 追い越しの判定と、見せ損ねた結果の退避（Issue #97 / #100）。
     /// 判定そのものは `PipelineGuard` に閉じていて、AppKit 無しで単体テストできる（Issue #102）。
     private var guardState = PipelineGuard()
@@ -179,13 +184,14 @@ final class AppController {
         // 読込中は始めない。処理中は始めてよい（Issue #97）。先行パイプラインの完了処理が
         // この録音の状態・HUD を潰さないことは、世代番号で守る（Issue #57 H3 の再来を防ぐ）。
         guard state.status.canStartRecording else { return }
-        _ = guardState.begin()
+        let generation = guardState.begin()
         do {
             // 挿入先は録音開始の**前**に控える。NSWorkspace だけなので AX 権限も要らず軽い。
             pendingBundleId = TextInjector.frontmostBundleId()
 
             try recorder.start()
             state.update(.recording)
+            scheduleRecordingLimit(generation: generation)
             // 表示サイズ（非表示/最小/通常）の判断は HUD 側に一本化してある。
             hud.show()
             let start = SettingsStore.shared.startSound
@@ -212,6 +218,9 @@ final class AppController {
         // ここで読んで戻す（この録音ぶんの事情なので、次の録音へ持ち越さない）。
         let deviceChanged = audioDeviceChangedDuringRecording
         audioDeviceChangedDuringRecording = false
+        let limitReached = recordingLimitReached
+        recordingLimitReached = false
+        cancelRecordingLimit()
 
         // **ユーザーが待つ実時間**をここから測る（Issue #107）。履歴の `durations` は
         // 処理ごとの内訳だが、こちらは挿入の順番待ちも含む「押してから入るまで」。
@@ -228,6 +237,7 @@ final class AppController {
             await runPipeline(samples: samples,
                               expectedBundleId: expectedBundleId,
                               deviceChanged: deviceChanged,
+                              limitReached: limitReached,
                               generation: generation,
                               after: previousPipeline)
         }
@@ -240,6 +250,7 @@ final class AppController {
     private func runPipeline(samples: [Float],
                              expectedBundleId: String?,
                              deviceChanged: Bool,
+                             limitReached: Bool,
                              generation: Int,
                              after previousPipeline: Task<Void, Never>?) async {
         guard let (speechKind, speechEngine) = resolveSpeechEngine() else {
@@ -274,15 +285,22 @@ final class AppController {
         await previousPipeline?.value
         // 挿入は成否を判定して返る。成功と確認できなければ結果を捨てない（Issue #13）。
         // 録音を始めたアプリと違うところへ貼らないよう、照合用に渡す（Issue #80）。
-        let outcome: InsertionOutcome = text.isEmpty
-            ? .succeeded
-            : await TextInjector.insert(text, expectedBundleId: expectedBundleId)
+        // 上限で止めた録音は止め忘れの可能性が高いので、カーソルへは入れない（Issue #17）。
+        let outcome: InsertionOutcome
+        if text.isEmpty {
+            outcome = .succeeded
+        } else if limitReached {
+            outcome = RecordingLimit.outcome
+        } else {
+            outcome = await TextInjector.insert(text, expectedBundleId: expectedBundleId)
+        }
+        let resultLocation = SettingsStore.shared.resultLocationDescription(isFailure:)
         // 見せ方（メニューバーの状態と HUD の動き）は 1 か所で導出する（Issue #64）。
         let presentation = InsertionPresentation.make(
             outcome: outcome,
             text: text,
             showResultPanel: SettingsStore.shared.showResultPanel,
-            resultLocation: SettingsStore.shared.resultLocationDescription(isFailure:))
+            resultLocation: limitReached ? RecordingLimit.resultLocation(resultLocation) : resultLocation)
 
         let completion = guardState.finish(generation: generation,
                                            status: presentation.status,
@@ -363,6 +381,8 @@ final class AppController {
         _ = recorder.stop()
         pendingBundleId = nil
         audioDeviceChangedDuringRecording = false
+        recordingLimitReached = false
+        cancelRecordingLimit()
         // 追い越された前の発話が結果を見せ損ねていれば、閉じる代わりにそれを出す（Issue #97）。
         if let deferred = guardState.take() {
             showDeferred(deferred)
@@ -406,6 +426,30 @@ final class AppController {
         hotkeys.start()
         state.update(.idle)
         Log.hotkey.notice("アクセシビリティ権限を検知したのでホットキーを登録し直しました")
+    }
+
+    /// 録音の上限で止めるタスクを張る（Issue #17）。
+    /// 世代番号を控え、発火した時点で別の録音に変わっていたら何もしない。
+    private func scheduleRecordingLimit(generation: Int) {
+        cancelRecordingLimit()
+        recordingLimitTask = Task { [weak self] in
+            try? await Task.sleep(for: RecordingLimit.maxDuration)
+            guard !Task.isCancelled else { return }
+            self?.handleRecordingLimit(generation: generation)
+        }
+    }
+
+    private func cancelRecordingLimit() {
+        recordingLimitTask?.cancel()
+        recordingLimitTask = nil
+    }
+
+    /// 録音が上限に達した。止め忘れの可能性が高いので、止めて文字起こしまで行い、挿入はしない。
+    private func handleRecordingLimit(generation: Int) {
+        guard state.isRecording, !guardState.isSuperseded(generation) else { return }
+        Log.audio.notice("録音が上限に達したため止めます（挿入はしません）")
+        recordingLimitReached = true
+        stopRecording()
     }
 
     /// 録音中にオーディオデバイスの構成が変わった。AVAudioEngine は既に止まっていて
