@@ -1,0 +1,21 @@
+[
+  { "from": "プルリクエスト", "to": "PR" },
+  { "from": "プロリクエスト", "to": "PR" },
+  { "from": "プルリク", "to": "PR" },
+  { "from": "イシュー", "to": "Issue" },
+  { "from": "ギットハブ", "to": "GitHub" },
+  { "from": "ギット", "to": "Git" },
+  { "from": "クロードコード", "to": "Claude Code" },
+  { "from": "エーピーアイ", "to": "API" },
+  { "from": "シーエルアイ", "to": "CLI" },
+  { "from": "ユーアールエル", "to": "URL" },
+  { "from": "エスキューエル", "to": "SQL" },
+  { "from": "ジェイソン", "to": "JSON" },
+  { "from": "ジェーソン", "to": "JSON" },
+  { "from": "タイプスクリプト", "to": "TypeScript" },
+  { "from": "ジャバスクリプト", "to": "JavaScript" },
+  { "from": "パイソン", "to": "Python" },
+  { "from": "ドッカー", "to": "Docker" },
+  { "from": "ブイエスコード", "to": "VS Code" },
+  { "from": "ヴイエスコード", "to": "VS Code" }
+]

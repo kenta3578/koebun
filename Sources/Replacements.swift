@@ -142,6 +142,42 @@ final class ReplacementStore: ObservableObject {
         return result
     }
 
+    // MARK: - 取り込み
+
+    /// 取り込みの結果。`added` は既存に無かったルール、`skipped` は読みが重なって足さなかった件数。
+    struct ImportResult: Equatable {
+        var added: [ReplacementRule]
+        var skipped: Int
+    }
+
+    /// `candidates` のうち、`existing` に同じ読み（大文字小文字は区別しない）が無いものだけを返す。
+    ///
+    /// 既存ルールは書き換えない。候補どうしで読みが重なれば先のものを採る。読みが空の行は数えずに捨てる。
+    nonisolated static func merge(_ candidates: [ReplacementRule],
+                                  into existing: [ReplacementRule]) -> ImportResult {
+        var seen = Set(existing.map { $0.from.lowercased() })
+        var added: [ReplacementRule] = []
+        var skipped = 0
+        for rule in candidates where !rule.from.isEmpty {
+            if seen.insert(rule.from.lowercased()).inserted {
+                added.append(rule)
+            } else {
+                skipped += 1
+            }
+        }
+        return ImportResult(added: added, skipped: skipped)
+    }
+
+    /// `replacements.json` と同じ形式の JSON を読み、足すルールを決める（Issue #13）。
+    ///
+    /// 語彙セット（エンジニア用語など）はアプリに同梱せず、ファイルで配って取り込んでもらう。
+    /// **壊れた JSON は 1 件も足さずに投げる**（途中まで足すと、どこまで入ったか分からない）。
+    nonisolated static func importRules(from data: Data,
+                                        into existing: [ReplacementRule]) throws -> ImportResult {
+        let candidates = try JSONDecoder().decode([ReplacementRule].self, from: data)
+        return merge(candidates, into: existing)
+    }
+
     // MARK: - 永続化
 
     private func save() {
