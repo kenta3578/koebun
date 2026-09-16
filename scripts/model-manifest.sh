@@ -9,7 +9,7 @@
 set -euo pipefail
 
 MODEL="${1:-large-v3}"
-DIR="$HOME/Library/Caches/argmaxinc/whisperkit-coreml/openai_whisper-$MODEL"
+DIR="$HOME/Library/Application Support/com.kenta3578.koebun/huggingface/models/argmaxinc/whisperkit-coreml/openai_whisper-$MODEL"
 
 if [ ! -d "$DIR" ]; then
   echo "モデルのキャッシュがありません: $DIR" >&2

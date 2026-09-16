@@ -29,7 +29,10 @@ actor Transcriber: SpeechEngine {
     /// (config.modelFolder != nil)`）ので、明示的に true にする。既にキャッシュがあれば
     /// HubApi が既存ファイルを見るので再ダウンロードは走らない。
     func load() async throws {
-        let config = WhisperKitConfig(model: Self.model, load: true, download: true)
+        let config = WhisperKitConfig(model: Self.model,
+                                      downloadBase: Self.prepareDownloadBase(),
+                                      load: true,
+                                      download: true)
         // まず取得（既にあれば HubApi が既存ファイルを見るので走らない）。
         let pipeline = try await WhisperKit(config)
         // **読み込んだ後ではなく、使う前に照合する。** WhisperKit には revision を渡す口が
@@ -50,21 +53,45 @@ actor Transcriber: SpeechEngine {
         }
     }
 
-    /// キャッシュ上のモデルディレクトリ。`.cachesDirectory` が引けなければ nil。
-    private static var modelDirectory: URL? {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("argmaxinc/whisperkit-coreml/openai_whisper-\(model)")
+    /// モデルの保存先の根。**WhisperKit の既定（`~/Documents/huggingface`）を使わない**（Issue #23）。
+    ///
+    /// 書類フォルダは TCC で守られているので、ダウンロードが途中で壊れてもアプリはそれを消せず、
+    /// 「Model not found …アクセス権がないため削除できませんでした」から自力で復帰できない。
+    /// iCloud の同期対象にもなりうるので、数 GB を置く場所でもない。
+    /// `.cachesDirectory` は OS がパージしうる＝2.9GB を取り直させるので、Application Support に置く。
+    static var downloadBase: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.kenta3578.koebun", isDirectory: true)
+            .appendingPathComponent("huggingface", isDirectory: true)
+    }
+
+    /// 保存先を用意して返す。作れなければ nil を返す（WhisperKit の既定に落ちる）。
+    private static func prepareDownloadBase() -> URL? {
+        guard var base = downloadBase else { return nil }
+        do {
+            try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+            // 取り直せる 2.9GB なので Time Machine には載せない。
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try base.setResourceValues(values)
+        } catch {
+            // 失敗しても取得自体は続けられる（その場合だけ既定の場所に落ちる）。
+            Log.asr.error("モデルの保存先を用意できませんでした: \(error.localizedDescription)")
+        }
+        return base
+    }
+
+    /// モデルのディレクトリ。HubApi は `<downloadBase>/models/<repo id>/` に展開する。
+    static var modelDirectory: URL? {
+        downloadBase?
+            .appendingPathComponent("models/argmaxinc/whisperkit-coreml", isDirectory: true)
+            .appendingPathComponent("openai_whisper-\(model)", isDirectory: true)
     }
 
     /// モデルが既にダウンロード済みか。UI に「ダウンロード中」を出すかの判断に使う。
-    ///
-    /// `.cachesDirectory` は OS がパージしうるので、消えていれば取得からやり直す。
     static var hasCachedModel: Bool {
-        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-        else { return false }
         // 一式のうち1つでも欠けると `loadModels` が modelsUnavailable を投げるので、
         // 代表として MelSpectrogram の有無を見る。
-        _ = caches
         guard let probe = modelDirectory?.appendingPathComponent("MelSpectrogram.mlmodelc")
         else { return false }
         return FileManager.default.fileExists(atPath: probe.path)
