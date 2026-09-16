@@ -168,4 +168,4 @@ JSON が壊れた状態で保存しても、直前のルールのまま動き続
 | 取り込んだ開始音・停止音 | `~/koebun/sounds/` |
 | 履歴（テキスト） | `~/koebun/history/` |
 | 設定値 | `UserDefaults`（`com.kenta3578.koebun`） |
-| WhisperKit モデル | `~/Library/Caches/argmaxinc/whisperkit-coreml/` |
+| WhisperKit モデル | `~/Library/Application Support/com.kenta3578.koebun/huggingface/models/argmaxinc/whisperkit-coreml/` |
