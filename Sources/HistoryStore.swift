@@ -4,17 +4,15 @@ import os
 
 /// 1発話ぶんの履歴（`meta.json` の実体）。
 ///
-/// **生テキストを必ず残す**のがこの構造の芯。整形 LLM（Issue #10）は事実を書き換えうる
-/// （`docs/design-rationale.md` §2: 請求額 4,217→4,270 の改変、
-/// 「メールをチェックする**前に**」→「チェック**せずに**」の意味反転。どちらも警告は出ない）。
-/// 生テキストと送信プロンプトが残っていなければ、書き換えられたことに気づく手段がない。
+/// **生テキストを必ず残す**のがこの構造の芯。辞書置換で壊れた語に後から気づけるようにする。
+///
+/// 整形 LLM（#131 で削除）の列は書かなくなったが、**古い `meta.json` は読めるままにする**
+/// （未知のキーは無視される）。整形結果そのものはファイルに残っている（Issue #19）。
 struct HistoryEntry: Codable, Identifiable, Equatable {
     /// 各処理の所要時間（ミリ秒）。
     struct Durations: Codable, Equatable {
         var transcribeMs: Int
         var replaceMs: Int
-        /// 整形しなかった発話は nil。
-        var formatMs: Int? = nil
     }
 
     /// 保存した録音の情報。**古い履歴を読むためだけに残す。**
@@ -35,26 +33,12 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     var rawText: String
     /// 辞書置換（決定的な文字列処理）を適用した結果。
     var replacedText: String
-    /// 整形 LLM の出力。整形しなかった発話は nil。
-    var formattedText: String?
-    /// 使用した整形モード名。整形しなかった発話は nil。
-    var modeName: String?
-    /// 整形 LLM に送ったプロンプト全文。整形しなかった発話は nil。
-    /// プロンプト改善のループを回すために**全文**を残す（要約・省略しない）。
-    var prompt: String?
     var durations: Durations
     /// 文字起こしに使ったエンジン（`SpeechEngineKind.rawValue`）。v2 以前の履歴は nil。
     ///
     /// **エンジン比較の一次データはここ**（Issue #27）。同じ発話を両エンジンに通したとき、
-    /// 生テキスト・整形後・所要時間をどちらの結果として読めばいいかが
-    /// これが無いと分からなくなる。
+    /// 生テキストと所要時間をどちらの結果として読めばいいかが、これが無いと分からなくなる。
     var speechEngine: String?
-    /// 整形に使ったエンジン（かつての `FormattingEngineKind.rawValue`）。
-    /// 整形を試みなかった発話（`そのまま` モード・整形 OFF）は nil。
-    var formattingEngine: String?
-    /// 整形に使ったモデルの識別子。mlx なら HuggingFace の repo id、Apple なら固定の識別子。
-    /// 同じ mlx でも 4B と 32B では比較の意味が変わるので、エンジン名とは別に残す。
-    var formattingModelId: String?
     var audio: Audio?
     /// 挿入を確認できたか（`InsertionOutcome.succeeded` のときだけ true）。
     /// 未確認と失敗を区別できないので、表示には `insertionResult` を使う。
@@ -79,8 +63,8 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, createdAt, rawText, replacedText, formattedText, modeName, prompt, durations
-        case speechEngine, formattingEngine, formattingModelId, audio, inserted, insertion
+        case version, createdAt, rawText, replacedText, durations
+        case speechEngine, audio, inserted, insertion
     }
 
     /// 表示に使う挿入結果。
@@ -97,23 +81,9 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
         speechEngine.map { SpeechEngineKind(rawValue: $0)?.shortLabel ?? $0 }
     }
 
-    /// 履歴に出す整形エンジン名。モデル ID が分かればそれも添える（14B と 32B を混同しないため）。
-    /// 削除済みの整形エンジン名（`rawValue` → 表示名）。古い履歴を読むためだけに持つ。
-    private static let legacyFormattingEngineNames = ["mlx": "Qwen3", "apple": "Apple"]
-
-    var formattingEngineLabel: String? {
-        guard let formattingEngine else { return nil }
-        // 整形 LLM は #131 で削除した。**古い履歴の表示のためだけ**に名前を残す。
-        let name = Self.legacyFormattingEngineNames[formattingEngine] ?? formattingEngine
-        guard let modelId = formattingModelId, !modelId.isEmpty else { return name }
-        // HuggingFace の repo id は `mlx-community/Qwen3-14B-4bit` と長いので末尾だけ出す。
-        return "\(name) / \(modelId.split(separator: "/").last.map(String.init) ?? modelId)"
-    }
-
-    /// 一覧に出す1行サマリー。整形後があればそちらを優先する。
+    /// 一覧に出す1行サマリー。
     var summary: String {
-        let text = formattedText ?? replacedText
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = replacedText.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "（無音）" : trimmed
     }
 }
