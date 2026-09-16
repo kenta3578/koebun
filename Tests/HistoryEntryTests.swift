@@ -111,7 +111,7 @@ struct HistoryEntryTests {
     }
 
     @Test("挿入結果を持つ meta.json は、inserted より insertion を優先する", arguments: [
-        HistoryEntry.Insertion.succeeded, .uncertain, .failed,
+        HistoryEntry.Insertion.succeeded, .uncertain, .failed, .limited,
     ])
     func insertionResultDecodes(insertion: HistoryEntry.Insertion) throws {
         let entry = try decode("""
@@ -133,6 +133,15 @@ struct HistoryEntryTests {
         #expect(HistoryEntry.Insertion(.succeeded) == .succeeded)
         #expect(HistoryEntry.Insertion(.uncertain(detail: "読めない")) == .uncertain)
         #expect(HistoryEntry.Insertion(.failed(reason: "権限なし")) == .failed)
+    }
+
+    /// 上限で止めた発話は挿入を試みていない。挿入を試みた結果に混ざると、
+    /// 本当に貼れなかった発話と区別できなくなる（Issue #21）。
+    @Test("挿入を試みた結果が limited になることはない", arguments: [
+        InsertionOutcome.succeeded, .uncertain(detail: "x"), .failed(reason: "x"),
+    ])
+    func outcomeNeverBecomesLimited(outcome: InsertionOutcome) {
+        #expect(HistoryEntry.Insertion(outcome) != .limited)
     }
 
     @Test("書き出し → 読み戻しで内容が変わらない")

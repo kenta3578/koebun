@@ -27,6 +27,7 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     /// meta.json のスキーマ版。整形 LLM を足したあとも古い履歴を読み分けられるようにする。
     /// 3 = 使用したエンジン（`speechEngine` / `formattingEngine` / `formattingModelId`）を追加（Issue #27）。
     /// 4 = 挿入結果（`insertion`）を追加（Issue #15）。
+    ///     `limited`（上限で止めたので挿入していない）は後から足した値で、版は上げていない（Issue #21）。
     var version: Int = HistoryFiles.schemaVersion
     var createdAt: Date
     /// 文字起こしの生出力。**上書きしない**。
@@ -52,6 +53,9 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     /// 履歴に残す挿入結果。`InsertionOutcome` から理由と手がかりを落としたもの。
     enum Insertion: String, Codable, Equatable {
         case succeeded, uncertain, failed
+        /// 録音の上限で止めたので、そもそも挿入していない（Issue #21）。
+        /// **挿入を試みた結果ではない**ので、`init(_:)` からは決して作られない。
+        case limited
 
         init(_ outcome: InsertionOutcome) {
             switch outcome {

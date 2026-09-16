@@ -96,9 +96,8 @@ struct HistoryView: View {
                         .font(.system(size: 12))
                     HStack(spacing: 6) {
                         Text(Self.listDateFormatter.string(from: entry.createdAt))
-                        // 警告色は失敗と断定できたときだけ（未確認はターミナルで常態。Issue #15）。
-                        if entry.insertionResult == .failed {
-                            Text("挿入失敗").foregroundStyle(.orange)
+                        if let note = Self.listInsertionNote(entry.insertionResult) {
+                            Text(note).foregroundStyle(.orange)
                         }
                     }
                     .font(.caption2)
@@ -189,6 +188,16 @@ struct HistoryView: View {
         }
     }
 
+    /// 一覧に出す注記。**カーソルに入っていないものだけ**出す
+    /// （未確認はターミナルで常態なので出さない。Issue #15 / #21）。
+    private static func listInsertionNote(_ result: HistoryEntry.Insertion?) -> String? {
+        switch result {
+        case .failed:  return "挿入失敗"
+        case .limited: return "未挿入（上限）"
+        case .succeeded, .uncertain, nil: return nil
+        }
+    }
+
     @ViewBuilder
     private func insertionLabel(_ result: HistoryEntry.Insertion?) -> some View {
         switch result {
@@ -198,6 +207,10 @@ struct HistoryView: View {
             Label("挿入しました（反映は未確認）", systemImage: "checkmark.circle")
         case .failed:
             Label("挿入失敗", systemImage: "xmark.circle").foregroundStyle(.orange)
+        case .limited:
+            // 貼ろうとして貼れなかったのではなく、止め忘れの保険で挿入しなかった（Issue #21）。
+            Label("上限で止めたため挿入していません", systemImage: "clock.badge.exclamationmark")
+                .foregroundStyle(.orange)
         case nil:
             // 挿入する文字が残らなかった発話、または結果を区別して残す前（v3 以前）の履歴。
             EmptyView()
