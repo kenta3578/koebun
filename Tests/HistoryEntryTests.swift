@@ -6,8 +6,8 @@ import Testing
 /// （発話の記録は作り直せない）。
 ///
 /// #128〜#131 で整形系の列（`formattedText` / `modeName` / `prompt` / `formattingEngine` /
-/// `formattingModelId` / `diff` / `durations.formatMs`）の**書く側だけ**を消し、読む側は残した。
-/// スキーマ版は上げていないので、当時の JSON がそのまま読めることをここで固定する。
+/// `formattingModelId` / `diff` / `durations.formatMs`）を書かなくなり、Issue #19 で読む側も消した。
+/// **未知のキーは無視されるだけ**なので、当時の JSON がそのまま読めることをここで固定する。
 struct HistoryEntryTests {
 
     private func decode(_ json: String) throws -> HistoryEntry {
@@ -39,10 +39,11 @@ struct HistoryEntryTests {
     func legacyEntryDecodes() throws {
         let entry = try decode(legacy)
         #expect(entry.rawText == "請求額が4217円です")
-        #expect(entry.formattedText == "請求額が4,217円です。")
+        #expect(entry.replacedText == "請求額が4217円です")
         #expect(entry.durations.transcribeMs == 292)
-        #expect(entry.durations.formatMs == 2819)
         #expect(entry.inserted)
+        // 一覧の1行は置換後から作る（整形後はもう読まない。Issue #19）。
+        #expect(entry.summary == "請求額が4217円です")
     }
 
     /// `diff` は #128 で `CodingKeys` から外した。**未知のキーは無視されるだけ**という
@@ -51,12 +52,6 @@ struct HistoryEntryTests {
     func removedKeyIsIgnored() throws {
         let entry = try decode(legacy)
         #expect(entry.speechEngine == "apple")
-    }
-
-    @Test("削除済みの整形エンジン名も履歴では表示名に解決できる")
-    func legacyFormattingEngineLabel() throws {
-        let label = try #require(try decode(legacy).formattingEngineLabel)
-        #expect(label.contains("Qwen3"))
     }
 
     @Test("整形を通していない現在の形（整形系がすべて無い）も読める")
@@ -72,9 +67,8 @@ struct HistoryEntryTests {
           "inserted": true
         }
         """)
-        #expect(entry.formattedText == nil)
-        #expect(entry.durations.formatMs == nil)
-        #expect(entry.formattingEngineLabel == nil)
+        #expect(entry.speechEngine == "apple")
+        #expect(entry.summary == "こんにちは")
     }
 
     /// 音声の保存は Issue #4 で削除した。それ以前の履歴には `audio` が付いている。

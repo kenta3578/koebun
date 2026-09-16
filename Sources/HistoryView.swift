@@ -3,20 +3,20 @@ import AppKit
 
 /// 履歴ウィンドウ。メニューバーの「履歴…」から開く。
 ///
-/// 目的は**整形 AI の書き換えをユーザーが自力で検証できるようにすること**
-/// （`docs/design-rationale.md` §7）。そのために
-/// 生 / 置換後 / 整形後 のトグル表示・送信プロンプト全文・録音ファイルを1画面に置く。
+/// 文字起こしの生テキストと辞書置換の結果を並べ、誤認識に気づいたらその場で辞書へ登録する。
+///
+/// 整形 LLM を載せていた頃の入れ物（整形後タブ・送信プロンプト）は #131 で機能ごと消えたので、
+/// ここからも外した（Issue #19）。古い履歴の整形結果は `meta.json` に残っている。
 struct HistoryView: View {
     /// 表示するテキストの種類。
     enum Variant: String, CaseIterable, Identifiable {
-        case raw, replaced, formatted
+        case raw, replaced
         var id: String { rawValue }
 
         var label: String {
             switch self {
             case .raw:       return "生"
             case .replaced:  return "置換後"
-            case .formatted: return "整形後"
             }
         }
 
@@ -24,7 +24,6 @@ struct HistoryView: View {
             switch self {
             case .raw:       return entry.rawText
             case .replaced:  return entry.replacedText
-            case .formatted: return entry.formattedText
             }
         }
     }
@@ -72,7 +71,7 @@ struct HistoryView: View {
             }
             Button("キャンセル", role: .cancel) { pendingDeletion = nil }
         } message: {
-            Text("テキスト・送信プロンプト・録音が消えます。取り消せません。")
+            Text("この発話のテキストが消えます。取り消せません。")
         }
         .onAppear {
             store.reload()
@@ -160,8 +159,6 @@ struct HistoryView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                promptSection(entry)
-
                 Divider()
                 footer(entry)
             }
@@ -180,16 +177,10 @@ struct HistoryView: View {
             HStack(spacing: 10) {
                 Label("文字起こし \(entry.durations.transcribeMs)ms", systemImage: "waveform")
                 Label("置換 \(entry.durations.replaceMs)ms", systemImage: "character.book.closed")
-                if let formatMs = entry.durations.formatMs {
-                    Label("整形 \(formatMs)ms", systemImage: "sparkles")
-                }
                 // どのエンジンで処理したか（Issue #27）。エンジンを切り替えて同じ発話を通したとき、
                 // どちらの結果を見ているのかがここで分かる。
                 if let engine = entry.speechEngineLabel {
                     Label("認識 \(engine)", systemImage: "cpu")
-                }
-                if let engine = entry.formattingEngineLabel {
-                    Label("整形 \(engine)", systemImage: "wand.and.stars")
                 }
                 insertionLabel(entry.insertionResult)
             }
@@ -221,11 +212,6 @@ struct HistoryView: View {
                 Text(text)
                     .font(.system(size: 13))
                     .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else if variant == .formatted {
-                Text("この発話は整形を通していません（「そのまま」モード、または整形に失敗）。")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Text("（空）")
@@ -262,27 +248,6 @@ struct HistoryView: View {
             .help("この履歴を削除")
             .accessibilityLabel("この履歴を削除")
         }
-    }
-
-    @ViewBuilder
-    private func promptSection(_ entry: HistoryEntry) -> some View {
-        DisclosureGroup("LLM に送ったプロンプト") {
-            Group {
-                if let prompt = entry.prompt, !prompt.isEmpty {
-                    Text(prompt)
-                        .font(.system(size: 12, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    Text("この発話は整形を通していないため、送信プロンプトはありません。")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .padding(.top, 6)
-        }
-        .font(.callout)
     }
 
     private func footer(_ entry: HistoryEntry) -> some View {
