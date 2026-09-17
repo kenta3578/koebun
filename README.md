@@ -38,7 +38,7 @@
 
 - メニューバー常駐（Dock には出ません）
 - 右 ⌥（Option）でトグル録音 — 押している間ではなく、押すたびに開始／停止
-- 日本語の文字起こし。**既定は Apple の音声認識**（macOS 26 以降。OS 内蔵でダウンロード不要）で、設定から WhisperKit（Whisper large-v3）へ切り替えられます
+- 日本語の文字起こし。**既定は Apple の音声認識**（macOS 26 以降。OS 内蔵でダウンロード不要）で、設定から WhisperKit（Whisper large-v3-turbo）へ切り替えられます
 - **辞書置換** — 文字起こし結果を機械的に置換（`アットマーク` → `@` など）。LLM を通さないので、同じ入力からは必ず同じ出力になります
 - **フィラー除去** — 「えーと」「あの」などを決定的に取り除きます。LLM を通さないので遅延ゼロ。語彙は `~/koebun/fillers.json`
 - **履歴** — 生テキスト・置換後・所要時間・使用エンジンを残し、後から読み返せます（保存期間は設定可能）
@@ -66,7 +66,7 @@ koebun は**何も落とさない状態を出発点**にして、機能を足し
 | 構成 | 追加ダウンロード | いつ発生するか |
 |---|---|---|
 | **既定**（Apple 音声認識） | **0** | — |
-| 音声認識を WhisperKit に切り替え | 約 2.9GB | 設定「一般 > 音声認識」で選んだとき |
+| 音声認識を WhisperKit に切り替え | 約 630MB | 設定「一般 > 音声認識」で選んだとき |
 
 初回だけで、2 回目以降はキャッシュを読むためオフラインでも動きます。
 
@@ -85,9 +85,9 @@ koebun は**何も落とさない状態を出発点**にして、機能を足し
 
 - **アプリのコードにネットワーク送信処理は存在しません。** `URLSession` / `URLRequest` / ソケット API のいずれも `Sources/` の Swift コードに含まれていません（`grep -rniE "URLSession|URLRequest|https?://|socket|dataTask" Sources/*.swift` で確認できます。ヒットは 0 件です）。
 - **既定の構成では、アプリはモデルを 1 バイトも取得しません。** Apple の音声認識は OS のアセットを借りるだけです（日本語のアセットが Mac にまだ無い場合に限り、OS 自身がそれを取りに行くことがあります。アプリが持つモデルではありません）。
-- **通信が発生するのは、自分で WhisperKit を選んだときだけです。** Hugging Face（`argmaxinc/whisperkit-coreml`）から CoreML モデルを取得します（`~/Library/Application Support/com.kenta3578.koebun/huggingface/models/argmaxinc/whisperkit-coreml/openai_whisper-large-v3`、約 2.9GB）。初回だけで、2 回目以降はキャッシュを読むのでオフラインで動作します。
+- **通信が発生するのは、自分で WhisperKit を選んだときだけです。** Hugging Face（`argmaxinc/whisperkit-coreml`）から CoreML モデルを取得します（`~/Library/Application Support/com.kenta3578.koebun/huggingface/models/argmaxinc/whisperkit-coreml/openai_whisper-large-v3-v20240930_turbo_632MB`、約 630MB）。初回だけで、2 回目以降はキャッシュを読むのでオフラインで動作します。
 - **どちらの場合も、音声とテキストは送信されません。** 落ちてくるのはモデルの重みだけで、通信は一方向です。
-- **落ちてきた重みは記録と照合します。** WhisperKit にはモデルの revision を固定する口が無く、Hugging Face の `main` を追い続けます。そこで全 19 ファイルの SHA-256 とサイズをリポジトリに固定してあり（`Sources/ModelIntegrity.swift`）、一致しなければモデルを使わずエラーにします。**期待値を Hugging Face から取りに行くことはしません**——検証したい相手から期待値を取っても意味が無いうえ、上の「通信処理が無い」という根拠が消えるためです。
+- **落ちてきた重みは記録と照合します。** WhisperKit にはモデルの revision を固定する口が無く、Hugging Face の `main` を追い続けます。そこで全 22 ファイルの SHA-256 とサイズをリポジトリに固定してあり（`Sources/ModelIntegrity.swift`）、一致しなければモデルを使わずエラーにします。**期待値を Hugging Face から取りに行くことはしません**——検証したい相手から期待値を取っても意味が無いうえ、上の「通信処理が無い」という根拠が消えるためです。
 - 文字起こし結果は、履歴を有効にしている間だけ `~/koebun/history/` に残ります（録音した音声はディスクに残しません）（保存期間は設定で変更でき、期限切れは自動で削除されます）。ほかにディスクに書くのは、自分で登録した置換ルール（`~/koebun/replacements.json`）、フィラー語（`~/koebun/fillers.json`）、取り込んだ音（`~/koebun/sounds/`）、設定値（`UserDefaults`）だけです。
 - アプリのサンドボックスは OFF です。グローバルなキー監視（ホットキー）と ⌘V の合成送出に必要なためで、この判断は `project.yml` にコメントとして残しています。
 
@@ -97,7 +97,7 @@ koebun は**何も落とさない状態を出発点**にして、機能を足し
 
 - **Apple Silicon の Mac**（Intel Mac は未検証）
 - **macOS 26 以降**を推奨 — 既定の Apple 音声認識が動くのはこのバージョンからです
-- **macOS 26 未満（14.0 以降）** でも動きます。この場合、既定は自動的に WhisperKit になるため、**初回に約 2.9GB のダウンロードと空きディスクが必要**です（設定画面の Apple 音声認識は選べない状態で表示されます）
+- **macOS 26 未満（14.0 以降）** でも動きます。この場合、既定は自動的に WhisperKit になるため、**初回に約 630MB のダウンロードと空きディスクが必要**です（設定画面の Apple 音声認識は選べない状態で表示されます）
 - 空きディスク: 既定（macOS 26 以降）なら**追加で要りません**。WhisperKit なら約 3GB
 - メモリ: 既定の構成ではアプリはモデルを常駐させません。WhisperKit を使うと数 GB を消費します。**動作確認は Apple Silicon の Mac 1 台のみ**で、最低メモリ要件は未検証です
 
@@ -159,7 +159,7 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 
 ### 一般
 
-- **音声認識エンジン** — 既定は Apple 音声認識（ダウンロード不要）。WhisperKit に切り替えると初回に約 2.9GB を取得します。切り替えると使わない方はメモリから降ります
+- **音声認識エンジン** — 既定は Apple 音声認識（ダウンロード不要）。WhisperKit に切り替えると初回に約 630MB を取得します。切り替えると使わない方はメモリから降ります
 - **録音開始音 / 録音停止音** — macOS のシステムサウンド（Glass, Basso, Ping など 14 種）または「なし」。選ぶとその場で試聴されます
 - **録音 HUD** — 録音中の細いバー（最小／非表示）。非表示にすると開始音・停止音だけで状態を知らせます
 - **録音トリガー** — 「変更」を押してから使いたい修飾キーを押すと、そのキーが登録されます
@@ -196,7 +196,7 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 | 変えたいもの | 場所 |
 |---|---|
 | 各設定の既定値（音声認識エンジンなど） | `Sources/SettingsStore.swift` の `init()` |
-| 使用する Whisper モデル（例: `large-v3-turbo` にして高速化） | `Sources/Transcriber.swift` の `WhisperKitConfig(model:)` |
+| 使用する Whisper モデル（例: `large-v3` にして精度寄りに。約 2.9GB で認識は 2 倍ほど遅い） | `Sources/Transcriber.swift` の `WhisperKitConfig(model:)` |
 | 文字起こしの言語（現在は `ja` 固定） | `Sources/Transcriber.swift` の `DecodingOptions(language:)` |
 | 選択できる修飾キーの一覧 | `Sources/SettingsStore.swift` の `keyName(for:)` / `isKeyDown(keyCode:flags:)` |
 | 辞書置換の初期ルール | `Sources/Replacements.swift` の `defaultRules`（既存ユーザーのルールは `~/koebun/replacements.json` が優先） |

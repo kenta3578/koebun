@@ -157,7 +157,7 @@ struct GeneralSettingsView: View {
                 Text("既定は Apple 音声認識です。OS 内蔵なのでアプリ側のダウンロードも"
                      + "常駐メモリもなく、句読点も認識側が付けます（\(EngineSupport.requiresMacOS26)。"
                      + "満たさない Mac では自動的に WhisperKit になります）。"
-                     + "WhisperKit に切り替えると初回に約2.9GB をダウンロードして常駐させます。"
+                     + "WhisperKit に切り替えると初回に約630MB をダウンロードして常駐させます。"
                      + "切り替えると使わない方をメモリから降ろします。")
                     .font(.caption)
                     .foregroundStyle(.secondary)

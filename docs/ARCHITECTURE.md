@@ -80,7 +80,7 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 |---|---:|---|
 | `Engines.swift` | 81 | `SpeechEngine` プロトコルと `SpeechEngineKind`（apple / whisperKit）。差し替えの境界 |
 | `AppleTranscriber.swift` | 184 | Apple SpeechAnalyzer（macOS 26 以降・既定・DL 無し） |
-| `Transcriber.swift` | 91 | WhisperKit large-v3（初回に約 2.9GB を取得） |
+| `Transcriber.swift` | 91 | WhisperKit large-v3-turbo（初回に約 630MB を取得） |
 | `ModelIntegrity.swift` | 132 | WhisperKit の重みが開発時に確かめたものと同じかを SHA-256 で照合 |
 | `Replacements.swift` | 140 | 辞書置換のルールと `~/koebun/replacements.json` の読み書き |
 | `FillerRemover.swift` | 153 | フィラー語の決定的な除去（`~/koebun/fillers.json`）。語を足さず、数値・URL・英単語には触れない |

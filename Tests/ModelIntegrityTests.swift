@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import koebun
 
-/// モデル重みの照合（Issue #106）。**実モデル（2.9GB）は使わない。**
+/// モデル重みの照合（Issue #106）。**実モデル（約630MB）は使わない。**
 /// 一時ディレクトリに小さなファイルを置いて、判定そのものを確かめる。
 struct ModelIntegrityTests {
 
@@ -49,7 +49,7 @@ struct ModelIntegrityTests {
         }
     }
 
-    /// サイズを先に見るのは、1.7GB を読まずに落とすため。
+    /// サイズを先に見るのは、数百 MB を読まずに落とすため。
     @Test("サイズが違えば落ちる")
     func sizeMismatchFails() throws {
         try withTempDirectory { dir in
@@ -118,9 +118,9 @@ struct ModelIntegrityTests {
     }
 
     /// 貼り替えミスで検証が素通りするのを防ぐ。
-    @Test("同梱のマニフェストが 19 ファイルぶん揃っている")
+    @Test("同梱のマニフェストが 22 ファイルぶん揃っている")
     func bundledManifestIsComplete() {
-        #expect(ModelIntegrity.largeV3.count == 19)
-        #expect(ModelIntegrity.largeV3.allSatisfy { $0.sha256.count == 64 && $0.size > 0 })
+        #expect(ModelIntegrity.largeV3Turbo.count == 22)
+        #expect(ModelIntegrity.largeV3Turbo.allSatisfy { $0.sha256.count == 64 && $0.size > 0 })
     }
 }

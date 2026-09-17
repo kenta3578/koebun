@@ -19,6 +19,6 @@ struct TranscriberPathTests {
         let base = try #require(Transcriber.downloadBase)
         let directory = try #require(Transcriber.modelDirectory)
         #expect(directory.path.hasPrefix(base.path))
-        #expect(directory.path.hasSuffix("models/argmaxinc/whisperkit-coreml/openai_whisper-large-v3"))
+        #expect(directory.path.hasSuffix("models/argmaxinc/whisperkit-coreml/openai_whisper-\(Transcriber.model)"))
     }
 }

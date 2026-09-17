@@ -6,8 +6,8 @@ enum TranscriberError: Error {
     case notReady
 }
 
-/// WhisperKit ラッパー。large-v3 を日本語で文字起こしする。
-/// モデル（約2.9GB）は初回ロード時にダウンロードされる。
+/// WhisperKit ラッパー。large-v3-turbo を日本語で文字起こしする。
+/// モデル（約630MB）は初回ロード時にダウンロードされる。
 ///
 /// `SpeechEngine` の実装の1つ（Issue #27）。**挙動は差し替え前と同じ**で、
 /// 切り替えのために `unload()` だけを足してある。
@@ -15,7 +15,11 @@ actor Transcriber: SpeechEngine {
     private var pipe: WhisperKit?
 
     /// 使うモデルの variant 名。
-    static let model = "large-v3"
+    ///
+    /// large-v3（2.9GB）は認識の中央値が 1,114ms で、挿入までの待ちが明らかに重かった。
+    /// turbo（デコーダ 4 層・量子化）は同じ文で精度を保ったまま約 470ms（Issue #25）。
+    /// Distil 系は英語専用なので使えない。
+    static let model = "large-v3-v20240930_turbo_632MB"
 
     /// モデルをロードする。**無ければダウンロードする。**
     ///
@@ -58,7 +62,7 @@ actor Transcriber: SpeechEngine {
     /// 書類フォルダは TCC で守られているので、ダウンロードが途中で壊れてもアプリはそれを消せず、
     /// 「Model not found …アクセス権がないため削除できませんでした」から自力で復帰できない。
     /// iCloud の同期対象にもなりうるので、数 GB を置く場所でもない。
-    /// `.cachesDirectory` は OS がパージしうる＝2.9GB を取り直させるので、Application Support に置く。
+    /// `.cachesDirectory` は OS がパージしうる＝モデルを取り直させるので、Application Support に置く。
     static var downloadBase: URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.kenta3578.koebun", isDirectory: true)
@@ -70,7 +74,7 @@ actor Transcriber: SpeechEngine {
         guard var base = downloadBase else { return nil }
         do {
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-            // 取り直せる 2.9GB なので Time Machine には載せない。
+            // 取り直せる数百 MB なので Time Machine には載せない。
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
             try base.setResourceValues(values)
@@ -97,7 +101,7 @@ actor Transcriber: SpeechEngine {
         return FileManager.default.fileExists(atPath: probe.path)
     }
 
-    /// 常駐を解除してメモリ（約2.9GB）を返す。Apple 音声認識へ切り替えたときに呼ぶ。
+    /// 常駐を解除してメモリを返す。Apple 音声認識へ切り替えたときに呼ぶ。
     func unload() {
         pipe = nil
     }
