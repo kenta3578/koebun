@@ -32,7 +32,7 @@ AppKit の実画面・モデル・TCC に依存しない **純 Swift のロジ�
 
 ## 置かないもの
 
-- WhisperKit を読み込むもの（約 2.9GB の DL と数十秒のロード）。要るなら `.disabled` で常時実行から外す
+- WhisperKit を読み込むもの（約 630MB の DL と数十秒のロード）。要るなら `.disabled` で常時実行から外す
 - TCC ダイアログ・グローバルホットキー・他アプリへの挿入（XCUITest でも権限は自動化できない。実機で手動確認）
 - 見た目（`.claude/rules/visual-check.md` の手順でスクリーンショット）
 

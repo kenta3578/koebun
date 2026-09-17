@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # WhisperKit のモデル重みのマニフェスト（Issue #106）を、いま手元にあるキャッシュから起こす。
 #
-# 出力を Sources/ModelIntegrity.swift の `largeV3` に丸ごと貼り替える。
+# 出力を Sources/ModelIntegrity.swift の `largeV3Turbo` に丸ごと貼り替える。
 # **貼り替えると版（manifestDigest）が変わるので、次回の起動で必ず再検証が走る。**
 #
 # 使うのは「WhisperKit を上げた」「モデルを変えた」「取得元の更新を意図して受け入れる」とき。
 # 差分が意図しないものなら、それがこの Issue が検知したかった事象そのもの。
 set -euo pipefail
 
-MODEL="${1:-large-v3}"
+MODEL="${1:-large-v3-v20240930_turbo_632MB}"
 DIR="$HOME/Library/Application Support/com.kenta3578.koebun/huggingface/models/argmaxinc/whisperkit-coreml/openai_whisper-$MODEL"
 
 if [ ! -d "$DIR" ]; then
@@ -17,7 +17,7 @@ if [ ! -d "$DIR" ]; then
   exit 1
 fi
 
-echo "    static let largeV3: [Entry] = ["
+echo "    static let largeV3Turbo: [Entry] = ["
 cd "$DIR"
 find . -type f | sort | while read -r f; do
   rel="${f#./}"

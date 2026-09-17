@@ -30,7 +30,7 @@ enum AppleTranscriberError: LocalizedError {
 ///
 /// WhisperKit 実装との決定的な違いは**アプリ側のダウンロードが 0** であること。
 /// 認識モデルは OS のアセットで、`AssetInventory` は未インストールのときだけ OS に取りに行かせる
-/// （HuggingFace から約2.9GB を引く WhisperKit とは別物）。常駐メモリもアプリは持たない。
+/// （HuggingFace から約630MB を引く WhisperKit とは別物）。常駐メモリもアプリは持たない。
 ///
 /// かつて「精度は妥協」として不採用にしていたが、その判断の根拠は
 /// 他者の英語ベンチに基づくもので日本語・実利用では検証していない。それを測るための実装。

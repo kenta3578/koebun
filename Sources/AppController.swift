@@ -45,7 +45,7 @@ final class AppController {
     // MARK: - エンジン（Issue #27）
 
     /// 実装は差し替え可能で、**いったん作ったものは使い回す**。
-    /// 切り替えのたびに作り直すと WhisperKit の約2.9GB を毎回ダウンロード判定からやり直すことになる。
+    /// 切り替えのたびに作り直すと WhisperKit のモデルを毎回ダウンロード判定からやり直すことになる。
     ///
     /// Apple 実装は `@available(macOS 26.0, *)` なので型を直接書けない。
     /// プロトコル型で持ち、生成だけを `#available` の中で行う。
@@ -78,7 +78,7 @@ final class AppController {
         PermissionsManager.promptAccessibilityIfNeeded()
 
         // ホットキーはモデルの読み込みを待たずに張る。macOS 26 未満では既定が
-        // WhisperKit に落ちるので、待つと約2.9GB のダウンロードのあいだずっと
+        // WhisperKit に落ちるので、待つと約630MB のダウンロードのあいだずっと
         // 右⌥ が無反応になる（Issue #78）。
         hotkeys.onToggle = { [weak self] in
             Task { @MainActor in self?.toggleRecording() }
@@ -145,16 +145,16 @@ final class AppController {
             return
         }
 
-        // WhisperKit は初回に約2.9GB を取りに行く。「読み込み中」とだけ出すと
+        // WhisperKit は初回に約630MB を取りに行く。「読み込み中」とだけ出すと
         // 回線次第で数十分固まったように見える（Issue #83）。
         let isDownloading = kind == .whisperKit && !Transcriber.hasCachedModel
         state.update(.loadingModel(
             step: isDownloading
-                ? "音声認識モデルをダウンロード中…（約2.9GB）"
+                ? "音声認識モデルをダウンロード中…（約630MB）"
                 : "音声認識モデルを読み込み中…"
         ))
 
-        // 選ばれなかった方を降ろす（WhisperKit なら約2.9GB が返る）。
+        // 選ばれなかった方を降ろす（WhisperKit ならモデルぶんのメモリが返る）。
         if kind != .whisperKit { await whisperTranscriber.unload() }
         if kind != .apple, let appleTranscriber { await appleTranscriber.unload() }
 

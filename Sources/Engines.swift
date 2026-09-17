@@ -18,7 +18,7 @@ import Foundation
 
 /// 音声認識エンジンの選択肢。UserDefaults と履歴には `rawValue` が入る。
 enum SpeechEngineKind: String, CaseIterable, Identifiable, Sendable {
-    /// WhisperKit large-v3。初回に HuggingFace から約2.9GB を取得してメモリに常駐させる。
+    /// WhisperKit large-v3-turbo。初回に HuggingFace から約630MB を取得してメモリに常駐させる。
     /// macOS 26 未満での既定。
     case whisperKit
     /// Apple SpeechAnalyzer（macOS 26 以降）。認識モデルは OS 側のアセットで、
@@ -30,7 +30,7 @@ enum SpeechEngineKind: String, CaseIterable, Identifiable, Sendable {
     /// 設定画面のピッカーに出す文言。
     var label: String {
         switch self {
-        case .whisperKit: return "WhisperKit large-v3（約2.9GB を DL）"
+        case .whisperKit: return "WhisperKit large-v3-turbo（約630MB を DL）"
         case .apple:      return "Apple 音声認識（macOS 26・DL 無し・既定）"
         }
     }
@@ -69,7 +69,7 @@ enum EngineSupport {
 /// **どちらの実装も同じ入力を受ける**契約にする——`AudioRecorder` が作る
 /// 16kHz / mono / Float32 の `[Float]`。比較のとき入力側が揃っていないと意味が無い。
 protocol SpeechEngine: Sendable {
-    /// 認識の準備をする。WhisperKit は約2.9GB のダウンロードと常駐、
+    /// 認識の準備をする。WhisperKit は約630MB のダウンロードと常駐、
     /// Apple は OS 内蔵アセットの確認だけで、アプリ側のダウンロードは発生しない。
     func load() async throws
     /// 常駐を解除してメモリを返す。エンジンを切り替えたときに呼ぶ
