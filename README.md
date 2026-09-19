@@ -34,7 +34,7 @@
 
 公開する前に調べてみると、同じ方向のアプリはすでにたくさんありました。英語圏なら [VoiceInk](https://github.com/Beingpax/VoiceInk) や [Handy](https://github.com/cjpais/Handy)、日本語でも macOS 26 の SpeechAnalyzer を使ったものが、ちょうど同じ時期に何本も出ています（[nobetsu](https://github.com/pochang6/nobetsu)、[vox](https://github.com/MizuRyu/vox)、[whisperkun](https://github.com/m-tkg/whisperkun) など）。考えることはみんな同じなんだと思います。
 
-機能の数で比べれば、どれも koebun よりたくさんのことができます。整形してほしい、話した端から入ってほしい、Mac 以外でも使いたい、という人にはそちらのほうが合うはずです。
+機能の数で比べれば、どれも koebun よりたくさんのことができます。整形してほしい、話した端から入ってほしい、という人にはそちらのほうが合うはずです。Windows や Linux でも使いたいなら、Handy が対応しています。
 
 それでも自分で作って使い続けているのは、音声入力の「入り口と出口」をどこまで削れるかを、自分の毎日の入力で確かめたかったからです。koebun は、その個人的な研究開発の置き場です。何を足して何を削ったかは、理由ごと [設計の根拠](docs/design-rationale.md) に残しています。
 
