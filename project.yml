@@ -22,6 +22,11 @@ targets:
         - koebunTests
     sources:
       - path: Sources
+      # koebun の開始音・停止音（Issue #2）。scripts/make-sounds.py が作る。
+      # フォルダ参照なので Contents/Resources/Sounds/ にそのまま入る。
+      - path: Resources/Sounds
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: WhisperKit
     settings:

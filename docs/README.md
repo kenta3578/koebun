@@ -5,12 +5,15 @@
 | ファイル | 読む人 | 中身 |
 |---|---|---|
 | [`MANUAL.md`](MANUAL.md) | 使う人 | 説明書。設定項目と「やりたいこと → どこを触る」 |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | 中を読む人 | 処理の流れ・31 ファイルの責務・状態機械・読む順番・触ると危ない場所 |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | 中を読む人 | 処理の流れ・33 ファイルの責務・状態機械・読む順番・触ると危ない場所 |
 | [`SWIFT-NOTES.md`](SWIFT-NOTES.md) | Web 側の言語から来た人 | Swift / SwiftUI を TypeScript・Vue/React・Node.js の言葉に置き換えた地図 |
 
 設計の**理由**（なぜこの作りにしたか）は [design-rationale.md](design-rationale.md) にある。ここは「何がどうなっているか」まで。
 
-## 画像の TODO（Issue #16 / #197）
+> ソースコードのコメントに出てくる Issue 番号には、**移行前のリポジトリのもの**が混ざっている。
+> このリポジトリの Issue とは対応しないので、番号ではなくコメント本文を読んでほしい。
+
+## 画像の TODO
 
 CLI からは画面キャプチャできないため、手元で撮って以下のファイル名で置く。
 

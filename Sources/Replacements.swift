@@ -44,8 +44,15 @@ final class ReplacementStore: ObservableObject {
     ]
 
     @Published var rules: [ReplacementRule] {
-        didSet { save() }
+        didSet {
+            // 外の編集を読み直して入れたときは書き戻さない（書式を勝手に揃えない）。
+            guard !isApplyingExternalChange else { return }
+            save()
+        }
     }
+
+    /// ファイルを読めなかった・外の編集とぶつかったときの説明。設定画面に出す（Issue #7）。
+    @Published private(set) var fileProblem: String?
 
     /// `~/koebun/replacements.json`。sandbox OFF 前提で実ホーム直下に置く。
     static var fileURL: URL {
@@ -54,12 +61,41 @@ final class ReplacementStore: ObservableObject {
             .appendingPathComponent("replacements.json")
     }
 
+    private let file = JSONFileSync<[ReplacementRule]>(url: ReplacementStore.fileURL)
+    private var isApplyingExternalChange = false
+
     private init() {
         // didSet を経由しないよう、まず読み込んでから代入する。
-        rules = Self.load()
+        rules = file.loadAtStartup(default: Self.defaultRules)
         // 初回起動（ファイルが無い）なら初期ルールを書き出して永続化する。
-        if !FileManager.default.fileExists(atPath: Self.fileURL.path) {
+        if !file.fileExists {
             save()
+        }
+        // 外（エディタ・Claude Code）で編集したら、再起動せずに次の口述から効かせる。
+        file.startWatching { [weak self] in self?.reloadFromDisk() }
+    }
+
+    /// 外で変わっていれば読み直す。壊れていたら**いまのルールのまま**動かし、理由を出す。
+    func reloadFromDisk() {
+        switch file.readIfChanged() {
+        case .unchanged, .missing:
+            return
+        case .changed(let loaded):
+            // `id` は永続化しないので読み直すたびに採番し直される。同じ位置で中身が同じ行は
+            // id を引き継ぎ、編集中の行が作り直されて入力欄のフォーカスが飛ばないようにする。
+            let merged = loaded.enumerated().map { index, rule -> ReplacementRule in
+                guard rules.indices.contains(index),
+                      rules[index].from == rule.from, rules[index].to == rule.to else { return rule }
+                var kept = rule
+                kept.id = rules[index].id
+                return kept
+            }
+            isApplyingExternalChange = true
+            rules = merged
+            isApplyingExternalChange = false
+            fileProblem = nil
+        case .broken(let reason):
+            fileProblem = "replacements.json を読めないため、直前のルールで動いています（\(reason)）"
         }
     }
 
@@ -106,35 +142,56 @@ final class ReplacementStore: ObservableObject {
         return result
     }
 
-    // MARK: - 永続化
+    // MARK: - 取り込み
 
-    private static func load() -> [ReplacementRule] {
-        let url = fileURL
-        guard let data = try? Data(contentsOf: url) else { return defaultRules }
-        do {
-            return try JSONDecoder().decode([ReplacementRule].self, from: data)
-        } catch {
-            // 壊れた JSON を黙って上書きしないよう退避してから初期値に戻す。
-            let backup = url.appendingPathExtension("broken")
-            try? FileManager.default.removeItem(at: backup)
-            try? FileManager.default.moveItem(at: url, to: backup)
-            Log.store.error("replacements.json を読めないため退避しました: \(backup.lastPathComponent) / \(error.localizedDescription)")
-            return defaultRules
-        }
+    /// 取り込みの結果。`added` は既存に無かったルール、`skipped` は読みが重なって足さなかった件数。
+    struct ImportResult: Equatable {
+        var added: [ReplacementRule]
+        var skipped: Int
     }
 
+    /// `candidates` のうち、`existing` に同じ読み（大文字小文字は区別しない）が無いものだけを返す。
+    ///
+    /// 既存ルールは書き換えない。候補どうしで読みが重なれば先のものを採る。読みが空の行は数えずに捨てる。
+    nonisolated static func merge(_ candidates: [ReplacementRule],
+                                  into existing: [ReplacementRule]) -> ImportResult {
+        var seen = Set(existing.map { $0.from.lowercased() })
+        var added: [ReplacementRule] = []
+        var skipped = 0
+        for rule in candidates where !rule.from.isEmpty {
+            if seen.insert(rule.from.lowercased()).inserted {
+                added.append(rule)
+            } else {
+                skipped += 1
+            }
+        }
+        return ImportResult(added: added, skipped: skipped)
+    }
+
+    /// `replacements.json` と同じ形式の JSON を読み、足すルールを決める（Issue #13）。
+    ///
+    /// 語彙セット（エンジニア用語など）はアプリに同梱せず、ファイルで配って取り込んでもらう。
+    /// **壊れた JSON は 1 件も足さずに投げる**（途中まで足すと、どこまで入ったか分からない）。
+    nonisolated static func importRules(from data: Data,
+                                        into existing: [ReplacementRule]) throws -> ImportResult {
+        let candidates = try JSONDecoder().decode([ReplacementRule].self, from: data)
+        return merge(candidates, into: existing)
+    }
+
+    // MARK: - 永続化
+
     private func save() {
-        let url = Self.fileURL
-        do {
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
-            try encoder.encode(rules).write(to: url, options: .atomic)
-        } catch {
-            Log.store.error("replacements.json を保存できませんでした: \(error.localizedDescription)")
+        switch file.write(rules) {
+        case .written:
+            fileProblem = nil
+        case .conflict:
+            // 外の編集を踏まない。そちらを正として読み直し、画面の変更はやり直してもらう。
+            reloadFromDisk()
+            if fileProblem == nil {
+                fileProblem = "replacements.json が外で編集されていたので読み直しました。直前の変更はもう一度行ってください"
+            }
+        case .failed(let reason):
+            fileProblem = "replacements.json を保存できませんでした（\(reason)）"
         }
     }
 }

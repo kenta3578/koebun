@@ -2,7 +2,7 @@
 
 **この文書が答えること**: 右⌥を押してから文字が入るまでに何がどの順で起き、どのファイルがどこを担い、どこを触ると壊れるか。
 
-Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）。設計の**理由**は `ai_design-rationale.md`、Swift の**記法**は [SWIFT-NOTES.md](SWIFT-NOTES.md)、使い方は [MANUAL.md](MANUAL.md) にある。ここは**構造**だけを扱う。
+Swift 33 ファイル・6,866 行（テスト 17 ファイル・130 ケース）。設計の**理由**は [design-rationale.md](design-rationale.md)、Swift の**記法**は [SWIFT-NOTES.md](SWIFT-NOTES.md)、使い方は [MANUAL.md](MANUAL.md) にある。ここは**構造**だけを扱う。
 
 ---
 
@@ -21,7 +21,7 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
   AppController.startRecording()  世代番号を進める / 前面アプリの bundle ID を控える
   AudioRecorder.start()           AVAudioEngine の installTap。16kHz・mono・Float32 に変換して溜める
   RecordingHUDController.show()   HUD を出す（NSPanel）
-  SoundPlayer.play(start)         開始音。鳴っている間ぶんは HUD のレベルを無視する（#186）
+  SoundPlayer.play(start)         開始音。鳴っている間ぶんは HUD のレベルを無視する
   ↓ 録音中は 20fps で音量が HUD にだけ流れる（AppState は更新しない）
 
 右⌥ 押下（2 回目）
@@ -47,13 +47,13 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 
 | 約束 | どこで守るか | 破ると何が起きるか |
 |---|---|---|
-| **処理中でも次の録音を始めてよい** | `PipelineGuard` の世代番号 | 止めた直後の言い残しが録れない（#97） |
-| **貼る順は発話順** | `stopRecording` の同期部で `previousPipeline` に並ぶ | 2 発話が入れ替わって挿入される（#99） |
-| **成功と確信できたときだけ成功と言う** | `TextInjector.verify` | 貼れていないのに成功表示・クリップボード復元（#80） |
+| **処理中でも次の録音を始めてよい** | `PipelineGuard` の世代番号 | 止めた直後の言い残しが録れない |
+| **貼る順は発話順** | `stopRecording` の同期部で `previousPipeline` に並ぶ | 2 発話が入れ替わって挿入される |
+| **成功と確信できたときだけ成功と言う** | `TextInjector.verify` | 貼れていないのに成功表示・クリップボード復元 |
 
 ---
 
-## 2. ファイルの責務（31 ファイル）
+## 2. ファイルの責務（33 ファイル）
 
 ### 起動と全体の制御
 
@@ -71,6 +71,7 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 | ファイル | 行 | 役割 |
 |---|---:|---|
 | `HotKeyManager.swift` | 430 | `CGEventTap` で修飾キーを監視。左右の区別・合成イベントの除外・設定画面でのキー取得 |
+| `RecordingLimit.swift` | 23 | 録音の上限（10 分）と、上限で止めた発話の見せ方。**止め忘れの保険**で、通常の発話は切らない |
 | `AudioRecorder.swift` | 222 | `AVAudioEngine` の tap。16kHz 変換、RMS → 0〜1 のレベル、デバイス変更の検知 |
 | `PermissionsManager.swift` | 82 | マイク / アクセシビリティ権限の要求と確認 |
 
@@ -80,16 +81,17 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 |---|---:|---|
 | `Engines.swift` | 81 | `SpeechEngine` プロトコルと `SpeechEngineKind`（apple / whisperKit）。差し替えの境界 |
 | `AppleTranscriber.swift` | 184 | Apple SpeechAnalyzer（macOS 26 以降・既定・DL 無し） |
-| `Transcriber.swift` | 91 | WhisperKit large-v3（初回に約 2.9GB を取得） |
+| `Transcriber.swift` | 91 | WhisperKit large-v3-turbo（初回に約 630MB を取得） |
 | `ModelIntegrity.swift` | 132 | WhisperKit の重みが開発時に確かめたものと同じかを SHA-256 で照合 |
 | `Replacements.swift` | 140 | 辞書置換のルールと `~/koebun/replacements.json` の読み書き |
 | `FillerRemover.swift` | 153 | フィラー語の決定的な除去（`~/koebun/fillers.json`）。語を足さず、数値・URL・英単語には触れない |
+| `JSONFileSync.swift` | 140 | `replacements.json` / `fillers.json` の読み書きと、外での編集の監視・読み直し（外の編集を上書きしない） |
 
 ### 出力（挿入）
 
 | ファイル | 行 | 役割 |
 |---|---:|---|
-| `TextInjector.swift` | 545 | **挿入の本体**。前面照合・セキュア入力回避・⌘V 合成 / キー送出・成否判定・クリップボード復元 |
+| `TextInjector.swift` | 545 | **挿入の本体**。前面照合・セキュア入力回避・⌘V 合成・成否判定・クリップボード復元 |
 | `Pasteboard.swift` | 69 | クリップボードの「機密・一時」目印（nspasteboard.org の慣習）と全 type のスナップショット |
 | `InsertionPresentation.swift` | 63 | 挿入結果 → メニューバー状態 ＋ HUD の動き。**1 か所で導出**して二重分岐を防ぐ |
 
@@ -101,27 +103,26 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 | `RecordingHUDController.swift` | 385 | HUD の状態遷移。「いま何を見せるか」（パネルは作り直さず使い回す） |
 | `RecordingHUDPanel.swift` | 152 | HUD の `NSPanel` 生成・配置と、ホバー / Esc の監視。AppKit 側の面倒 |
 | `RecordingHUDModel.swift` | 165 | HUD の表示モデル。20fps で更新されるので `AppState` とは分けてある |
-| `RecordingHUDView.swift` | 436 | HUD の中身（SwiftUI）。棒グラフ・時間・結果パネル |
-| `HUDLayout.swift` | 57 | HUD の表示位置・表示サイズ（非表示 / 最小 / 通常）の定義 |
+| `RecordingHUDView.swift` | 380 | HUD の中身（SwiftUI）。最小表示の棒・時間・失敗・結果パネル |
+| `HUDLayout.swift` | 65 | HUD の表示位置・表示サイズ（最小 / 非表示）の定義 |
 | `SettingsView.swift` | 552 | 設定画面（タブ構成） |
 | `SettingsWindow.swift` | 57 | 設定ウィンドウを自前の `NSWindow` で開く（SwiftUI の `Settings` は使えない） |
-| `HistoryView.swift` | 475 | 履歴ウィンドウ。再生・再挿入・コピー・削除 |
+| `HistoryView.swift` | 430 | 履歴ウィンドウ。再挿入・コピー・辞書に登録・削除 |
 
 ### 保存
 
 | ファイル | 行 | 役割 |
 |---|---:|---|
 | `SettingsStore.swift` | 455 | 設定の永続化（UserDefaults）と共有状態 |
-| `HistoryStore.swift` | 489 | `~/koebun/history/<時刻>/` に `meta.json` ＋ `audio.wav`。保存期間の掃除 |
-| `SoundPlayer.swift` | 174 | 開始音 / 停止音。システム音と `~/koebun/sounds/` の自作音 |
+| `HistoryStore.swift` | 440 | `~/koebun/history/<時刻>/meta.json`（音声は残さない）。保存期間の掃除 |
+| `SoundPlayer.swift` | 200 | 開始音 / 停止音。同梱の koebun の音・`~/koebun/sounds/` の自分の音・システム音 |
 | `LoginItem.swift` | 92 | ログイン時の自動起動（`SMAppService`。真偽値を自前で持たない） |
 
 ### ディスク上の置き場
 
 ```
 ~/koebun/
-├── history/<yyyyMMdd'T'HHmmss.SSS'Z'>/   meta.json（生テキスト・置換後・所要時間・エンジン）
-│                                        audio.wav（16kHz mono）  ※ 0700 で作る
+├── history/<yyyyMMdd'T'HHmmss.SSS'Z'>/   meta.json（生テキスト・置換後・所要時間・エンジン）  ※ 0700 で作る
 ├── replacements.json                    辞書置換ルール
 ├── fillers.json                         フィラー語
 └── sounds/                              自分で入れた開始音・停止音（aiff / wav / mp3 / m4a / caf）
@@ -217,7 +218,7 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 
 ## 7. テスト
 
-`Tests/` は **AppKit・実モデル・TCC に依存しない純 Swift のロジックだけ**を見る（103 ケース・実行 0.1 秒未満）。権限ダイアログもモデルのダウンロードも起きない（`AppDelegate` がテスト起動を検知して何も始めないため）。
+`Tests/` は **AppKit・実モデル・TCC に依存しない純 Swift のロジックだけ**を見る（130 ケース・実行 0.1 秒未満）。権限ダイアログもモデルのダウンロードも起きない（`AppDelegate` がテスト起動を検知して何も始めないため）。
 
 ```bash
 xcodebuild test -project koebun.xcodeproj -scheme koebun \

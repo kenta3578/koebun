@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # ゴール KPI「平日 1 日あたりの挿入回数」を履歴から集計する。
 #
-#   ./scripts/kpi.sh            # 直近 14 日の日別表と、転換条件の進捗
-#   ./scripts/kpi.sh --days 30  # 期間を変える
+#   ./scripts/kpi.sh                # 直近 14 日の日別表
+#   ./scripts/kpi.sh --days 30      # 期間を変える
+#   ./scripts/kpi.sh --target 10    # 平日 1 日あたりの目標回数を渡すと、達成した日に ✓ を付ける
+#
+# 目標値はリポジトリに持たない（判断の基準は手元の非公開メモで管理する）。
 #
 # 読むのは ~/koebun/history/<timestamp>/meta.json だけ（アプリ側には触らない）。
 # 生テキスト 10 文字未満は「テスト入力」として KPI から除く。
@@ -12,13 +15,14 @@ exec python3 - "$@" <<'PY'
 import glob, json, os, sys, datetime, statistics, collections
 
 days = 14
+target = None
 args = sys.argv[1:]
 if "--days" in args:
     days = int(args[args.index("--days") + 1])
+if "--target" in args:
+    target = int(args[args.index("--target") + 1])
 
 MIN_CHARS = 10          # これ未満はテスト入力（「あいうえお」級）として除外
-TARGET_PER_DAY = 10     # 転換条件: 平日 1 日 10 回以上
-TARGET_DAYS = 14        # が 14 日（平日）続く
 
 root = os.path.expanduser("~/koebun/history")
 files = sorted(glob.glob(os.path.join(root, "*", "meta.json")))
@@ -60,7 +64,7 @@ for i in range(days):
     rec = per_day.get(d, {"all": 0, "kpi": 0, "lens": []})
     is_weekday = d.weekday() < 5
     med = int(statistics.median(rec["lens"])) if rec["lens"] else 0
-    ok = is_weekday and rec["kpi"] >= TARGET_PER_DAY
+    ok = target is not None and is_weekday and rec["kpi"] >= target
     if is_weekday:
         weekday_count += 1
         achieved += 1 if ok else 0
@@ -72,7 +76,8 @@ total_kpi = sum(v["kpi"] for d, v in per_day.items() if start <= d <= today)
 total_all = sum(v["all"] for d, v in per_day.items() if start <= d <= today)
 print(f"合計: 全件 {total_all} / KPI {total_kpi}")
 print()
-print(f"転換条件: 平日 {TARGET_PER_DAY} 回以上 × {TARGET_DAYS} 日 → 達成 {achieved} / 平日 {weekday_count} 日（直近 {days} 日）")
+if target is not None:
+    print(f"目標: 平日 {target} 回以上 → 達成 {achieved} / 平日 {weekday_count} 日（直近 {days} 日）")
 if total_all == 0:
     print("履歴がありません（~/koebun/history が空）。")
 PY

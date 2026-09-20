@@ -11,7 +11,7 @@ Mac（Apple Silicon）で、音声 → 文字起こし → カーソルへ直挿
 ## Tech Stack
 
 - **言語**: Swift / SwiftUI（メニューバー常駐アプリ）
-- **ASR**: Apple SpeechAnalyzer（日本語・既定。OS 内蔵・DL 0・実測 292ms）／ WhisperKit large-v3（切替可。URL・メール・英数字が要るとき用）
+- **ASR**: Apple SpeechAnalyzer（日本語・既定。OS 内蔵・DL 0・実測 292ms）／ WhisperKit large-v3-turbo（切替可。URL・メール・英数字が要るとき用。実測 約470ms）
 - **後処理**: 辞書置換（確定誤変換の機械置換）＋ フィラー除去（どちらも決定的な文字列処理）
 - **OS API**: AVFoundation（マイク）/ Accessibility API（テキスト直挿し）/ グローバルホットキー
 
@@ -20,7 +20,7 @@ Mac（Apple Silicon）で、音声 → 文字起こし → カーソルへ直挿
 ```
 メニューバー常駐(Swift) → push-to-talk
   → AVFoundation(マイク)
-  → Apple SpeechAnalyzer(日本語・既定) / WhisperKit large-v3(切替可)
+  → Apple SpeechAnalyzer(日本語・既定) / WhisperKit large-v3-turbo(切替可)
   → 辞書置換 → フィラー除去
   → Accessibility APIでカーソルに直挿し
 ```
@@ -82,7 +82,7 @@ xcodebuild test -project koebun.xcodeproj -scheme koebun \
   2>&1 | grep -E "✘|Test run|TEST (SUCCEEDED|FAILED)"     # 単体テスト（0.1秒未満。守備範囲は Tests/README.md）
 ./scripts/install-local.sh                          # 実機へインストールして起動（マージ後に必ず）
 pgrep -x koebun                                     # 起動確認
-./scripts/kpi.sh                                    # 北極星の KPI（平日の挿入回数）を履歴から集計
+./scripts/kpi.sh [--target N]                       # 北極星の KPI（平日の挿入回数）を履歴から集計。目標値は引数で渡す
 ./scripts/model-manifest.sh                         # WhisperKit の重みのマニフェストを作り直す（Issue #106）
 tccutil reset Accessibility com.kenta3578.koebun    # 権限トグルが効かないときの一度きりのリセット
 log stream --predicate 'subsystem == "com.kenta3578.koebun"' --level info   # ログ（category: audio/asr/hotkey/history/store/inject）

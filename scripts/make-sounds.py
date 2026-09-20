@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""録音開始音・停止音の候補を波形合成して ~/koebun/sounds/ に書き出す（Issue #71）。
+"""録音開始音・停止音を波形合成して、アプリに同梱する Resources/Sounds/ に書き出す（Issue #71, #2）。
 
 外部サービス・追加ライブラリ不要（標準ライブラリだけ）。短くて主張しすぎない音を狙う。
 
-    python3 scripts/make-sounds.py            # 全候補を生成
+    python3 scripts/make-sounds.py            # 同梱する音（BUNDLED）を作り直す
     python3 scripts/make-sounds.py --list     # 候補名を表示
     python3 scripts/make-sounds.py --gain 0.5 # 音量（既定 0.35。1.0 でフルスケール）
+    python3 scripts/make-sounds.py --out ~/koebun/sounds tick   # 同梱しない候補を自分の音として試す
 
-生成した音は設定 →「録音開始音」「録音停止音」の「自分の音」に出る。
+同梱した音は設定 →「録音開始音」「録音停止音」の「koebun の音」に出る。
+BUNDLED を変えたら Sources/SoundPlayer.swift の bundledSounds も揃える（テストが突き合わせる）。
 気に入らなければ下の PRESETS の周波数・長さを変えて作り直す。
 
 ## 開始音と停止音を聞き分けられるようにする（Issue #121）
@@ -177,6 +179,17 @@ PRESETS = {
                          (0.055, glide(330, 165, 0.34, decay=0.11, level=0.85, attack=0.008))),
 }
 
+# アプリに同梱する音。開始と停止のペア（#121 の規則を満たすもの）だけにする。
+# tick はペアにならず、pop-like / purr-like はシステム音の Pop / Purr と被るので入れない。
+BUNDLED = [
+    "koebun-up", "koebun-down",
+    "chime-open", "chime-close",
+    "marimba-high", "marimba-low",
+    "classic-start", "classic-stop",
+]
+
+BUNDLE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Resources", "Sounds")
+
 def write_wav(path, samples, gain):
     peak = max(1e-9, max(abs(v) for v in samples))
     scale = gain / peak * 32767
@@ -188,14 +201,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--gain", type=float, default=0.35, help="ピーク音量（0〜1）")
-    ap.add_argument("--out", default=os.path.expanduser("~/koebun/sounds"))
-    ap.add_argument("names", nargs="*", help="生成する候補名（省略時は全部）")
+    ap.add_argument("--out", default=os.path.normpath(BUNDLE_DIR))
+    ap.add_argument("names", nargs="*", help="生成する候補名（省略時は BUNDLED）")
     a = ap.parse_args()
     if a.list:
-        for k in PRESETS: print(k)
+        for k in PRESETS: print(k, "（同梱）" if k in BUNDLED else "")
         return
+    a.out = os.path.expanduser(a.out)
     os.makedirs(a.out, exist_ok=True)
-    names = a.names or list(PRESETS)
+    names = a.names or BUNDLED
     for name in names:
         if name not in PRESETS:
             raise SystemExit(f"unknown preset: {name}（--list で一覧）")

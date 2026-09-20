@@ -18,10 +18,12 @@ AppKit の実画面・モデル・TCC に依存しない **純 Swift のロジ�
 | `PipelineGuardTests` | 世代番号ガード（追い越し・退避キュー・replay。Issue #97 / #100） |
 | `DictationPipelineTests` | 文字起こし → 辞書置換 → フィラー除去 の順序と計時（Issue #66。フェイクのエンジンと固定した時計で） |
 | `InsertionPresentationTests` | 挿入結果 → メニューバー状態と HUD の動き（`.claude/rules/insertion-feedback.md`） |
+| `RecordingLimitTests` | 録音の上限で止めた発話の見せ方（挿入しない・クリップボードを案内しない。Issue #17） |
+| `TranscriberPathTests` | WhisperKit のモデルの保存先（書類フォルダに置かない・HubApi の並びに合わせる。Issue #23） |
 | `HistoryEntryTests` | `meta.json` の互換。**整形系の列を持つ古い記録が読めること**（#128〜#131 で書く側だけ消した） |
 | `FailureHintTests` | 失敗の手がかりの契約（ボタンを出す／出さない・状態まで運ばれるか） |
 | `ResultRetentionTests` | 挿入できなかった結果の残し先。履歴が必ず含まれること・保存値の綴り |
-| `ReplacementsTests` | 辞書置換の 1 パス最長一致 |
+| `ReplacementsTests` | 辞書置換の 1 パス最長一致。ルールファイルの取り込み（重複を飛ばす・壊れた JSON は足さない）と、配布する語彙セット（`presets/`）が一般の語を壊さないこと |
 | `FillerRemoverTests` | フィラー除去。「残す」側（指示語・連語）を重点的に |
 | `PasteboardTests` | 全 type の退避と復元（名前付きペーストボードで隔離） |
 | `PasteboardMarkerTests` | クリップボードに立てる目印。挿入用（4 つ）とユーザーのコピー（Concealed のみ）の違い |
@@ -30,7 +32,7 @@ AppKit の実画面・モデル・TCC に依存しない **純 Swift のロジ�
 
 ## 置かないもの
 
-- WhisperKit を読み込むもの（約 2.9GB の DL と数十秒のロード）。要るなら `.disabled` で常時実行から外す
+- WhisperKit を読み込むもの（約 630MB の DL と数十秒のロード）。要るなら `.disabled` で常時実行から外す
 - TCC ダイアログ・グローバルホットキー・他アプリへの挿入（XCUITest でも権限は自動化できない。実機で手動確認）
 - 見た目（`.claude/rules/visual-check.md` の手順でスクリーンショット）
 

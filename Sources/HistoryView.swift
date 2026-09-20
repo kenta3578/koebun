@@ -1,28 +1,22 @@
 import SwiftUI
 import AppKit
-import AVFoundation
-
-extension Notification.Name {
-    /// 履歴ウィンドウが閉じられた。再生中の音声を止めるために使う（Issue #84）。
-    static let historyWindowWillClose = Notification.Name("koebun.historyWindowWillClose")
-}
 
 /// 履歴ウィンドウ。メニューバーの「履歴…」から開く。
 ///
-/// 目的は**整形 AI の書き換えをユーザーが自力で検証できるようにすること**
-/// （`docs/design-rationale.md` §7）。そのために
-/// 生 / 置換後 / 整形後 のトグル表示・送信プロンプト全文・録音ファイルを1画面に置く。
+/// 文字起こしの生テキストと辞書置換の結果を並べ、誤認識に気づいたらその場で辞書へ登録する。
+///
+/// 整形 LLM を載せていた頃の入れ物（整形後タブ・送信プロンプト）は #131 で機能ごと消えたので、
+/// ここからも外した（Issue #19）。古い履歴の整形結果は `meta.json` に残っている。
 struct HistoryView: View {
     /// 表示するテキストの種類。
     enum Variant: String, CaseIterable, Identifiable {
-        case raw, replaced, formatted
+        case raw, replaced
         var id: String { rawValue }
 
         var label: String {
             switch self {
             case .raw:       return "生"
             case .replaced:  return "置換後"
-            case .formatted: return "整形後"
             }
         }
 
@@ -30,7 +24,6 @@ struct HistoryView: View {
             switch self {
             case .raw:       return entry.rawText
             case .replaced:  return entry.replacedText
-            case .formatted: return entry.formattedText
             }
         }
     }
@@ -38,13 +31,12 @@ struct HistoryView: View {
     @ObservedObject private var store = HistoryStore.shared
     @State private var selection: HistoryEntry.ID?
     @State private var variant: Variant = .raw
-    @State private var player: AVAudioPlayer?
     @State private var message: String?
     /// 「辞書に登録」ポップオーバー（Issue #60）。
     @State private var isAddingRule = false
     @State private var newRuleFrom = ""
     @State private var newRuleTo = ""
-    /// 削除の確認待ち。テキスト・送信プロンプト・録音がディスクごと消えて取り消せないので、
+    /// 削除の確認待ち。テキストがディスクごと消えて取り消せないので、
     /// ワンクリックでは実行しない（しかもこのボタンの隣は「辞書に登録…」）。Issue #84。
     @State private var pendingDeletion: HistoryEntry?
 
@@ -79,7 +71,7 @@ struct HistoryView: View {
             }
             Button("キャンセル", role: .cancel) { pendingDeletion = nil }
         } message: {
-            Text("テキスト・送信プロンプト・録音が消えます。取り消せません。")
+            Text("この発話のテキストが消えます。取り消せません。")
         }
         .onAppear {
             store.reload()
@@ -104,11 +96,8 @@ struct HistoryView: View {
                         .font(.system(size: 12))
                     HStack(spacing: 6) {
                         Text(Self.listDateFormatter.string(from: entry.createdAt))
-                        if !entry.inserted {
-                            Text("未挿入").foregroundStyle(.orange)
-                        }
-                        if entry.formattedText == nil {
-                            Text("整形なし")
+                        if let note = Self.listInsertionNote(entry.insertionResult) {
+                            Text(note).foregroundStyle(.orange)
                         }
                     }
                     .font(.caption2)
@@ -169,8 +158,6 @@ struct HistoryView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                promptSection(entry)
-
                 Divider()
                 footer(entry)
             }
@@ -179,11 +166,6 @@ struct HistoryView: View {
         }
         .onChange(of: entry.id) { _, _ in
             message = nil
-            stopPlayback()
-        }
-        // ウィンドウを閉じても .onDisappear は発火しないので、通知で止める（Issue #84）。
-        .onReceive(NotificationCenter.default.publisher(for: .historyWindowWillClose)) { _ in
-            stopPlayback()
         }
     }
 
@@ -194,25 +176,44 @@ struct HistoryView: View {
             HStack(spacing: 10) {
                 Label("文字起こし \(entry.durations.transcribeMs)ms", systemImage: "waveform")
                 Label("置換 \(entry.durations.replaceMs)ms", systemImage: "character.book.closed")
-                if let formatMs = entry.durations.formatMs {
-                    Label("整形 \(formatMs)ms", systemImage: "sparkles")
-                }
-                if let audio = entry.audio {
-                    Label(String(format: "%.1f秒", audio.durationSeconds), systemImage: "mic")
-                }
                 // どのエンジンで処理したか（Issue #27）。エンジンを切り替えて同じ発話を通したとき、
                 // どちらの結果を見ているのかがここで分かる。
                 if let engine = entry.speechEngineLabel {
                     Label("認識 \(engine)", systemImage: "cpu")
                 }
-                if let engine = entry.formattingEngineLabel {
-                    Label("整形 \(engine)", systemImage: "wand.and.stars")
-                }
-                Label(entry.inserted ? "挿入済み" : "未挿入",
-                      systemImage: entry.inserted ? "checkmark.circle" : "xmark.circle")
+                insertionLabel(entry.insertionResult)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 一覧に出す注記。**カーソルに入っていないものだけ**出す
+    /// （未確認はターミナルで常態なので出さない。Issue #15 / #21）。
+    private static func listInsertionNote(_ result: HistoryEntry.Insertion?) -> String? {
+        switch result {
+        case .failed:  return "挿入失敗"
+        case .limited: return "未挿入（上限）"
+        case .succeeded, .uncertain, nil: return nil
+        }
+    }
+
+    @ViewBuilder
+    private func insertionLabel(_ result: HistoryEntry.Insertion?) -> some View {
+        switch result {
+        case .succeeded:
+            Label("挿入済み", systemImage: "checkmark.circle")
+        case .uncertain:
+            Label("挿入しました（反映は未確認）", systemImage: "checkmark.circle")
+        case .failed:
+            Label("挿入失敗", systemImage: "xmark.circle").foregroundStyle(.orange)
+        case .limited:
+            // 貼ろうとして貼れなかったのではなく、止め忘れの保険で挿入しなかった（Issue #21）。
+            Label("上限で止めたため挿入していません", systemImage: "clock.badge.exclamationmark")
+                .foregroundStyle(.orange)
+        case nil:
+            // 挿入する文字が残らなかった発話、または結果を区別して残す前（v3 以前）の履歴。
+            EmptyView()
         }
     }
 
@@ -224,11 +225,6 @@ struct HistoryView: View {
                 Text(text)
                     .font(.system(size: 13))
                     .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else if variant == .formatted {
-                Text("この発話は整形を通していません（「そのまま」モード、または整形に失敗）。")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Text("（空）")
@@ -251,10 +247,6 @@ struct HistoryView: View {
                 .disabled((variant.text(of: entry) ?? "").isEmpty)
                 .help("ウィンドウを閉じて、直前に使っていたアプリのカーソル位置に挿入します")
 
-            if entry.audio != nil {
-                Button(player?.isPlaying == true ? "停止" : "録音を再生") { togglePlayback(entry) }
-            }
-
             Button("辞書に登録…") { beginAddingRule(entry) }
                 .help("誤認識された語を辞書置換に登録します。文中の語を選んで ⌘C してから押すと、読みが埋まります")
                 .popover(isPresented: $isAddingRule, arrowEdge: .bottom) { addRulePopover }
@@ -269,27 +261,6 @@ struct HistoryView: View {
             .help("この履歴を削除")
             .accessibilityLabel("この履歴を削除")
         }
-    }
-
-    @ViewBuilder
-    private func promptSection(_ entry: HistoryEntry) -> some View {
-        DisclosureGroup("LLM に送ったプロンプト") {
-            Group {
-                if let prompt = entry.prompt, !prompt.isEmpty {
-                    Text(prompt)
-                        .font(.system(size: 12, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    Text("この発話は整形を通していないため、送信プロンプトはありません。")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .padding(.top, 6)
-        }
-        .font(.callout)
     }
 
     private func footer(_ entry: HistoryEntry) -> some View {
@@ -368,7 +339,6 @@ struct HistoryView: View {
     /// ウィンドウを閉じてフォーカスが直前のアプリへ戻るのを待ってから挿入する。
     private func reinsert(_ entry: HistoryEntry) {
         guard let text = variant.text(of: entry), !text.isEmpty else { return }
-        stopPlayback()
         HistoryWindowController.shared.close()
         NSApp.hide(nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -382,27 +352,6 @@ struct HistoryView: View {
                     : outcome.summary
             }
         }
-    }
-
-    private func togglePlayback(_ entry: HistoryEntry) {
-        if player?.isPlaying == true {
-            stopPlayback()
-            return
-        }
-        guard let audio = entry.audio else { return }
-        let url = HistoryFiles.directoryURL(for: entry.id).appendingPathComponent(audio.fileName)
-        do {
-            let newPlayer = try AVAudioPlayer(contentsOf: url)
-            newPlayer.play()
-            player = newPlayer
-        } catch {
-            message = "録音を再生できませんでした: \(error.localizedDescription)"
-        }
-    }
-
-    private func stopPlayback() {
-        player?.stop()
-        player = nil
     }
 
     // MARK: - 表示
@@ -433,15 +382,6 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
 
     private override init() { super.init() }
-
-    /// ウィンドウを閉じるときの後始末。
-    ///
-    /// `isReleasedWhenClosed = false` でウィンドウを使い回すため、閉じても SwiftUI の
-    /// `.onDisappear` は発火しない。止めないと `@State` の `AVAudioPlayer` が生き残り、
-    /// **自分の肉声が最後まで再生され続ける**（画面上に止める手段が無い）。Issue #84。
-    func windowWillClose(_ notification: Notification) {
-        NotificationCenter.default.post(name: .historyWindowWillClose, object: nil)
-    }
 
     func show() {
         HistoryStore.shared.reload()

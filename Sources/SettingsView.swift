@@ -126,9 +126,9 @@ struct GeneralSettingsView: View {
                 }
 
                 Text("選び直すと鳴ります。試聴ボタンでいまの音を聞き直せます。"
+                     + "「koebun の音」はアプリに入っている音です。"
                      + "「音を追加…」で選んだ音声ファイル（aiff / wav / mp3 / m4a / caf）は "
-                     + "\(SoundPlayer.customDirectory.path) にコピーされます"
-                     + "（scripts/make-sounds.py でも候補を作れます）。"
+                     + "\(SoundPlayer.customDirectory.path) にコピーされ、「自分の音」に出ます。"
                      + "削除はゴミ箱に入れるだけなので戻せます。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -157,7 +157,7 @@ struct GeneralSettingsView: View {
                 Text("既定は Apple 音声認識です。OS 内蔵なのでアプリ側のダウンロードも"
                      + "常駐メモリもなく、句読点も認識側が付けます（\(EngineSupport.requiresMacOS26)。"
                      + "満たさない Mac では自動的に WhisperKit になります）。"
-                     + "WhisperKit に切り替えると初回に約2.9GB をダウンロードして常駐させます。"
+                     + "WhisperKit に切り替えると初回に約630MB をダウンロードして常駐させます。"
                      + "切り替えると使わない方をメモリから降ろします。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -187,8 +187,8 @@ struct GeneralSettingsView: View {
                     AppController.shared.refreshHUDLayout(positionChanged: true)
                 }
 
-                Text("「通常」は波形でマイクが拾えているかを確認でき、停止・キャンセルもできます。"
-                     + "「最小」は状態と経過時間だけの細いバーで、マウスを乗せると停止・キャンセルが出ます。"
+                Text("「最小」は声の大きさと経過時間だけの細いバーで、マウスを乗せると停止・キャンセルが出ます。"
+                     + "録音を始めてもマイクが一度も音を拾わないときは、棒がオレンジのマイク斜線に替わります。"
                      + "「非表示」でも開始音・完了音は鳴ります"
                      + "（キャンセルは HUD からのみ。挿入できなかった結果は「挿入」の設定に従って表示します）。")
                     .font(.caption)
@@ -197,13 +197,6 @@ struct GeneralSettingsView: View {
             }
 
             Section("挿入") {
-                Toggle("キー送出で入力する（Simulate Keypresses）", isOn: $settings.simulateKeypresses)
-                Text("⌘V を受け付けないアプリ向けのフォールバックです。1文字ずつ送るため長文はやや遅くなりますが、"
-                     + "クリップボードには一切触れません。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 Picker("挿入できなかった結果", selection: $settings.resultRetention) {
                     ForEach(SettingsStore.ResultRetention.allCases) { retention in
                         Text(retention.label).tag(retention)
@@ -256,8 +249,6 @@ struct GeneralSettingsView: View {
                     HistoryStore.shared.purgeExpired()
                 }
 
-                Toggle("録音した音声も保存する", isOn: $settings.saveAudio)
-
                 HStack {
                     Text("保存先")
                     Spacer()
@@ -275,9 +266,8 @@ struct GeneralSettingsView: View {
                     Button("削除…", role: .destructive) { isConfirmingDeleteAll = true }
                 }
 
-                Text("1発話ごとに録音・生テキスト・置換後テキスト・送信プロンプトを保存します。"
-                     + "整形 AI が事実を書き換えていないか、生テキストと突き合わせて確認できます。"
-                     + "送信プロンプトからは選択テキストとクリップボードの中身を除いて保存します。")
+                Text("1発話ごとに生テキストと置換後テキストを保存します（録音した音声は残しません）。"
+                     + "辞書置換やフィラー除去が何を変えたか、生テキストと突き合わせて確認できます。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -298,17 +288,20 @@ struct GeneralSettingsView: View {
             Button("削除", role: .destructive) { HistoryStore.shared.deleteAll() }
             Button("キャンセル", role: .cancel) {}
         } message: {
-            Text("録音・生テキスト・送信プロンプトがすべて消えます。取り消せません。")
+            Text("これまでの文字起こし結果がすべて消えます。取り消せません。")
         }
     }
 
     /// 音のピッカーと試聴ボタンの1行（Issue #48）。
-    /// 選択肢は「なし」→ 自分の音（~/koebun/sounds/）→ システム音（Issue #71）。
+    /// 選択肢は「なし」→ koebun の音（同梱）→ 自分の音（~/koebun/sounds/）→ システム音（Issue #71, #2）。
     private func soundRow(_ title: String, selection: Binding<String>) -> some View {
         let custom = customSounds
         return HStack {
             Picker(title, selection: selection) {
                 Text(SoundPlayer.none).tag(SoundPlayer.none)
+                Section("koebun の音") {
+                    ForEach(SoundPlayer.bundledSounds, id: \.self) { Text($0).tag($0) }
+                }
                 if !custom.isEmpty {
                     Section("自分の音") {
                         ForEach(custom, id: \.self) { Text($0).tag($0) }
@@ -385,6 +378,14 @@ struct ReplacementsSettingsView: View {
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var fillers = FillerStore.shared
 
+    /// 直前の取り込みの結果。
+    @State private var importMessage: ImportMessage?
+
+    private struct ImportMessage {
+        let text: String
+        let isError: Bool
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             fillerSection
@@ -398,8 +399,9 @@ struct ReplacementsSettingsView: View {
             HStack(spacing: 8) {
                 Text("読み（発話される語）").frame(maxWidth: .infinity, alignment: .leading)
                 Text("置換後").frame(maxWidth: .infinity, alignment: .leading)
-                // 削除ボタンぶんの余白
-                Color.clear.frame(width: 22)
+                // 削除ボタンぶんの余白。**高さは 0 に固定する**——`Color.clear` は縦にも伸びるので、
+                // 放っておくと見出し行がルール一覧と余った高さを分け合い、上下に空白ができる（Issue #9）。
+                Color.clear.frame(width: 22, height: 0)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -410,10 +412,12 @@ struct ReplacementsSettingsView: View {
             // 枠と交互色は自前で描けば、間隔は `spacing` のとおりになる。
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array($store.rules.enumerated()), id: \.element.id) { index, $rule in
+                    // 添字の Binding にしない。外の編集の読み直し（Issue #7）で配列が縮むと、
+                    // 編集中の入力欄が古い添字へ書き戻して範囲外で落ちる。id で引き直す。
+                    ForEach(Array(store.rules.enumerated()), id: \.element.id) { index, rule in
                         HStack(spacing: 8) {
-                            TextField("カーズ桜", text: $rule.from)
-                            TextField("河津桜", text: $rule.to)
+                            TextField("カーズ桜", text: ruleBinding(rule.id, \.from))
+                            TextField("河津桜", text: ruleBinding(rule.id, \.to))
                             Button {
                                 store.rules.removeAll { $0.id == rule.id }
                             } label: {
@@ -441,17 +445,28 @@ struct ReplacementsSettingsView: View {
                 Button("ルールを追加") {
                     store.rules.append(ReplacementRule(from: "", to: ""))
                 }
+                Button("ファイルから読み込む…") { importRules() }
+                    .help("JSON のルールファイルをまとめて追加します（同じ読みのルールは飛ばし、既存のルールは変更しません）")
                 Spacer()
                 Button("記号の初期ルールを追加") { addMissingDefaults() }
                     .help("削除した記号ルールだけを戻します（既存のルールは変更しません）")
             }
 
-            Text(ReplacementStore.fileURL.path)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .textSelection(.enabled)
+            if let importMessage {
+                Text(importMessage.text)
+                    .font(.caption)
+                    .foregroundStyle(importMessage.isError ? Color.red : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            EditableFileRow(url: ReplacementStore.fileURL, problem: store.fileProblem)
         }
         .padding()
+        // 監視を取りこぼしても、設定を開けば外の編集が反映されるようにする。
+        .onAppear {
+            store.reloadFromDisk()
+            fillers.reloadFromDisk()
+        }
     }
 
     /// ルール 1 行ぶんの高さ（角丸テキストフィールド + 上下パディング）。
@@ -478,10 +493,7 @@ struct ReplacementsSettingsView: View {
                     .controlSize(.small)
                     .disabled(fillers.list == .default)
             }
-            Text(FillerStore.fileURL.path)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .textSelection(.enabled)
+            EditableFileRow(url: FillerStore.fileURL, problem: fillers.fileProblem)
         }
     }
 
@@ -489,12 +501,90 @@ struct ReplacementsSettingsView: View {
         FillerWordsField(title: title, words: words)
     }
 
+    /// ルールの 1 欄を id で引く Binding。行が消えていたら読みは空・書きは捨てる。
+    private func ruleBinding(_ id: ReplacementRule.ID,
+                             _ keyPath: WritableKeyPath<ReplacementRule, String>) -> Binding<String> {
+        Binding(
+            get: { store.rules.first { $0.id == id }?[keyPath: keyPath] ?? "" },
+            set: { value in
+                guard let index = store.rules.firstIndex(where: { $0.id == id }) else { return }
+                store.rules[index][keyPath: keyPath] = value
+            }
+        )
+    }
+
     /// 既定の記号ルールのうち、`from` が未登録のものだけを追加する。
     private func addMissingDefaults() {
-        let existing = Set(store.rules.map { $0.from.lowercased() })
-        let missing = ReplacementStore.defaultRules.filter { !existing.contains($0.from.lowercased()) }
+        let missing = ReplacementStore.merge(ReplacementStore.defaultRules, into: store.rules).added
         guard !missing.isEmpty else { return }
         store.rules.append(contentsOf: missing)
+    }
+
+    /// JSON のルールファイルを選んで一括追加する（Issue #13）。既存ルールは書き換えない。
+    private func importRules() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.json]
+        panel.prompt = "読み込む"
+        panel.message = "replacements.json と同じ形式（[{\"from\": \"…\", \"to\": \"…\"}]）のファイルを選びます"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let result = try ReplacementStore.importRules(from: Data(contentsOf: url), into: store.rules)
+            if !result.added.isEmpty {
+                store.rules.append(contentsOf: result.added)
+                // 保存が外の編集とぶつかると読み直しで消え、ファイルが壊れていると保存されない。
+                // どちらも fileProblem が立つので、「追加しました」と言わない。
+                if store.fileProblem != nil {
+                    importMessage = ImportMessage(
+                        text: "\(url.lastPathComponent) の取り込みを保存できませんでした。下の表示を確認してから、もう一度読み込んでください",
+                        isError: true)
+                    return
+                }
+            }
+            importMessage = ImportMessage(
+                text: "\(url.lastPathComponent): \(result.added.count) 件を追加"
+                    + (result.skipped > 0 ? "、同じ読みがある \(result.skipped) 件は飛ばしました" : "しました"),
+                isError: false)
+        } catch {
+            importMessage = ImportMessage(
+                text: "\(url.lastPathComponent) を読み込めないため、何も追加していません（\(error.localizedDescription)）",
+                isError: true)
+        }
+    }
+}
+
+/// 設定ファイルの場所と、外で編集するための導線（Issue #7）。
+///
+/// 辞書置換・フィラー語はエディタや Claude Code でまとめて直す使い方を想定する。
+/// 保存すればアプリが読み直すので、再起動は要らない。
+/// **ボタンは並べず、パスそのものをリンクにする**（Issue #9。2 つずつ並べると重かった）。
+private struct EditableFileRow: View {
+    let url: URL
+    let problem: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Button(url.path) { NSWorkspace.shared.open(url) }
+                .buttonStyle(.link)
+                .font(.caption2)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help("クリックで既定のエディタで開きます。保存すると再起動せずに反映されます")
+                .contextMenu {
+                    Button("ファイルを開く") { NSWorkspace.shared.open(url) }
+                    Button("Finder で表示") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    Button("パスをコピー") { TextInjector.copyToPasteboard(url.path) }
+                }
+            if let problem {
+                Text(problem)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 

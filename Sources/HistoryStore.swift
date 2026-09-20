@@ -4,20 +4,19 @@ import os
 
 /// 1発話ぶんの履歴（`meta.json` の実体）。
 ///
-/// **生テキストを必ず残す**のがこの構造の芯。整形 LLM（Issue #10）は事実を書き換えうる
-/// （`docs/design-rationale.md` §2: 請求額 4,217→4,270 の改変、
-/// 「メールをチェックする**前に**」→「チェック**せずに**」の意味反転。どちらも警告は出ない）。
-/// 生テキストと送信プロンプトが残っていなければ、書き換えられたことに気づく手段がない。
+/// **生テキストを必ず残す**のがこの構造の芯。辞書置換で壊れた語に後から気づけるようにする。
+///
+/// 整形 LLM（#131 で削除）の列は書かなくなったが、**古い `meta.json` は読めるままにする**
+/// （未知のキーは無視される）。整形結果そのものはファイルに残っている（Issue #19）。
 struct HistoryEntry: Codable, Identifiable, Equatable {
     /// 各処理の所要時間（ミリ秒）。
     struct Durations: Codable, Equatable {
         var transcribeMs: Int
         var replaceMs: Int
-        /// 整形しなかった発話は nil。
-        var formatMs: Int? = nil
     }
 
-    /// 保存した録音の情報。書き出しに失敗したときは nil。
+    /// 保存した録音の情報。**古い履歴を読むためだけに残す。**
+    /// 音声の保存は Issue #4 で削除したので、新しい履歴では常に nil。
     struct Audio: Codable, Equatable {
         var fileName: String
         var sampleRate: Int
@@ -27,42 +26,58 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
 
     /// meta.json のスキーマ版。整形 LLM を足したあとも古い履歴を読み分けられるようにする。
     /// 3 = 使用したエンジン（`speechEngine` / `formattingEngine` / `formattingModelId`）を追加（Issue #27）。
+    /// 4 = 挿入結果（`insertion`）を追加（Issue #15）。
+    ///     `limited`（上限で止めたので挿入していない）は後から足した値で、版は上げていない（Issue #21）。
     var version: Int = HistoryFiles.schemaVersion
     var createdAt: Date
     /// 文字起こしの生出力。**上書きしない**。
     var rawText: String
     /// 辞書置換（決定的な文字列処理）を適用した結果。
     var replacedText: String
-    /// 整形 LLM の出力。整形しなかった発話は nil。
-    var formattedText: String?
-    /// 使用した整形モード名。整形しなかった発話は nil。
-    var modeName: String?
-    /// 整形 LLM に送ったプロンプト全文。整形しなかった発話は nil。
-    /// プロンプト改善のループを回すために**全文**を残す（要約・省略しない）。
-    var prompt: String?
     var durations: Durations
     /// 文字起こしに使ったエンジン（`SpeechEngineKind.rawValue`）。v2 以前の履歴は nil。
     ///
     /// **エンジン比較の一次データはここ**（Issue #27）。同じ発話を両エンジンに通したとき、
-    /// 生テキスト・整形後・所要時間をどちらの結果として読めばいいかが
-    /// これが無いと分からなくなる。
+    /// 生テキストと所要時間をどちらの結果として読めばいいかが、これが無いと分からなくなる。
     var speechEngine: String?
-    /// 整形に使ったエンジン（かつての `FormattingEngineKind.rawValue`）。
-    /// 整形を試みなかった発話（`そのまま` モード・整形 OFF）は nil。
-    var formattingEngine: String?
-    /// 整形に使ったモデルの識別子。mlx なら HuggingFace の repo id、Apple なら固定の識別子。
-    /// 同じ mlx でも 4B と 32B では比較の意味が変わるので、エンジン名とは別に残す。
-    var formattingModelId: String?
     var audio: Audio?
-    /// 挿入まで到達したか（無音・挿入失敗と区別する）。
+    /// 挿入を確認できたか（`InsertionOutcome.succeeded` のときだけ true）。
+    /// 未確認と失敗を区別できないので、表示には `insertionResult` を使う。
     var inserted: Bool
+    /// 挿入結果（v4 から）。挿入する文字が残らなかった発話と v3 以前の履歴は nil。
+    var insertion: Insertion? = nil
 
     /// 保存先ディレクトリ名。ディレクトリ名が正なので meta.json には書かない。
     var id: String = ""
 
+    /// 履歴に残す挿入結果。`InsertionOutcome` から理由と手がかりを落としたもの。
+    enum Insertion: String, Codable, Equatable {
+        case succeeded, uncertain, failed
+        /// 録音の上限で止めたので、そもそも挿入していない（Issue #21）。
+        /// **挿入を試みた結果ではない**ので、`init(_:)` からは決して作られない。
+        case limited
+
+        init(_ outcome: InsertionOutcome) {
+            switch outcome {
+            case .succeeded: self = .succeeded
+            case .uncertain: self = .uncertain
+            case .failed:    self = .failed
+            }
+        }
+    }
+
     private enum CodingKeys: String, CodingKey {
-        case version, createdAt, rawText, replacedText, formattedText, modeName, prompt, durations
-        case speechEngine, formattingEngine, formattingModelId, audio, inserted
+        case version, createdAt, rawText, replacedText, durations
+        case speechEngine, audio, inserted, insertion
+    }
+
+    /// 表示に使う挿入結果。
+    ///
+    /// ターミナルは AX が反映を返さないので `.uncertain` が常態。`inserted` だけで見ると
+    /// そこへの口述がすべて「未挿入」に見えていた（Issue #15）。v3 以前の `inserted: false` は
+    /// 未確認・失敗・空のどれか分からないので、失敗と断定せず nil にする。
+    var insertionResult: Insertion? {
+        insertion ?? (inserted ? .succeeded : nil)
     }
 
     /// 履歴に出す音声認識エンジン名。v2 以前の履歴（エンジンが1つしか無かった頃）は nil。
@@ -70,23 +85,9 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
         speechEngine.map { SpeechEngineKind(rawValue: $0)?.shortLabel ?? $0 }
     }
 
-    /// 履歴に出す整形エンジン名。モデル ID が分かればそれも添える（14B と 32B を混同しないため）。
-    /// 削除済みの整形エンジン名（`rawValue` → 表示名）。古い履歴を読むためだけに持つ。
-    private static let legacyFormattingEngineNames = ["mlx": "Qwen3", "apple": "Apple"]
-
-    var formattingEngineLabel: String? {
-        guard let formattingEngine else { return nil }
-        // 整形 LLM は #131 で削除した。**古い履歴の表示のためだけ**に名前を残す。
-        let name = Self.legacyFormattingEngineNames[formattingEngine] ?? formattingEngine
-        guard let modelId = formattingModelId, !modelId.isEmpty else { return name }
-        // HuggingFace の repo id は `mlx-community/Qwen3-14B-4bit` と長いので末尾だけ出す。
-        return "\(name) / \(modelId.split(separator: "/").last.map(String.init) ?? modelId)"
-    }
-
-    /// 一覧に出す1行サマリー。整形後があればそちらを優先する。
+    /// 一覧に出す1行サマリー。
     var summary: String {
-        let text = formattedText ?? replacedText
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = replacedText.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "（無音）" : trimmed
     }
 }
@@ -96,12 +97,8 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
 /// 保存は挿入をブロックしてはいけない（挿入の体感速度がこのアプリの価値）ので、
 /// ここの関数はバックグラウンドの `Task.detached` から呼ばれる。
 enum HistoryFiles {
-    static let schemaVersion = 3
+    static let schemaVersion = 4
     static let metaFileName = "meta.json"
-    static let audioFileName = "audio.wav"
-    /// AudioRecorder が出力する形式（16kHz / mono / Float32）。
-    static let sampleRate = 16_000
-    static let channels = 1
     /// 一覧に読み込む上限。古いものは削除されるまでディスクには残る。
     static let listLimit = 500
 
@@ -147,35 +144,12 @@ enum HistoryFiles {
 
     // MARK: - 書き出し
 
-    /// 1発話ぶんを `~/koebun/history/<timestamp>/` に書き出す。
-    ///
-    /// **meta.json を先に書く。** 音声を先に書くと、ディスクが逼迫したときに
-    /// 「audio.wav だけがある」状態になり、一覧にも出ず削除もできない孤児が残る
-    /// （10 分の録音で約 38MB、`.atomic` は一時ファイル + rename なので一時的に 2 倍の
-    /// 空きを要求する。大きい方が通って後の小さい方が落ちるのは典型パターン）。
-    /// 先に書けば「メタが無い＝存在しない履歴」という不変条件が保てる（Issue #81）。
-    static func write(_ entry: HistoryEntry, samples: [Float]) throws -> HistoryEntry {
-        var entry = entry
+    /// 1発話ぶんを `~/koebun/history/<timestamp>/meta.json` に書き出す。
+    /// 録音した音声は残さない（Issue #4。声は履歴の中で最も機微で、使い道も無かった）。
+    static func write(_ entry: HistoryEntry) throws -> HistoryEntry {
         let dir = directoryURL(for: entry.id)
         try createPrivateDirectory(at: dir)
-        let metaURL = dir.appendingPathComponent(metaFileName)
-
-        try encoder.encode(entry).write(to: metaURL, options: .atomic)
-
-        guard !samples.isEmpty else { return entry }
-        do {
-            try wavData(from: samples).write(to: dir.appendingPathComponent(audioFileName), options: .atomic)
-            entry.audio = HistoryEntry.Audio(
-                fileName: audioFileName,
-                sampleRate: sampleRate,
-                channels: channels,
-                durationSeconds: Double(samples.count) / Double(sampleRate)
-            )
-            // 音声の情報を含めて書き直す。
-            try encoder.encode(entry).write(to: metaURL, options: .atomic)
-        } catch {
-            Log.history.error("音声を書き出せませんでした: \(error.localizedDescription)")
-        }
+        try encoder.encode(entry).write(to: dir.appendingPathComponent(metaFileName), options: .atomic)
         return entry
     }
 
@@ -200,43 +174,6 @@ enum HistoryFiles {
         for url in [rootURL.deletingLastPathComponent(), rootURL] {
             try? manager.setAttributes(privateAttributes, ofItemAtPath: url.path)
         }
-    }
-
-    /// 16kHz / mono / Float32 のサンプルを WAV（IEEE float, fmt tag 3）にする。
-    ///
-    /// Int16 に落とさないのは、整形 LLM が入ったあとの再文字起こしで
-    /// **録音時とビット単位で同じ入力**を再現できるようにするため。
-    /// 非 PCM 形式なので fmt チャンクは 18 バイト（cbSize 付き）＋ fact チャンクを付ける。
-    static func wavData(from samples: [Float]) -> Data {
-        let bitsPerSample = 32
-        let blockAlign = channels * bitsPerSample / 8
-        let byteRate = sampleRate * blockAlign
-        let dataSize = samples.count * blockAlign
-        // 4("WAVE") + 8+18(fmt) + 8+4(fact) + 8+dataSize
-        let riffSize = 50 + dataSize
-
-        var data = Data(capacity: riffSize + 8)
-        func append(_ ascii: String) { data.append(contentsOf: Array(ascii.utf8)) }
-        func append(_ value: UInt32) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
-        func append(_ value: UInt16) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
-
-        append("RIFF"); append(UInt32(riffSize)); append("WAVE")
-
-        append("fmt "); append(UInt32(18))
-        append(UInt16(3))                    // WAVE_FORMAT_IEEE_FLOAT
-        append(UInt16(channels))
-        append(UInt32(sampleRate))
-        append(UInt32(byteRate))
-        append(UInt16(blockAlign))
-        append(UInt16(bitsPerSample))
-        append(UInt16(0))                    // cbSize
-
-        append("fact"); append(UInt32(4)); append(UInt32(samples.count))
-
-        append("data"); append(UInt32(dataSize))
-        // macOS（Apple Silicon / Intel）はリトルエンディアンなのでそのまま流し込める。
-        samples.withUnsafeBufferPointer { data.append(Data(buffer: $0)) }
-        return data
     }
 
     // MARK: - 読み込み・削除
@@ -370,16 +307,15 @@ final class HistoryStore: ObservableObject {
     /// - Parameters:
     ///   - prompt: 整形 LLM に送ったシステムプロンプト全文（整形が通ったときのみ）。
     ///   - speechEngine: 文字起こしに使ったエンジン（`SpeechEngineKind.rawValue`）。
+    ///   - insertion: 挿入結果。挿入する文字が残らなかった発話は nil。
     func record(
-        samples: [Float],
         rawText: String,
         replacedText: String,
         speechEngine: String? = nil,
         durations: HistoryEntry.Durations,
-        inserted: Bool
+        insertion: HistoryEntry.Insertion?
     ) {
-        // 無音（文字起こしが何も返さなかった）は残さない。誤爆した録音の WAV が
-        // 溜まり続けるだけで、後から見ても何も分からない（Issue #81）。
+        // 無音（文字起こしが何も返さなかった）は残さない。後から見ても何も分からない（Issue #81）。
         guard !rawText.isEmpty || !replacedText.isEmpty else { return }
 
         let createdAt = Date()
@@ -390,18 +326,16 @@ final class HistoryStore: ObservableObject {
             durations: durations,
             speechEngine: speechEngine,
             audio: nil,
-            inserted: inserted
+            inserted: insertion == .succeeded,
+            insertion: insertion
         )
         entry.id = HistoryFiles.directoryName(for: createdAt)
         entries.insert(entry, at: 0)
         writing[entry.id] = entry
 
-        // 音声を残すかは設定で選べる。他人に配る前提だと「発話した音声が全部ディスクに
-        // 残る」ことがユーザーの選択になっていないので、切れるようにする（Issue #81）。
-        let saveAudio = SettingsStore.shared.saveAudio
         Task.detached(priority: .utility) {
             do {
-                let written = try HistoryFiles.write(entry, samples: saveAudio ? samples : [])
+                let written = try HistoryFiles.write(entry)
                 await MainActor.run { HistoryStore.shared.finishWriting(written) }
             } catch {
                 Log.history.error("保存できませんでした: \(error.localizedDescription)")
@@ -410,7 +344,7 @@ final class HistoryStore: ObservableObject {
         }
     }
 
-    /// 書き出し後の内容（音声情報など）を一覧側に反映し、書き込み中の印を外す。
+    /// 書き出し後の内容を一覧側に反映し、書き込み中の印を外す。
     private func finishWriting(_ entry: HistoryEntry) {
         writing[entry.id] = nil
         // 書き出しの最中に削除されていたら、書き上がったものを消し直す。

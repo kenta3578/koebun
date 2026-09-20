@@ -46,7 +46,7 @@ koebunApp.swift   @main（アプリの入口。Web でいう main.ts / _app.tsx�
 
 ---
 
-## 2. ファイル早見表（31 ファイル）
+## 2. ファイル早見表（33 ファイル）
 
 ### 入口・司令塔
 
@@ -63,6 +63,8 @@ koebunApp.swift   @main（アプリの入口。Web でいう main.ts / _app.tsx�
 | ファイル | 中身 | Web でいうと |
 |---|---|---|
 | `AudioRecorder.swift` | マイクの録音、レベル（音量）の通知 | `MediaRecorder` ＋ AudioWorklet |
+| `RecordingLimit.swift` | 録音の上限（10 分）と、上限で止めた発話の見せ方 | 暴走を止めるタイムアウト定数 |
+| `JSONFileSync.swift` | 設定ファイルの読み書きと、外で編集されたときの読み直し | ファイル監視つきの JSON ストア |
 | `AppleTranscriber.swift` | OS 内蔵の音声認識（既定） | 外部 API を呼ばない音声認識 |
 | `Transcriber.swift` | WhisperKit（大きいモデル）での文字起こし | ローカルの推論ライブラリ呼び出し |
 | `ModelIntegrity.swift` | ダウンロードしたモデルが改竄されていないかの照合 | `package-lock.json` の integrity ハッシュ検証 |
@@ -136,10 +138,10 @@ koebunApp.swift   @main（アプリの入口。Web でいう main.ts / _app.tsx�
 | 共有ストア | Zustand / Pinia | `ObservableObject` ＋ `@Published` | `AppState` / `RecordingHUDModel` |
 | ストアの購読 | `useStore()` | `@ObservedObject` / `@StateObject` | `RecordingHUDView` が Model を購読 |
 | リストの key | `:key` / `key` | `ForEach(..., id: \.self)` | 棒 7 本の描画 |
-| **同一性** | key が変わると作り直し | **分岐で別の型を返すと別物扱い** | #200 の修正理由がこれ。`switch` で別ビューを返すとアニメーションが繋がらない |
+| **同一性** | key が変わると作り直し | **分岐で別の型を返すと別物扱い** | HUD の表示が繋がらなくなった原因がこれ。`switch` で別ビューを返すとアニメーションが繋がらない |
 | スタイル | class / style | modifier チェーン（`.frame().padding()`） | 順番に意味がある（`.overlay` の後に `.frame` など） |
 | トランジション | CSS transition | `.animation(_:value:)` | **値が変わったときだけ**動く。音量の変化には掛けていない |
-| canvas 描画 | `<canvas>` | `Canvas { ... }` | 差分更新されないので、補間が要るなら普通のビューにする（#200） |
+| canvas 描画 | `<canvas>` | `Canvas { ... }` | 差分更新されないので、補間が要るなら普通のビューにする |
 | 画像化 | html2canvas | `ImageRenderer` | **アプリ本体では使わない**。見た目を確認する使い捨てスクリプトで、実物のビューを PNG に描き出すのに使う |
 
 **ここが一番の違い**: SwiftUI は「同じ場所に同じ型のビューがあり続けるか」で、アニメーションするかどうかが決まります。React の `key` に近いですが、**分岐の書き方だけで同一性が壊れる**のが落とし穴です。
@@ -175,7 +177,7 @@ koebunApp.swift   @main（アプリの入口。Web でいう main.ts / _app.tsx�
 | lint | ESLint | コンパイラ警告（**0 を維持**が規約） |
 | E2E | Playwright | 無し。**実機に入れて手で確かめる**（権限ダイアログやホットキーは自動化できない） |
 
-テストは 13 ファイルあり、**純粋な処理（文字列変換・状態遷移・表示の計算）だけを対象**にしています。実機でしか再現しない部分（権限・他アプリへの挿入）はテストせず、手で確認する方針です。
+テストは 17 ファイルあり、**純粋な処理（文字列変換・状態遷移・表示の計算）だけを対象**にしています。実機でしか再現しない部分（権限・他アプリへの挿入）はテストせず、手で確認する方針です。
 
 ---
 
@@ -208,7 +210,7 @@ koebunApp.swift   @main（アプリの入口。Web でいう main.ts / _app.tsx�
 
 ---
 
-## 9. 手を動かす課題（#207）
+## 9. 手を動かす課題
 
 読むだけでは身につかないので、壊して直す練習を置いています。
 

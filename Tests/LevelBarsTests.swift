@@ -199,6 +199,54 @@ struct LevelBarsTests {
         #expect(model.currentLevel == 0.2)
     }
 
+    /// 「通常」は削除した（Issue #6）。保存済みの値は「最小」として読む。
+    @Test("保存済みの「通常」は「最小」に読み替える")
+    func legacyNormalSizeBecomesMinimal() {
+        #expect(HUDSize.fromStored("normal") == .minimal)
+        #expect(HUDSize.fromStored("minimal") == .minimal)
+        #expect(HUDSize.fromStored("hidden") == .hidden)
+        #expect(HUDSize.fromStored("unknown") == nil)
+        #expect(HUDSize.allCases == [.minimal, .hidden])
+    }
+
+    /// 細いバーに収まらないものだけ大きいパネルで出す。
+    @Test("失敗・結果・キャンセル確認以外は細いバー")
+    func onlyUnreadableStatesLeaveTheMinimalBar() {
+        let model = RecordingHUDModel()
+        for status: AppStatus in [.recording, .processing, .done(message: "挿入しました ✓"), .warned(message: "注意")] {
+            model.status = status
+            #expect(model.usesMinimalBar)
+        }
+        model.status = .failed(reason: "失敗")
+        #expect(!model.usesMinimalBar)
+        model.status = .recording
+        model.isConfirmingCancel = true
+        #expect(!model.usesMinimalBar)
+    }
+
+    /// 考えながら黙るたびに警告が出ると邪魔になる（Issue #6）。一度も拾っていないときだけ。
+    @Test("一度も音を拾っていないときだけ «拾えていません» を出す")
+    func silenceWarningOnlyWhenNothingWasHeard() {
+        let model = RecordingHUDModel()
+        model.status = .recording
+        for _ in 0..<40 { model.push(level: 0) }
+        #expect(model.showsSilenceWarning)
+
+        model.reset()
+        model.status = .recording
+        model.push(level: 0.2)
+        for _ in 0..<80 { model.push(level: 0) }
+        #expect(!model.showsSilenceWarning)
+    }
+
+    @Test("録音を始めた直後は «拾えていません» を出さない")
+    func silenceWarningWaitsForTheWindow() {
+        let model = RecordingHUDModel()
+        model.status = .recording
+        for _ in 0..<10 { model.push(level: 0) }
+        #expect(!model.showsSilenceWarning)
+    }
+
     /// 音節の切れ目で点に潰れないよう、直近の数回分の最大を使う。窓を過ぎれば下がる。
     @Test("いまの音量は直近の数回分の最大")
     func currentLevelHoldsThroughSyllableGaps() {
