@@ -2,7 +2,7 @@
 
 **この文書が答えること**: 右⌥を押してから文字が入るまでに何がどの順で起き、どのファイルがどこを担い、どこを触ると壊れるか。
 
-Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）。設計の**理由**は `ai_design-rationale.md`、Swift の**記法**は [SWIFT-NOTES.md](SWIFT-NOTES.md)、使い方は [MANUAL.md](MANUAL.md) にある。ここは**構造**だけを扱う。
+Swift 33 ファイル・6,866 行（テスト 17 ファイル・130 ケース）。設計の**理由**は [design-rationale.md](design-rationale.md)、Swift の**記法**は [SWIFT-NOTES.md](SWIFT-NOTES.md)、使い方は [MANUAL.md](MANUAL.md) にある。ここは**構造**だけを扱う。
 
 ---
 
@@ -21,7 +21,7 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
   AppController.startRecording()  世代番号を進める / 前面アプリの bundle ID を控える
   AudioRecorder.start()           AVAudioEngine の installTap。16kHz・mono・Float32 に変換して溜める
   RecordingHUDController.show()   HUD を出す（NSPanel）
-  SoundPlayer.play(start)         開始音。鳴っている間ぶんは HUD のレベルを無視する（#186）
+  SoundPlayer.play(start)         開始音。鳴っている間ぶんは HUD のレベルを無視する
   ↓ 録音中は 20fps で音量が HUD にだけ流れる（AppState は更新しない）
 
 右⌥ 押下（2 回目）
@@ -47,13 +47,13 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 
 | 約束 | どこで守るか | 破ると何が起きるか |
 |---|---|---|
-| **処理中でも次の録音を始めてよい** | `PipelineGuard` の世代番号 | 止めた直後の言い残しが録れない（#97） |
-| **貼る順は発話順** | `stopRecording` の同期部で `previousPipeline` に並ぶ | 2 発話が入れ替わって挿入される（#99） |
-| **成功と確信できたときだけ成功と言う** | `TextInjector.verify` | 貼れていないのに成功表示・クリップボード復元（#80） |
+| **処理中でも次の録音を始めてよい** | `PipelineGuard` の世代番号 | 止めた直後の言い残しが録れない |
+| **貼る順は発話順** | `stopRecording` の同期部で `previousPipeline` に並ぶ | 2 発話が入れ替わって挿入される |
+| **成功と確信できたときだけ成功と言う** | `TextInjector.verify` | 貼れていないのに成功表示・クリップボード復元 |
 
 ---
 
-## 2. ファイルの責務（31 ファイル）
+## 2. ファイルの責務（33 ファイル）
 
 ### 起動と全体の制御
 
@@ -71,6 +71,7 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 | ファイル | 行 | 役割 |
 |---|---:|---|
 | `HotKeyManager.swift` | 430 | `CGEventTap` で修飾キーを監視。左右の区別・合成イベントの除外・設定画面でのキー取得 |
+| `RecordingLimit.swift` | 23 | 録音の上限（10 分）と、上限で止めた発話の見せ方。**止め忘れの保険**で、通常の発話は切らない |
 | `AudioRecorder.swift` | 222 | `AVAudioEngine` の tap。16kHz 変換、RMS → 0〜1 のレベル、デバイス変更の検知 |
 | `PermissionsManager.swift` | 82 | マイク / アクセシビリティ権限の要求と確認 |
 
@@ -217,7 +218,7 @@ Swift 31 ファイル・6,687 行（テスト 13 ファイル・103 ケース）
 
 ## 7. テスト
 
-`Tests/` は **AppKit・実モデル・TCC に依存しない純 Swift のロジックだけ**を見る（103 ケース・実行 0.1 秒未満）。権限ダイアログもモデルのダウンロードも起きない（`AppDelegate` がテスト起動を検知して何も始めないため）。
+`Tests/` は **AppKit・実モデル・TCC に依存しない純 Swift のロジックだけ**を見る（130 ケース・実行 0.1 秒未満）。権限ダイアログもモデルのダウンロードも起きない（`AppDelegate` がテスト起動を検知して何も始めないため）。
 
 ```bash
 xcodebuild test -project koebun.xcodeproj -scheme koebun \

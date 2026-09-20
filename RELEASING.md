@@ -195,7 +195,8 @@ gh release create v<VERSION> \
 
 リリースノートに必ず書くこと:
 
-- 初回起動時に **約 2.9GB のモデルを Hugging Face からダウンロードする**こと（これが唯一の通信であること）
+- **既定（Apple 音声認識）ではモデルを取得しない**こと。WhisperKit に切り替えたときだけ
+  約 630MB を Hugging Face からダウンロードし、それが唯一の通信であること
 - **アクセシビリティ権限**が必要で、ON にしないとホットキーが無反応であること
 - Apple Silicon 専用であること
 - 何が実装済みで何が未実装か（README の表と揃える）
@@ -223,7 +224,8 @@ cask "koebun" do
 
   zap trash: [
     "~/Library/Preferences/com.kenta3578.koebun.plist",
-    "~/Library/Caches/argmaxinc",
+    "~/Library/Application Support/com.kenta3578.koebun",
+    "~/koebun",
     "~/koebun/replacements.json",
   ]
 end
