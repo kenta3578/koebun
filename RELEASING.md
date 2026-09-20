@@ -226,7 +226,6 @@ cask "koebun" do
     "~/Library/Preferences/com.kenta3578.koebun.plist",
     "~/Library/Application Support/com.kenta3578.koebun",
     "~/koebun",
-    "~/koebun/replacements.json",
   ]
 end
 ```
