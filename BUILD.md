@@ -12,7 +12,8 @@ sudo xcodebuild -license accept
 brew install xcodegen
 ```
 
-必要環境: Apple Silicon Mac / macOS 14.0 以降 / Xcode / 空きディスク 3GB 程度（音声認識モデル用）。
+必要環境: Apple Silicon Mac / macOS 14.0 以降（既定の Apple 音声認識は macOS 26 以降）/ Xcode。
+空きディスクは、既定の構成なら追加で不要。WhisperKit に切り替えるときだけ約 1GB（モデル約 630MB）。
 
 ## プロジェクト生成 & 起動
 
@@ -150,7 +151,8 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s ~/Library/Key
 ## セキュリティ補足
 
 - **完全ローカル**: `Sources/` の Swift コードにネットワーク送信処理は無い。音声・文字起こしテキストはメモリ内で完結し、ログ/ファイルにも出さない（ディスクに書くのは置換ルールと設定値のみ）
-- **唯一の通信**: WhisperKit の初回モデル DL（Hugging Face から CoreML モデルを `~/Library/Caches/argmaxinc/whisperkit-coreml/openai_whisper-large-v3` へ取得、約 2.9GB）。2 回目以降はオフラインで動く
+- **唯一の通信**: WhisperKit に切り替えたときの初回モデル DL（Hugging Face から CoreML モデルを
+  `~/Library/Application Support/com.kenta3578.koebun/huggingface/models/argmaxinc/whisperkit-coreml/openai_whisper-large-v3-v20240930_turbo_632MB` へ取得、約 630MB）。2 回目以降はオフラインで動く。**既定（Apple 音声認識）では通信しない**
 - **サンドボックス OFF**: Accessibility / CGEvent / グローバル監視のため。この判断は `project.yml` にコメントで残している
 - **配布する場合**: `ENABLE_HARDENED_RUNTIME` を `YES` に戻し、Developer ID 署名 + Notarization が必要。手順は [RELEASING.md](RELEASING.md)
 
@@ -158,4 +160,6 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s ~/Library/Key
 
 - WhisperKit の API が変わってビルドが通らない場合は `Sources/Transcriber.swift` の `transcribe` 呼び出し／`WhisperKitConfig` を最新シグネチャに合わせる
 - ホットキーは設定 UI から変更できる。選択肢そのものを増やすなら `Sources/SettingsStore.swift`
-- モデルを軽く/速くするなら `Sources/Transcriber.swift` の `model: "large-v3"` を `"large-v3-turbo"` 等に変更
+- WhisperKit のモデルは `Sources/Transcriber.swift` の `Transcriber.model`。既定は turbo（約 630MB・認識の中央値 約 470ms）で、
+  精度寄りにするなら `"large-v3"`（約 2.9GB・認識は 2 倍ほど遅い）。変えたら `scripts/model-manifest.sh` で
+  `ModelIntegrity` のマニフェストを作り直す（しないと整合性の検証で止まる）
