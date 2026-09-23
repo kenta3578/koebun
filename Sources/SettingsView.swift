@@ -377,7 +377,6 @@ struct ReplacementsSettingsView: View {
     @ObservedObject private var store = ReplacementStore.shared
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var fillers = FillerStore.shared
-    @ObservedObject private var history = HistoryStore.shared
     /// 編集中の行。この行のルールについて、過去の発話への影響を出す（Issue #36）。
     @FocusState private var focusedField: RuleField?
 
@@ -456,10 +455,7 @@ struct ReplacementsSettingsView: View {
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.15)))
 
             if let rule = focusedRule, !rule.from.trimmingCharacters(in: .whitespaces).isEmpty {
-                RuleImpactView(
-                    impact: RuleImpact.estimate(for: rule) { $0.id == rule.id },
-                    sampleCount: history.entries.count
-                )
+                RuleImpactView(rule: rule) { $0.id == rule.id }
             }
 
             HStack {
@@ -488,7 +484,7 @@ struct ReplacementsSettingsView: View {
             store.reloadFromDisk()
             fillers.reloadFromDisk()
             // 影響の見積もりに使う。履歴ウィンドウを一度も開いていなければ未読み込み。
-            if history.entries.isEmpty { history.reload() }
+            if HistoryStore.shared.entries.isEmpty { HistoryStore.shared.reload() }
         }
     }
 
