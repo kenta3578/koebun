@@ -300,6 +300,9 @@ struct HistoryView: View {
                 .font(.caption).foregroundStyle(.secondary)
             TextField("読み（誤認識された語）", text: $newRuleFrom)
             TextField("置換後（正しい語）", text: $newRuleTo)
+            if !trimmedNewRuleFrom.isEmpty {
+                RuleImpactView(impact: newRuleImpact, sampleCount: store.entries.count)
+            }
             HStack {
                 Spacer()
                 Button("キャンセル") { isAddingRule = false }
@@ -312,6 +315,16 @@ struct HistoryView: View {
         .textFieldStyle(.roundedBorder)
         .padding(12)
         .frame(width: 320)
+    }
+
+    private var trimmedNewRuleFrom: String { newRuleFrom.trimmingCharacters(in: .whitespaces) }
+
+    /// 登録したら過去の発話がどう変わるか（Issue #36）。同じ読みの既存ルールは書き換わるので除く。
+    private var newRuleImpact: RuleImpact {
+        let from = trimmedNewRuleFrom
+        return RuleImpact.estimate(
+            for: ReplacementRule(from: from, to: newRuleTo.trimmingCharacters(in: .whitespaces))
+        ) { $0.from.compare(from, options: .caseInsensitive) == .orderedSame }
     }
 
     private func commitRule() {

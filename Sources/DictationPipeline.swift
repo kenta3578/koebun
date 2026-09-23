@@ -43,11 +43,7 @@ enum DictationPipeline {
         let raw = try await engine.transcribe(samples)
 
         let replaceStart = now()
-        var replaced = ReplacementStore.apply(raw, rules: rules)
-        if let fillers {
-            replaced = FillerRemover.apply(replaced, fillers: fillers)
-        }
-        replaced = QuestionMarker.apply(replaced)
+        let replaced = postprocess(raw, rules: rules, fillers: fillers)
         let replaceEnd = now()
 
         return Output(
@@ -58,6 +54,16 @@ enum DictationPipeline {
                 replaceMs: milliseconds(from: replaceStart, to: replaceEnd)
             )
         )
+    }
+
+    /// 生テキストに後処理だけを通す。録音を伴わないので、ルールを変えたときに
+    /// 過去の発話がどう変わるかを見積もるのにも使う（Issue #36）。
+    static func postprocess(_ raw: String, rules: [ReplacementRule], fillers: FillerList?) -> String {
+        var text = ReplacementStore.apply(raw, rules: rules)
+        if let fillers {
+            text = FillerRemover.apply(text, fillers: fillers)
+        }
+        return QuestionMarker.apply(text)
     }
 
     private static func milliseconds(from start: Date, to end: Date) -> Int {
