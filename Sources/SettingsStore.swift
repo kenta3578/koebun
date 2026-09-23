@@ -65,6 +65,10 @@ final class SettingsStore: ObservableObject {
     @Published var fillerRemovalEnabled: Bool {
         didSet { UserDefaults.standard.set(fillerRemovalEnabled, forKey: "fillerRemovalEnabled") }
     }
+    /// 辞書置換の候補で「無視」した読み（Issue #40）。次から候補に出さない。
+    @Published var ignoredRuleSuggestions: [String] {
+        didSet { UserDefaults.standard.set(ignoredRuleSuggestions, forKey: "ignoredRuleSuggestions") }
+    }
 
     // MARK: - エンジン選択（Issue #27）
 
@@ -146,6 +150,7 @@ final class SettingsStore: ObservableObject {
         // 0（無期限）と未設定を区別するため object で取り出す。
         historyRetentionDays = UserDefaults.standard.object(forKey: "historyRetentionDays") as? Int ?? 30
         fillerRemovalEnabled = UserDefaults.standard.object(forKey: "fillerRemovalEnabled") as? Bool ?? true
+        ignoredRuleSuggestions = UserDefaults.standard.stringArray(forKey: "ignoredRuleSuggestions") ?? []
 
         // 音声認識の既定は Apple（Issue #31）。ダウンロードが 0 で、実測でも WhisperKit より速く、
         // 句読点まで認識側が付けてくる。**macOS 26 未満ではこの既定が使えない**ので、
