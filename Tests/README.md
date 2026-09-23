@@ -27,6 +27,7 @@ AppKit の実画面・モデル・TCC に依存しない **純 Swift のロジ�
 | `FillerRemoverTests` | フィラー除去。「残す」側（指示語・連語）を重点的に |
 | `QuestionMarkerTests` | 疑問文の文末の？補完。付けすぎない側（かな・ません）も見る |
 | `RuleImpactTests` | 辞書ルールを足したときの過去の発話への影響。誤爆が例に出るか |
+| `RuleSuggesterTests` | 履歴からの辞書候補。別の語を候補にしない側を重点的に |
 | `PasteboardTests` | 全 type の退避と復元（名前付きペーストボードで隔離） |
 | `PasteboardMarkerTests` | クリップボードに立てる目印。挿入用（4 つ）とユーザーのコピー（Concealed のみ）の違い |
 | `HotKeyJudgeTests` | 修飾キーの左右区別・合成イベント・複数修飾キーの正規化 |

@@ -9,6 +9,8 @@ struct SettingsView: View {
                 .tabItem { Label("一般", systemImage: "gearshape") }
             ReplacementsSettingsView()
                 .tabItem { Label("辞書置換", systemImage: "character.book.closed") }
+            SuggestionsSettingsView()
+                .tabItem { Label("候補", systemImage: "text.badge.plus") }
         }
         .frame(minWidth: 460, minHeight: 520)
     }
