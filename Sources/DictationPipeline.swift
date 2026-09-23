@@ -14,16 +14,17 @@ enum DictationPipeline {
     struct Output: Sendable, Equatable {
         /// 文字起こしの生出力。**上書きしない**——認識と後処理のどちらが原因かを履歴で切り分ける。
         var rawText: String
-        /// 辞書置換とフィラー除去を通したテキスト。これが挿入される。
+        /// 辞書置換・フィラー除去・疑問符の補完を通したテキスト。これが挿入される。
         var replacedText: String
         /// 各段の所要時間。履歴に残してエンジン比較（Issue #27）の一次データにする。
         var durations: HistoryEntry.Durations
     }
 
-    /// 文字起こし → 辞書置換 → フィラー除去 を順に通す。
+    /// 文字起こし → 辞書置換 → フィラー除去 → 疑問符の補完 を順に通す。
     ///
     /// **辞書置換が先。** フィラー除去は「まあ」「あの」のような語を落とすので、
     /// 先に走らせると「アットマーク」のような読みの一部を削って置換に当たらなくなる。
+    /// **疑問符は最後。** 「できますか、あの。」の文末フィラーが消えてから語尾を見る。
     ///
     /// - Parameters:
     ///   - samples: 16kHz / mono / Float32。`AudioRecorder` が作る形式。
@@ -46,6 +47,7 @@ enum DictationPipeline {
         if let fillers {
             replaced = FillerRemover.apply(replaced, fillers: fillers)
         }
+        replaced = QuestionMarker.apply(replaced)
         let replaceEnd = now()
 
         return Output(
