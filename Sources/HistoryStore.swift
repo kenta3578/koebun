@@ -178,8 +178,9 @@ enum HistoryFiles {
 
     // MARK: - 読み込み・削除
 
-    /// 新しい順に最大 `listLimit` 件読み込む。壊れた meta.json は読み飛ばす。
-    static func loadEntries() -> [HistoryEntry] {
+    /// 新しい順に最大 `limit` 件読み込む。壊れた meta.json は読み飛ばす。
+    /// 一覧は `listLimit` 件で足りるが、辞書の候補（Issue #40）は保存期間内の全件を見る。
+    static func loadEntries(limit: Int = listLimit) -> [HistoryEntry] {
         let manager = FileManager.default
         guard let names = try? manager.contentsOfDirectory(atPath: rootURL.path) else { return [] }
 
@@ -187,7 +188,7 @@ enum HistoryFiles {
         let newest = names
             .filter { !$0.hasPrefix(".") }
             .sorted(by: >)
-            .prefix(listLimit)
+            .prefix(limit)
 
         return newest.compactMap { name in
             let url = directoryURL(for: name).appendingPathComponent(metaFileName)

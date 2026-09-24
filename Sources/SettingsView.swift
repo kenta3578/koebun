@@ -9,6 +9,8 @@ struct SettingsView: View {
                 .tabItem { Label("一般", systemImage: "gearshape") }
             ReplacementsSettingsView()
                 .tabItem { Label("辞書置換", systemImage: "character.book.closed") }
+            SuggestionsSettingsView()
+                .tabItem { Label("候補", systemImage: "text.badge.plus") }
         }
         .frame(minWidth: 460, minHeight: 520)
     }
@@ -377,6 +379,17 @@ struct ReplacementsSettingsView: View {
     @ObservedObject private var store = ReplacementStore.shared
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var fillers = FillerStore.shared
+    /// 編集中の行。この行のルールについて、過去の発話への影響を出す（Issue #36）。
+    @FocusState private var focusedField: RuleField?
+
+    private enum RuleField: Hashable {
+        case from(UUID), to(UUID)
+        var ruleID: UUID {
+            switch self {
+            case .from(let id), .to(let id): return id
+            }
+        }
+    }
 
     /// 直前の取り込みの結果。
     @State private var importMessage: ImportMessage?
@@ -417,7 +430,9 @@ struct ReplacementsSettingsView: View {
                     ForEach(Array(store.rules.enumerated()), id: \.element.id) { index, rule in
                         HStack(spacing: 8) {
                             TextField("カーズ桜", text: ruleBinding(rule.id, \.from))
+                                .focused($focusedField, equals: .from(rule.id))
                             TextField("河津桜", text: ruleBinding(rule.id, \.to))
+                                .focused($focusedField, equals: .to(rule.id))
                             Button {
                                 store.rules.removeAll { $0.id == rule.id }
                             } label: {
@@ -440,6 +455,10 @@ struct ReplacementsSettingsView: View {
             .frame(minHeight: Self.ruleRowHeight * 5, maxHeight: .infinity)
             .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.15)))
+
+            if let rule = focusedRule, !rule.from.trimmingCharacters(in: .whitespaces).isEmpty {
+                RuleImpactView(rule: rule) { $0.id == rule.id }
+            }
 
             HStack {
                 Button("ルールを追加") {
@@ -466,7 +485,14 @@ struct ReplacementsSettingsView: View {
         .onAppear {
             store.reloadFromDisk()
             fillers.reloadFromDisk()
+            // 影響の見積もりに使う。履歴ウィンドウを一度も開いていなければ未読み込み。
+            if HistoryStore.shared.entries.isEmpty { HistoryStore.shared.reload() }
         }
+    }
+
+    private var focusedRule: ReplacementRule? {
+        guard let id = focusedField?.ruleID else { return nil }
+        return store.rules.first { $0.id == id }
     }
 
     /// ルール 1 行ぶんの高さ（角丸テキストフィールド + 上下パディング）。

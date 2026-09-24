@@ -300,6 +300,15 @@ struct HistoryView: View {
                 .font(.caption).foregroundStyle(.secondary)
             TextField("読み（誤認識された語）", text: $newRuleFrom)
             TextField("置換後（正しい語）", text: $newRuleTo)
+            if !trimmedNewRuleFrom.isEmpty {
+                RuleImpactView(
+                    rule: ReplacementRule(from: trimmedNewRuleFrom,
+                                          to: newRuleTo.trimmingCharacters(in: .whitespaces))
+                ) { [from = trimmedNewRuleFrom] in
+                    // 同じ読みの既存ルールは書き換わるので除く。
+                    $0.from.compare(from, options: .caseInsensitive) == .orderedSame
+                }
+            }
             HStack {
                 Spacer()
                 Button("キャンセル") { isAddingRule = false }
@@ -313,6 +322,8 @@ struct HistoryView: View {
         .padding(12)
         .frame(width: 320)
     }
+
+    private var trimmedNewRuleFrom: String { newRuleFrom.trimmingCharacters(in: .whitespaces) }
 
     private func commitRule() {
         let from = newRuleFrom.trimmingCharacters(in: .whitespaces)
