@@ -1,4 +1,4 @@
-# koebun
+# koemakase
 
 自分専用・完全ローカルの音声入力（ディクテーション）アプリ。
 
@@ -63,7 +63,7 @@ Mac（Apple Silicon）で、音声 → 文字起こし → カーソルへ直挿
 3. Issue 単位でコミット → PR（`Closes #N`）→ `gh pr merge --merge --delete-branch`
 4. `ExitWorktree`（remove）→ `git pull --ff-only origin develop`
 5. **`./scripts/install-local.sh`** で実機へ入れて起動する（Release ビルド → `koebun-dev` 署名 → `/Applications` 置換 → 起動）
-6. 実機で確認する。`pgrep -x koebun` で起動を確かめ、UI 変更はスクリーンショットで見る
+6. 実機で確認する。`pgrep -x koemakase` で起動を確かめ、UI 変更はスクリーンショットで見る
 7. ユーザーの実機フィードバックは、その場で次の Issue にする（メモに溜めない）
 
 複数の小さな Issue は1つの worktree・1つの PR にまとめてよいが、**コミットは Issue 単位**に分ける。ドキュメントだけの変更は 5〜6 を省いてよい。
@@ -71,17 +71,17 @@ Mac（Apple Silicon）で、音声 → 文字起こし → カーソルへ直挿
 ## Commands
 
 ```bash
-xcodegen generate                                   # project.yml → koebun.xcodeproj（worktree では必須）
-git diff --exit-code koebun.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved \
+xcodegen generate                                   # project.yml → koemakase.xcodeproj（worktree では必須）
+git diff --exit-code koemakase.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved \
   || echo "依存の revision が動いた。意図した更新か確認する（Issue #106）"
-xcodebuild -project koebun.xcodeproj -scheme koebun -configuration Debug \
-  -derivedDataPath /tmp/koebun-dd CODE_SIGNING_ALLOWED=NO build \
+xcodebuild -project koemakase.xcodeproj -scheme koemakase -configuration Debug \
+  -derivedDataPath /tmp/koemakase-dd CODE_SIGNING_ALLOWED=NO build \
   2>&1 | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)"  # 型チェック（署名なし）。**警告も 0 を保つ**
-xcodebuild test -project koebun.xcodeproj -scheme koebun \
+xcodebuild test -project koemakase.xcodeproj -scheme koemakase \
   -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO \
   2>&1 | grep -E "✘|Test run|TEST (SUCCEEDED|FAILED)"     # 単体テスト（0.1秒未満。守備範囲は Tests/README.md）
 ./scripts/install-local.sh                          # 実機へインストールして起動（マージ後に必ず）
-pgrep -x koebun                                     # 起動確認
+pgrep -x koemakase                                     # 起動確認
 ./scripts/kpi.sh [--target N]                       # 北極星の KPI（平日の挿入回数）を履歴から集計。目標値は引数で渡す
 ./scripts/model-manifest.sh                         # WhisperKit の重みのマニフェストを作り直す（Issue #106）
 tccutil reset Accessibility com.kenta3578.koebun    # 権限トグルが効かないときの一度きりのリセット

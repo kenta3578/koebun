@@ -1,5 +1,5 @@
 import Testing
-@testable import koebun
+@testable import koemakase
 
 /// 挿入できなかった結果の残し先（Issue #67 / #143）。
 ///

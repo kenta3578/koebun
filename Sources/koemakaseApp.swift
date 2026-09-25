@@ -1,14 +1,19 @@
 import SwiftUI
 
-/// koebun: 完全ローカルの音声入力アプリ（メニューバー常駐）。
+/// koemakase: 完全ローカルの音声入力アプリ（メニューバー常駐）。
 ///
 /// 流れ:
 ///   右⌥(Right Option) でトグル録音 → Apple 音声認識（設定で WhisperKit にも切替可）で文字起こし
 ///   → 辞書置換 →（任意で LLM 整形）→ 最前面アプリのカーソル位置に挿入。
 @main
-struct KoebunApp: App {
+struct KoemakaseApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var state = AppState.shared
+
+    init() {
+        // ストア（辞書・フィラー・履歴）が旧名の置き場を読む前に移す（Issue #43）。
+        if !AppDelegate.isRunningTests { DataDirectory.migrateIfNeeded() }
+    }
 
     var body: some Scene {
         MenuBarExtra {
@@ -41,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 環境変数は Apple の非公開仕様で名前が変わってきた（Xcode 26 では `XCTestConfigurationFilePath`
     /// は空文字で渡る）。テストバンドルは `DYLD_INSERT_LIBRARIES` で XCTest ごと `main` 前に
     /// ロードされるので、XCTestCase クラスの存在も併せて見る。本番の起動では決してロードされない。
-    private static var isRunningTests: Bool {
+    static var isRunningTests: Bool {
         let env = ProcessInfo.processInfo.environment
         return env["XCTestSessionIdentifier"] != nil
             || env["XCTestConfigurationFilePath"] != nil

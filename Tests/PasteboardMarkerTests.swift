@@ -1,6 +1,6 @@
 import AppKit
 import Testing
-@testable import koebun
+@testable import koemakase
 
 /// クリップボードに立てる目印（Issue #79 / #105）。
 ///
@@ -10,7 +10,7 @@ import Testing
 struct PasteboardMarkerTests {
 
     private func withPasteboard(_ body: (NSPasteboard) -> Void) {
-        let pb = NSPasteboard(name: NSPasteboard.Name("koebun.tests.\(UUID().uuidString)"))
+        let pb = NSPasteboard(name: NSPasteboard.Name("koemakase.tests.\(UUID().uuidString)"))
         defer { pb.releaseGlobally() }
         pb.clearContents()
         body(pb)
@@ -38,7 +38,7 @@ struct PasteboardMarkerTests {
         #expect(PasteboardPrivacy.source.rawValue == "org.nspasteboard.source")
     }
 
-    @Test("source は自分の bundle ID（取れなければ koebun）")
+    @Test("source は自分の bundle ID（取れなければ koemakase）")
     func sourceIsOwnBundleId() {
         #expect(!PasteboardPrivacy.sourceValue.isEmpty)
     }

@@ -1,5 +1,5 @@
 import Testing
-@testable import koebun
+@testable import koemakase
 
 /// 録音の上限で止めた発話の見せ方（Issue #17）。
 struct RecordingLimitTests {

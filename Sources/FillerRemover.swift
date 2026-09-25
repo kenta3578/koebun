@@ -100,7 +100,7 @@ enum FillerRemover {
     }
 }
 
-/// フィラー語彙の永続化（`~/koebun/fillers.json`）。自分の口癖に合わせて育てる。
+/// フィラー語彙の永続化（`~/koemakase/fillers.json`）。自分の口癖に合わせて育てる。
 @MainActor
 final class FillerStore: ObservableObject {
     static let shared = FillerStore()
@@ -117,8 +117,7 @@ final class FillerStore: ObservableObject {
     @Published private(set) var fileProblem: String?
 
     static var fileURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("koebun", isDirectory: true)
+        DataDirectory.url
             .appendingPathComponent("fillers.json")
     }
 

@@ -1,5 +1,5 @@
 import Testing
-@testable import koebun
+@testable import koemakase
 
 /// 疑問符の補完（Issue #34）。付けすぎは平叙文を疑問文に変えるので「付けない」側も見る。
 struct QuestionMarkerTests {
