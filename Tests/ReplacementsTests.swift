@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import koebun
+@testable import koemakase
 
 /// 辞書置換の 1 パス最長一致（`ReplacementStore.apply`）。ファイルは触らず static 版だけを使う。
 @MainActor

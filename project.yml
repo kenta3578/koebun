@@ -1,4 +1,4 @@
-name: koebun
+name: koemakase
 options:
   bundleIdPrefix: com.kenta3578
   deploymentTarget:
@@ -9,20 +9,20 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit
     # サプライチェーン: 実際に使う revision は Git 追跡している
-    # koebun.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved で固定される。
+    # koemakase.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved で固定される。
     # 依存を上げるときは -resolvePackageDependencies し直して同ファイルをコミットすること。
     from: "0.9.0"
 
 targets:
-  koebun:
+  koemakase:
     type: application
     platform: macOS
     scheme:
       testTargets:
-        - koebunTests
+        - koemakaseTests
     sources:
       - path: Sources
-      # koebun の開始音・停止音（Issue #2）。scripts/make-sounds.py が作る。
+      # koemakase の開始音・停止音（Issue #2）。scripts/make-sounds.py が作る。
       # フォルダ参照なので Contents/Resources/Sounds/ にそのまま入る。
       - path: Resources/Sounds
         type: folder
@@ -31,7 +31,7 @@ targets:
       - package: WhisperKit
     settings:
       base:
-        PRODUCT_NAME: koebun
+        PRODUCT_NAME: koemakase
         PRODUCT_BUNDLE_IDENTIFIER: com.kenta3578.koebun
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -53,7 +53,7 @@ targets:
   # 単体テスト（Issue #102）。アプリを TEST_HOST にして同じモジュールとして見る
   # （守備範囲とホスト側の起動抑止は Tests/README.md）。
   # TEST_HOST / BUNDLE_LOADER は xcodegen がアプリ依存から自動で埋める。
-  koebunTests:
+  koemakaseTests:
     type: bundle.unit-test
     platform: macOS
     sources:
@@ -61,7 +61,7 @@ targets:
         excludes:
           - README.md
     dependencies:
-      - target: koebun
+      - target: koemakase
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kenta3578.koebunTests

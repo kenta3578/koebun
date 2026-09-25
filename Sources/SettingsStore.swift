@@ -61,7 +61,7 @@ final class SettingsStore: ObservableObject {
         didSet { UserDefaults.standard.set(historyRetentionDays, forKey: "historyRetentionDays") }
     }
     /// フィラー（えっと・あの・まあ…）を決定的に取り除く（Issue #59）。LLM を使わず遅延ゼロ。
-    /// 語彙は `~/koebun/fillers.json`。履歴には生テキストが残るので OFF に戻せば元どおり。
+    /// 語彙は `~/koemakase/fillers.json`。履歴には生テキストが残るので OFF に戻せば元どおり。
     @Published var fillerRemovalEnabled: Bool {
         didSet { UserDefaults.standard.set(fillerRemovalEnabled, forKey: "fillerRemovalEnabled") }
     }
@@ -128,7 +128,7 @@ final class SettingsStore: ObservableObject {
     }
 
     private init() {
-        // 自分の音（~/koebun/sounds/）を指していてファイルが消えていたら「なし」に戻す（Issue #71）。
+        // 自分の音（~/koemakase/sounds/）を指していてファイルが消えていたら「なし」に戻す（Issue #71）。
         let storedStart = UserDefaults.standard.string(forKey: "startSound") ?? "Glass"
         let storedStop  = UserDefaults.standard.string(forKey: "stopSound")  ?? "Basso"
         startSound = SoundPlayer.isAvailable(storedStart) ? storedStart : SoundPlayer.none

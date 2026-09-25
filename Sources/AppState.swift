@@ -101,13 +101,13 @@ enum AppStatus: Equatable {
     /// VoiceOver 用の説明（色・形状が読めない環境向けの3つ目の手がかり）。
     var accessibilityLabel: String {
         switch self {
-        case .loadingModel: return "koebun: モデル読み込み中"
-        case .idle:         return "koebun: 待機中"
-        case .recording:    return "koebun: 録音中"
-        case .processing:   return "koebun: 文字起こし中"
-        case .done:         return "koebun: 完了"
-        case .warned:       return "koebun: 完了（注意あり）"
-        case .failed:       return "koebun: エラー"
+        case .loadingModel: return "koemakase: モデル読み込み中"
+        case .idle:         return "koemakase: 待機中"
+        case .recording:    return "koemakase: 録音中"
+        case .processing:   return "koemakase: 文字起こし中"
+        case .done:         return "koemakase: 完了"
+        case .warned:       return "koemakase: 完了（注意あり）"
+        case .failed:       return "koemakase: エラー"
         }
     }
 

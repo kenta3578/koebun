@@ -2,10 +2,10 @@ import AppKit
 
 /// 録音開始音・停止音の一覧と再生（Issue #71）、自分で作った音の取り込み（Issue #124）。
 ///
-/// 選択肢は出どころで分ける（Issue #2）: 「なし」→ koebun の音（アプリに同梱）
-/// → 自分の音（`~/koebun/sounds/` に置いた音声ファイル）→ macOS のシステム音。
+/// 選択肢は出どころで分ける（Issue #2）: 「なし」→ koemakase の音（アプリに同梱）
+/// → 自分の音（`~/koemakase/sounds/` に置いた音声ファイル）→ macOS のシステム音。
 /// 設定に保存するのは名前の文字列だけ（システム音は `NSSound(named:)` の名前、
-/// それ以外は拡張子を除いたファイル名）。鳴らすときは自分の音 → koebun の音 → システム音の順に探す。
+/// それ以外は拡張子を除いたファイル名）。鳴らすときは自分の音 → koemakase の音 → システム音の順に探す。
 @MainActor
 enum SoundPlayer {
     static let none = "なし"
@@ -32,15 +32,14 @@ enum SoundPlayer {
 
     /// 自分の音の置き場。ここに aiff / wav / mp3 / m4a / caf を置くと選択肢に出る。
     static var customDirectory: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("koebun", isDirectory: true)
+        DataDirectory.url
             .appendingPathComponent("sounds", isDirectory: true)
     }
 
     nonisolated static let supportedExtensions: Set<String> = ["aiff", "aif", "wav", "mp3", "m4a", "caf"]
 
-    /// `~/koebun/sounds/` にある音の名前（拡張子なし、名前順）。
-    /// koebun の音と同じ名前は除く（以前は同梱せず、ここへ生成していたため。一覧が二重にならないように）。
+    /// `~/koemakase/sounds/` にある音の名前（拡張子なし、名前順）。
+    /// koemakase の音と同じ名前は除く（以前は同梱せず、ここへ生成していたため。一覧が二重にならないように）。
     static func customSounds() -> [String] {
         guard let items = try? FileManager.default.contentsOfDirectory(
             at: customDirectory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
@@ -52,7 +51,7 @@ enum SoundPlayer {
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
-    /// 設定の選択肢。「なし」→ koebun の音 → 自分の音 → システム音。
+    /// 設定の選択肢。「なし」→ koemakase の音 → 自分の音 → システム音。
     static func choices() -> [String] {
         [none] + bundledSounds + customSounds() + systemSounds
     }
@@ -114,7 +113,7 @@ enum SoundPlayer {
         }
     }
 
-    /// 選んだファイルを `~/koebun/sounds/` に取り込み、選択肢に出る名前を返す。
+    /// 選んだファイルを `~/koemakase/sounds/` に取り込み、選択肢に出る名前を返す。
     /// 元ファイルは動かさずコピーする（取り込んだあとに元を消しても鳴る）。
     @discardableResult
     static func importSound(from source: URL) throws -> String {

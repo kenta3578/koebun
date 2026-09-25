@@ -21,7 +21,7 @@ enum PasteboardPrivacy {
     static let source = NSPasteboard.PasteboardType("org.nspasteboard.source")
 
     /// 自分が置いたことを示す値。
-    static var sourceValue: String { Bundle.main.bundleIdentifier ?? "koebun" }
+    static var sourceValue: String { Bundle.main.bundleIdentifier ?? "koemakase" }
 }
 
 /// クリップボードの中身をそのまま戻すためのスナップショット。

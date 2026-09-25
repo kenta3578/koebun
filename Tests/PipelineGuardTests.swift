@@ -1,5 +1,5 @@
 import Testing
-@testable import koebun
+@testable import koemakase
 
 /// 世代番号ガード（Issue #97 / #100）の判定。実モデルもタイマーも使わず、追い越しの順序を手で組む。
 struct PipelineGuardTests {
