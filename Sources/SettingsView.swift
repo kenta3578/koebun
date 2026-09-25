@@ -189,10 +189,13 @@ struct GeneralSettingsView: View {
                     AppController.shared.refreshHUDLayout(positionChanged: true)
                 }
 
+                Toggle("録音中は画面の縁を光らせる", isOn: $settings.edgeGlowEnabled)
+
                 Text("「最小」は声の大きさと経過時間だけの細いバーで、マウスを乗せると停止・キャンセルが出ます。"
                      + "録音を始めてもマイクが一度も音を拾わないときは、棒がオレンジのマイク斜線に替わります。"
                      + "「非表示」でも開始音・完了音は鳴ります"
-                     + "（キャンセルは HUD からのみ。挿入できなかった結果は「挿入」の設定に従って表示します）。")
+                     + "（キャンセルは HUD からのみ。挿入できなかった結果は「挿入」の設定に従って表示します）。"
+                     + "画面の縁は、マウスのある画面を録音中はすみれ色、文字起こし中は水色で光らせ、挿入できたら白く光って消えます。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
