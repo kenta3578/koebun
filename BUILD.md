@@ -163,3 +163,8 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s ~/Library/Key
 - WhisperKit のモデルは `Sources/Transcriber.swift` の `Transcriber.model`。既定は turbo（約 630MB・認識の中央値 約 470ms）で、
   精度寄りにするなら `"large-v3"`（約 2.9GB・認識は 2 倍ほど遅い）。変えたら `scripts/model-manifest.sh` で
   `ModelIntegrity` のマニフェストを作り直す（しないと整合性の検証で止まる）
+- 各設定の既定値（音声認識エンジンなど）は `Sources/SettingsStore.swift` の `init()`
+- WhisperKit で認識する言語（`ja` 固定）は `Sources/Transcriber.swift` の `DecodingOptions(language:)`
+- 辞書置換の初期ルールは `Sources/Replacements.swift` の `defaultRules`（既存のユーザーは `~/koemakase/replacements.json` が優先）
+- 挿入方式（クリップボード + ⌘V の合成）は `Sources/TextInjector.swift`
+- WhisperKit のバージョンは `project.yml` の `packages.WhisperKit`。revision は `koemakase.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` で固定している

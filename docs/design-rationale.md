@@ -100,3 +100,11 @@ Accessibility API では、挿入先の変化を読めないアプリがある�
 「アットマーク」→ `@` のような記号入力は、LLM に任せず**決定的な文字列置換**で行う。同じ入力からは必ず同じ出力になり、数値や英単語に触れない。
 
 同じ理由でフィラー除去（えっと・あの）も LLM を通さない。ただし**同梱の既定ルールが実在の語を壊さないこと**が前提で、これを外すと出荷時のバグになる（実際に「そのため」→「ため」、「バックスラッシュ」→「バック/」を踏んだ）。
+
+## 9. 似たアプリとの関係
+
+同じ方向のアプリはすでに多い。英語圏なら [VoiceInk](https://github.com/Beingpax/VoiceInk) や [Handy](https://github.com/cjpais/Handy)、日本語でも macOS 26 の SpeechAnalyzer を使ったものが同じ時期に何本も出ている（[nobetsu](https://github.com/pochang6/nobetsu)、[vox](https://github.com/MizuRyu/vox)、[whisperkun](https://github.com/m-tkg/whisperkun) など）。
+
+機能の数ではどれも koemakase より多い。整形や、話した端から文字が出る表示が欲しいなら、そちらのほうが合う。Windows や Linux なら Handy が対応している。
+
+koemakase は、音声入力の「入り口と出口」をどこまで削れるかを、自分の毎日の入力で確かめる場所として続けている。作った経緯は [Zenn の記事](https://zenn.dev/ken_ken_ken/articles/dictation-without-llm) に書いた。
