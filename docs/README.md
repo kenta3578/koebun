@@ -2,9 +2,12 @@
 
 公開ドキュメントと、README に貼る画像の置き場。
 
+ここの Markdown はそのまま [説明書サイト](https://kenta3578.github.io/koemakase/)（VitePress・GitHub Pages）になる。設定は `.vitepress/config.mts`、手元で見るのは `pnpm docs:dev`。
+
 | ファイル | 読む人 | 中身 |
 |---|---|---|
 | [`MANUAL.md`](MANUAL.md) | 使う人 | 説明書。設定項目と「やりたいこと → どこを触る」 |
+| [`changelog.md`](changelog.md) | 使う人 | 更新履歴。使う人から見て変わったことだけ |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 中を読む人 | 処理の流れ・33 ファイルの責務・状態機械・読む順番・触ると危ない場所 |
 | [`PRIVACY.md`](PRIVACY.md) | 確かめたい人 | 完全ローカルであることの根拠（通信・モデルの検証・ディスクに書くもの） |
 | [`SWIFT-NOTES.md`](SWIFT-NOTES.md) | Web 側の言語から来た人 | Swift / SwiftUI を TypeScript・Vue/React・Node.js の言葉に置き換えた地図 |
