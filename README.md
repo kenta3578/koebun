@@ -1,12 +1,15 @@
-# koebun
+# koemakase（声まかせ）
 
 **完全ローカルで動く、Mac 用の日本語音声入力アプリ。**
+
+> 旧名は koebun です。同じ分野に同名の別製品があるため、2026 年 9 月に改名しました。
+> 旧名のときのデータ（`~/koebun`）は、初回起動時に `~/koemakase` へ自動で移ります。
 
 メニューバーに常駐し、ホットキー（既定は右 ⌥。設定で変更できます）を押すと録音を開始。もう一度押すと文字起こしして、そのとき最前面にあるアプリのカーソル位置へテキストを挿入します。音声もテキストも端末の外に出ません。サブスクもアカウント登録もありません。
 
 **モデルのダウンロードは要りません。** 起動して権限を許可すれば、そのまま喋って挿入まで通ります（macOS 26 以降）。モデル（約 630MB）が要るのは、認識を WhisperKit に替えたときだけです。
 
-<img src="docs/menubar.png" alt="koebun のメニューバーのメニュー（待機中・履歴・設定・権限の導線・終了）" width="267">
+<img src="docs/menubar.png" alt="koemakase のメニューバーのメニュー（待機中・履歴・設定・権限の導線・終了）" width="267">
 
 *メニューの 1 行目は、いま設定されているホットキーを表示します（画像は変更後の例。既定は右 ⌥）。*
 
@@ -24,7 +27,7 @@
 
 整形が要らないなら、認識は Mac に最初から入っているもので足ります。実際に測ったら、macOS 内蔵の音声認識は **292ms** で、句読点まで付けて返ってきました（同じ発話で WhisperKit は 3,906ms。これは当時使っていた large-v3 の値で、いまの切り替え先である large-v3-turbo はもっと速いです。どちらも開発者の Mac 1 台で測った値です。詳しくは[後述](#既定をこの構成にした理由)）。モデルのダウンロードも要りません。押したら、待たずに、入る。
 
-そうやって整形を外していくと、残るのは**入り口と出口**だけでした。いつ始めていつ終わるかを自分で決められること（ホットキーを押す・もう一度押す）、画面を見ずに録音中だと分かること（開始音・停止音）、「えーと」を気にせず喋れること（フィラー除去。これは LLM ではなく単なる文字列処理なので 0ms）、そしてカーソルの位置に確実に入って、入らなかったら必ず履歴に残ること。koebun はこれだけのアプリです。
+そうやって整形を外していくと、残るのは**入り口と出口**だけでした。いつ始めていつ終わるかを自分で決められること（ホットキーを押す・もう一度押す）、画面を見ずに録音中だと分かること（開始音・停止音）、「えーと」を気にせず喋れること（フィラー除去。これは LLM ではなく単なる文字列処理なので 0ms）、そしてカーソルの位置に確実に入って、入らなかったら必ず履歴に残ること。koemakase はこれだけのアプリです。
 
 認識エンジンでは何もしていません。既定は macOS 内蔵の SpeechAnalyzer をそのまま呼んでいるだけで、精度は Apple のものです。実は LLM 整形も一度は実装して持っていたのですが、使い続けても一度も必要にならなかったので、2,400 行ほど消しました。**薄いことがこのアプリの取り柄**だと思っています。
 
@@ -34,9 +37,9 @@
 
 公開する前に調べてみると、同じ方向のアプリはすでにたくさんありました。英語圏なら [VoiceInk](https://github.com/Beingpax/VoiceInk) や [Handy](https://github.com/cjpais/Handy)、日本語でも macOS 26 の SpeechAnalyzer を使ったものが、ちょうど同じ時期に何本も出ています（[nobetsu](https://github.com/pochang6/nobetsu)、[vox](https://github.com/MizuRyu/vox)、[whisperkun](https://github.com/m-tkg/whisperkun) など）。考えることはみんな同じなんだと思います。
 
-機能の数で比べれば、どれも koebun よりたくさんのことができます。整形してほしい、話した端から入ってほしい、という人にはそちらのほうが合うはずです。Windows や Linux でも使いたいなら、Handy が対応しています。
+機能の数で比べれば、どれも koemakase よりたくさんのことができます。整形してほしい、話した端から入ってほしい、という人にはそちらのほうが合うはずです。Windows や Linux でも使いたいなら、Handy が対応しています。
 
-それでも自分で作って使い続けているのは、音声入力の「入り口と出口」をどこまで削れるかを、自分の毎日の入力で確かめたかったからです。koebun は、その個人的な研究開発の置き場です。何を足して何を削ったかは、理由ごと [設計の根拠](docs/design-rationale.md) に残しています。
+それでも自分で作って使い続けているのは、音声入力の「入り口と出口」をどこまで削れるかを、自分の毎日の入力で確かめたかったからです。koemakase は、その個人的な研究開発の置き場です。何を足して何を削ったかは、理由ごと [設計の根拠](docs/design-rationale.md) に残しています。
 
 ---
 
@@ -48,13 +51,13 @@
 - ホットキーでトグル録音（既定は右 ⌥、設定で変更できます）— 押している間ではなく、押すたびに開始／停止
 - 日本語の文字起こし。**既定は Apple の音声認識**（macOS 26 以降。OS 内蔵でダウンロード不要）で、設定から WhisperKit（Whisper large-v3-turbo）へ切り替えられます
 - **辞書置換** — 文字起こし結果を機械的に置換（`アットマーク` → `@` など）。LLM を通さないので、同じ入力からは必ず同じ出力になります
-- **フィラー除去** — 「えーと」「あの」などを決定的に取り除きます。LLM を通さないので遅延ゼロ。語彙は `~/koebun/fillers.json`
+- **フィラー除去** — 「えーと」「あの」などを決定的に取り除きます。LLM を通さないので遅延ゼロ。語彙は `~/koemakase/fillers.json`
 - **履歴** — 生テキスト・置換後・所要時間・使用エンジンを残し、後から読み返せます（保存期間は設定可能）
 - 録音 HUD（声の大きさと経過時間だけの細いバー。マウスを乗せると停止・キャンセル）
 - 最前面アプリのカーソル位置へ自動挿入（クリップボード経由。**元のクリップボードは復元されます**）。挿入できなかったときの結果の残し先は設定で選べます（HUD / クリップボード / 履歴だけ。どれでも履歴には残ります）
 - **パスワード欄には入力しません** — パスワード欄と Secure Keyboard Entry 中は、送る前に止めて理由を出します（この経路では結果をクリップボードにも残しません）
 - **メニューバーアイコンで状態が分かる** — 読込中（黄・砂時計）／待機（マイク）／録音中（赤・塗りつぶし）／処理中（青・波形）／完了（緑・チェック）／完了・注意あり（黄・！）／エラー（橙・警告）。色と形状の両方で区別でき、VoiceOver にも読ませています
-- 録音の開始音／停止音を選択 — koebun 同梱の音／`~/koebun/sounds/` に入れた自分の音／macOS のシステムサウンド（14 種）／なし
+- 録音の開始音／停止音を選択 — koemakase 同梱の音／`~/koemakase/sounds/` に入れた自分の音／macOS のシステムサウンド（14 種）／なし
 - 録音トリガーキーの変更（右⌥／左⌥／右⌘／左⌘／右⌃／左⌃／右⇧／左⇧／fn。複数の修飾キーや通常キーとの組み合わせも可。例: 右⌥ + S、左⇧ + 左⌘ + 0）
 
 ### まだできないこと（実装予定）
@@ -69,7 +72,7 @@
 
 ## ダウンロードは「必要になったときだけ」
 
-koebun は**何も落とさない状態を出発点**にして、機能を足したぶんだけ容量を払う設計です。
+koemakase は**何も落とさない状態を出発点**にして、機能を足したぶんだけ容量を払う設計です。
 
 | 構成 | 追加ダウンロード | いつ発生するか |
 |---|---|---|
@@ -97,7 +100,7 @@ koebun は**何も落とさない状態を出発点**にして、機能を足し
 - **通信が発生するのは、自分で WhisperKit を選んだときだけです。** Hugging Face（`argmaxinc/whisperkit-coreml`）から CoreML モデルを取得します（`~/Library/Application Support/com.kenta3578.koebun/huggingface/models/argmaxinc/whisperkit-coreml/openai_whisper-large-v3-v20240930_turbo_632MB`、約 630MB）。初回だけで、2 回目以降はキャッシュを読むのでオフラインで動作します。
 - **どちらの場合も、音声とテキストは送信されません。** 落ちてくるのはモデルの重みだけで、通信は一方向です。
 - **落ちてきた重みは記録と照合します。** WhisperKit にはモデルの revision を固定する口が無く、Hugging Face の `main` を追い続けます。そこで全 22 ファイルの SHA-256 とサイズをリポジトリに固定してあり（`Sources/ModelIntegrity.swift`）、一致しなければモデルを使わずエラーにします。**期待値を Hugging Face から取りに行くことはしません**——検証したい相手から期待値を取っても意味が無いうえ、上の「通信処理が無い」という根拠が消えるためです。
-- 文字起こし結果は `~/koebun/history/` に残ります。保存期間は設定で選べ（7日〜無期限）、期限切れは自動で削除されます。**録音した音声はディスクに残しません。** ほかにディスクに書くのは、自分で登録した置換ルール（`~/koebun/replacements.json`）、フィラー語（`~/koebun/fillers.json`）、取り込んだ音（`~/koebun/sounds/`）、設定値（`UserDefaults`）だけです。
+- 文字起こし結果は `~/koemakase/history/` に残ります。保存期間は設定で選べ（7日〜無期限）、期限切れは自動で削除されます。**録音した音声はディスクに残しません。** ほかにディスクに書くのは、自分で登録した置換ルール（`~/koemakase/replacements.json`）、フィラー語（`~/koemakase/fillers.json`）、取り込んだ音（`~/koemakase/sounds/`）、設定値（`UserDefaults`）だけです。
 - アプリのサンドボックスは OFF です。グローバルなキー監視（ホットキー）と ⌘V の合成送出に必要なためで、この判断は `project.yml` にコメントとして残しています。
 
 ---
@@ -122,15 +125,15 @@ Developer ID 証明書による署名と Apple の notarization がまだ行わ�
 
 ```bash
 brew install xcodegen
-git clone https://github.com/kenta3578/koebun.git
-cd koebun
+git clone https://github.com/kenta3578/koemakase.git
+cd koemakase
 xcodegen generate
-open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を選んで ⌘R
+open koemakase.xcodeproj   # Signing & Capabilities で自分の Personal Team を選んで ⌘R
 ```
 
 ### 将来（Releases 配布後）
 
-`.dmg` をダウンロード → `koebun.app` を `/Applications` へドラッグ → 起動、で完結する予定です。
+`.dmg` をダウンロード → `koemakase.app` を `/Applications` へドラッグ → 起動、で完結する予定です。
 
 ---
 
@@ -141,7 +144,7 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 | 権限 | 用途 | 設定方法 |
 |---|---|---|
 | **マイク** | 録音 | 初回録音時にダイアログが出るので「許可」 |
-| **アクセシビリティ** | ホットキーの監視と ⌘V の合成送出 | システム設定 > プライバシーとセキュリティ > アクセシビリティ で koebun を ON |
+| **アクセシビリティ** | ホットキーの監視と ⌘V の合成送出 | システム設定 > プライバシーとセキュリティ > アクセシビリティ で koemakase を ON |
 
 > **アクセシビリティを ON にしないと、ホットキーを押しても何も起きません。** ホットキーが無反応なときは、まずここを疑ってください。ビルドし直したあとは、いったん OFF → ON し直す必要がある場合があります。
 
@@ -170,7 +173,7 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 
 - **ログイン時に起動** — ON にすると、Mac にログインした時点からメニューバーに常駐します
 - **音声認識エンジン** — 既定は Apple 音声認識（ダウンロード不要）。WhisperKit に切り替えると初回に約 630MB を取得します。切り替えると使わない方はメモリから降ります
-- **録音開始音 / 録音停止音** — koebun 同梱の音・`~/koebun/sounds/` に入れた自分の音・macOS のシステムサウンド（Glass, Basso, Ping など 14 種）・「なし」から選べます。選ぶとその場で試聴されます
+- **録音開始音 / 録音停止音** — koemakase 同梱の音・`~/koemakase/sounds/` に入れた自分の音・macOS のシステムサウンド（Glass, Basso, Ping など 14 種）・「なし」から選べます。選ぶとその場で試聴されます
 - **録音 HUD** — 録音中の細いバーの表示サイズ（最小／非表示）と表示位置（画面下部中央／上部中央）。非表示にすると開始音・停止音だけで状態を知らせます
 - **挿入** — 挿入できなかったときに結果をどこへ残すか（HUD / クリップボード / 履歴だけ）
 - **履歴** — 保存期間（7日〜無期限）と、保存先を開く・まとめて削除する導線
@@ -182,7 +185,7 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 
 音声では入力しづらい記号や、音声認識が繰り返し間違える固有名詞を、置換ルールで直します。文字起こしの直後に適用されます。
 
-初期ルールとして `アットマーク`→`@`、`ドットコム`→`.com`、`スラッシュ`→`/`、`シャープ`→`#`、`アンダースコア`→`_` が入っています。設定画面から追加・編集・削除でき、内容は **`~/koebun/replacements.json`** に保存されるので、エディタで直接編集したり Git で管理したりもできます。設定画面のパスをクリックすると開けて（右クリックで Finder に表示）、保存すれば再起動せずに反映されます。
+初期ルールとして `アットマーク`→`@`、`ドットコム`→`.com`、`スラッシュ`→`/`、`シャープ`→`#`、`アンダースコア`→`_` が入っています。設定画面から追加・編集・削除でき、内容は **`~/koemakase/replacements.json`** に保存されるので、エディタで直接編集したり Git で管理したりもできます。設定画面のパスをクリックすると開けて（右クリックで Finder に表示）、保存すれば再起動せずに反映されます。
 
 ```json
 [
@@ -211,11 +214,11 @@ open koebun.xcodeproj   # Signing & Capabilities で自分の Personal Team を�
 | 使用する Whisper モデル（例: `large-v3` にして精度寄りに。約 2.9GB で認識は 2 倍ほど遅い） | `Sources/Transcriber.swift` の `WhisperKitConfig(model:)` |
 | 文字起こしの言語（現在は `ja` 固定） | `Sources/Transcriber.swift` の `DecodingOptions(language:)` |
 | 選択できる修飾キーの一覧 | `Sources/SettingsStore.swift` の `keyName(for:)` / `isKeyDown(keyCode:flags:)` |
-| 辞書置換の初期ルール | `Sources/Replacements.swift` の `defaultRules`（既存ユーザーのルールは `~/koebun/replacements.json` が優先） |
+| 辞書置換の初期ルール | `Sources/Replacements.swift` の `defaultRules`（既存ユーザーのルールは `~/koemakase/replacements.json` が優先） |
 | 挿入方式（現在はクリップボード + ⌘V 合成） | `Sources/TextInjector.swift` |
 | WhisperKit のバージョン | `project.yml` の `packages.WhisperKit` |
 
-依存の revision は `koebun.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` で固定しています（`.xcodeproj` 自体は XcodeGen で生成するため Git 管理外ですが、このファイルだけ例外的に追跡しています）。
+依存の revision は `koemakase.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` で固定しています（`.xcodeproj` 自体は XcodeGen で生成するため Git 管理外ですが、このファイルだけ例外的に追跡しています）。
 
 ---
 

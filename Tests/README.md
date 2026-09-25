@@ -1,11 +1,11 @@
 # Tests
 
-`koebunTests`（Swift Testing）。`xcodebuild test` はアプリを `TEST_HOST` として起動するが、
+`koemakaseTests`（Swift Testing）。`xcodebuild test` はアプリを `TEST_HOST` として起動するが、
 `AppDelegate` が XCTest 環境を検知して起動処理（権限・モデル・ホットキー）を走らせないので、
 権限ダイアログもモデルのダウンロードも出ない。実行は 0.1 秒未満。
 
 ```bash
-xcodebuild test -project koebun.xcodeproj -scheme koebun \
+xcodebuild test -project koemakase.xcodeproj -scheme koemakase \
   -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
 ```
 
@@ -28,6 +28,7 @@ AppKit の実画面・モデル・TCC に依存しない **純 Swift のロジ�
 | `QuestionMarkerTests` | 疑問文の文末の？補完。付けすぎない側（かな・ません）も見る |
 | `RuleImpactTests` | 辞書ルールを足したときの過去の発話への影響。誤爆が例に出るか |
 | `RuleSuggesterTests` | 履歴からの辞書候補。別の語を候補にしない側を重点的に |
+| `DataDirectoryTests` | 旧名の置き場 `~/koebun` からの移行。両方あるときは触らない |
 | `PasteboardTests` | 全 type の退避と復元（名前付きペーストボードで隔離） |
 | `PasteboardMarkerTests` | クリップボードに立てる目印。挿入用（4 つ）とユーザーのコピー（Concealed のみ）の違い |
 | `HotKeyJudgeTests` | 修飾キーの左右区別・合成イベント・複数修飾キーの正規化 |
@@ -41,7 +42,7 @@ AppKit の実画面・モデル・TCC に依存しない **純 Swift のロジ�
 
 ## 書き方
 
-- `~/koebun/` のファイルを読み書きする `*.shared` シングルトンは使わず、`nonisolated static` な純関数を呼ぶ
+- `~/koemakase/` のファイルを読み書きする `*.shared` シングルトンは使わず、`nonisolated static` な純関数を呼ぶ
 - `@MainActor` に隔離された型を呼ぶスイートには `@MainActor` を付ける
 - テスト名は日本語で「何を保証するか」を書く。失敗したときにそのまま Issue の見出しになる
 - **消えた機能のテストは消す。** #128〜#131 で `FormatDiffTests` / `ModeTests` を削除した

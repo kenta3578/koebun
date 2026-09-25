@@ -18,22 +18,22 @@ brew install xcodegen
 ## プロジェクト生成 & 起動
 
 ```bash
-git clone https://github.com/kenta3578/koebun.git
-cd koebun
-xcodegen generate   # project.yml → koebun.xcodeproj を生成
-open koebun.xcodeproj
+git clone https://github.com/kenta3578/koemakase.git
+cd koemakase
+xcodegen generate   # project.yml → koemakase.xcodeproj を生成
+open koemakase.xcodeproj
 ```
 
 Xcode が開いたら:
 
-1. `koebun` ターゲット → Signing & Capabilities → **Team を自分の Personal Team** に設定
+1. `koemakase` ターゲット → Signing & Capabilities → **Team を自分の Personal Team** に設定
 2. ⌘R で実行（メニューバーにマイクアイコンが出る）
 
 CLI でビルドだけ確認する場合:
 
 ```bash
 xcodegen generate
-xcodebuild -project koebun.xcodeproj -scheme koebun \
+xcodebuild -project koemakase.xcodeproj -scheme koemakase \
   -configuration Debug -destination 'platform=macOS' build
 ```
 
@@ -41,15 +41,15 @@ xcodebuild -project koebun.xcodeproj -scheme koebun \
 
 ### 依存の固定
 
-`koebun.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` を Git で追跡しているので、
+`koemakase.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` を Git で追跡しているので、
 `xcodegen generate` 後の解決はこのファイルの revision に固定される（`.xcodeproj` 自体は生成物なので `.gitignore` 済み。
 このファイルだけ `!` で例外指定してある）。
 
 依存を意図的に上げるときだけ:
 
 ```bash
-xcodebuild -project koebun.xcodeproj -scheme koebun -resolvePackageDependencies
-git add -f koebun.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+xcodebuild -project koemakase.xcodeproj -scheme koemakase -resolvePackageDependencies
+git add -f koemakase.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 ```
 
 
@@ -70,11 +70,11 @@ openssl req -x509 -newkey rsa:2048 -keyout koebun-dev.key -out koebun-dev.crt -d
 # 2. p12 にまとめる（macOS の security コマンドが読める形式にするため -certpbe/-keypbe/-macalg が要る。
 #    OpenSSL 3 の既定（AES-256 + SHA-256 MAC）は取り込みに失敗する）
 openssl pkcs12 -export -inkey koebun-dev.key -in koebun-dev.crt -out koebun-dev.p12 \
-  -passout pass:koebun -name "koebun-dev" \
+  -passout pass:koemakase -name "koebun-dev" \
   -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1
 
 # 3. ログインキーチェーンへ取り込む
-security import koebun-dev.p12 -k ~/Library/Keychains/login.keychain-db -P koebun \
+security import koebun-dev.p12 -k ~/Library/Keychains/login.keychain-db -P koemakase \
   -T /usr/bin/codesign -T /usr/bin/security
 
 # 4. 秘密鍵ファイルは不要になるので消す（キーチェーンに入っている）
@@ -86,13 +86,13 @@ rm -f koebun-dev.key koebun-dev.p12
 
 ### 署名を切り替えた直後に「トグルを ON にしても権限が付かない」とき
 
-アドホック署名で使っていた期間があると、システム設定のアクセシビリティ一覧に**旧署名の koebun が登録として残る**（ビルドごとに1件ずつ溜まる）。この行のトグルは旧署名にしか効かないので、`koebun-dev` で署名し直したアプリを ON にしたつもりでも権限は付かない。アプリの再起動では直らない。
+アドホック署名で使っていた期間があると、システム設定のアクセシビリティ一覧に**旧署名の koemakase が登録として残る**（ビルドごとに1件ずつ溜まる）。この行のトグルは旧署名にしか効かないので、`koebun-dev` で署名し直したアプリを ON にしたつもりでも権限は付かない。アプリの再起動では直らない。
 
 一度だけ TCC の登録を消して、新署名で登録し直す:
 
 ```bash
 tccutil reset Accessibility com.kenta3578.koebun   # 旧登録を全部消す
-open -a koebun                                     # 起動時に権限確認ダイアログが出るので、そこから ON にする
+open -a koemakase                                     # 起動時に権限確認ダイアログが出るので、そこから ON にする
 ```
 
 以後は同じ証明書で署名し続ける限り、この作業は不要。
@@ -122,11 +122,11 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s ~/Library/Key
 
 | 変数 | 既定 | 用途 |
 |---|---|---|
-| `KOEBUN_SIGN_IDENTITY` | `koebun-dev` | 署名に使う証明書名 |
-| `KOEBUN_CONFIG` | `Release` | `Debug` にすると開発ビルド |
-| `KOEBUN_DERIVED_DATA` | `.build/dd` | ビルド成果物の置き場 |
+| `KOEMAKASE_SIGN_IDENTITY` | `koebun-dev` | 署名に使う証明書名 |
+| `KOEMAKASE_CONFIG` | `Release` | `Debug` にすると開発ビルド |
+| `KOEMAKASE_DERIVED_DATA` | `.build/dd` | ビルド成果物の置き場 |
 
-**署名を変えた直後だけは、アクセシビリティ権限を付け直す必要がある**（別の署名として扱われるため）。システム設定 → プライバシーとセキュリティ → アクセシビリティ で koebun を「−」で削除してから「+」で追加する。以降は付け直し不要になる。
+**署名を変えた直後だけは、アクセシビリティ権限を付け直す必要がある**（別の署名として扱われるため）。システム設定 → プライバシーとセキュリティ → アクセシビリティ で koemakase を「−」で削除してから「+」で追加する。以降は付け直し不要になる。
 
 
 ## 初回実行で必要な権限
@@ -134,11 +134,11 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s ~/Library/Key
 メニューバーアイコン → 各設定ボタンから許可する:
 
 - **マイク**: 初回録音時にダイアログ。許可する
-- **アクセシビリティ**: システム設定 > プライバシーとセキュリティ > アクセシビリティ で koebun を ON
+- **アクセシビリティ**: システム設定 > プライバシーとセキュリティ > アクセシビリティ で koemakase を ON
   （グローバルホットキー監視 & ⌘V 合成に必須。ここを ON にしないと右⌥を押しても無反応）
 
 > ビルドし直すとバイナリが変わるため、アクセシビリティの許可が効かなくなることがある。
-> その場合は一覧から koebun を削除して登録し直す。
+> その場合は一覧から koemakase を削除して登録し直す。
 
 ## 使い方
 
@@ -146,7 +146,7 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s ~/Library/Key
 - 停止すると文字起こし → 辞書置換 → 最前面アプリのカーソル位置に挿入、の順で処理される
 - メニューバーアイコンの形状と色で状態が分かる（読込=黄/砂時計、待機=マイク、録音=赤、処理=青/波形、完了=緑、エラー=橙）。クリックすれば文言でも読める
 - 開始音・停止音・トリガーキー・辞書置換ルールはメニューバー →「設定…」から変更できる
-  （置換ルールの実体は `~/koebun/replacements.json`）
+  （置換ルールの実体は `~/koemakase/replacements.json`）
 
 ## セキュリティ補足
 
