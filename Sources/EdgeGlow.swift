@@ -53,10 +53,10 @@ enum EdgeGlowPhase: Equatable {
 ///   色の切り替えは層の背景色を変えるだけ、明滅は不透明度のアニメーションなので WindowServer 側で回り、CPU を使わない。
 @MainActor
 final class EdgeGlowController {
-    /// 常に出ている細い光の半径（pt）。
-    private static let baseRadius: CGFloat = 16
+    /// 常に出ている細い光の半径（pt）。16 / 44 では実機で «もう少し幅が広くてもいい» と言われ、約 1.5 倍にした（Issue #50）。
+    private static let baseRadius: CGFloat = 24
     /// 声に合わせて濃くなる太い光の半径（pt）。
-    private static let voiceRadius: CGFloat = 44
+    private static let voiceRadius: CGFloat = 64
     /// 消えるとき・完了の光の時間。
     private static let fadeDuration: CFTimeInterval = 0.35
     private static let doneFlashDuration: CFTimeInterval = 1.2
