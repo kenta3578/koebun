@@ -48,7 +48,7 @@ open koemakase.xcodeproj   # Signing & Capabilities で自分の Personal Team �
 2. 右 ⌥ を押して話す（開始音が鳴る）
 3. もう一度右 ⌥ を押す（停止音が鳴り、カーソル位置に文字が入る）
 
-設定の全体と「やりたいこと → どこを触る」は [説明書](docs/MANUAL.md) にあります。
+設定の全体と「やりたいこと → どこを触る」は [説明書](https://kenta3578.github.io/koemakase/manual)（[Markdown](docs/MANUAL.md)）に、何が変わったかは [更新履歴](https://kenta3578.github.io/koemakase/changelog) にあります。
 
 ## プライバシー
 
