@@ -140,8 +140,8 @@ Swift 33 ファイル・6,866 行（テスト 17 ファイル・130 ケース）
 |---|---|---|---|---|
 | `loadingModel(step:)` | hourglass | 黄 | 起動〜権限確認〜モデル読み込み | 読み込み完了 → `idle` |
 | `idle` | mic | なし（システム追従） | ホットキー待ち | 右⌥ → `recording` |
-| `recording` | mic.fill | 赤 | 録音中 | 右⌥ / HUD の停止 → `processing`、Esc → `idle` |
-| `processing` | waveform | 青 | 文字起こし〜挿入 | 完了 → `done` / `warned` / `failed` |
+| `recording` | mic.fill | すみれ | 録音中 | 右⌥ / HUD の停止 → `processing`、Esc → `idle` |
+| `processing` | waveform | 水色 | 文字起こし〜挿入 | 完了 → `done` / `warned` / `failed` |
 | `done(message:)` | checkmark.circle.fill | 緑 | 挿入まで完了 | **1.5 秒**で `idle` |
 | `warned(message:)` | exclamationmark.circle.fill | 黄 | 挿入は済んだが伝えることがある（録音デバイスが変わった等） | **5 秒**で `idle`（読む時間が要るので長い） |
 | `failed(reason:hint:)` | exclamationmark.triangle.fill | 橙 | 失敗。`hint` が付くと HUD が設定画面へ飛ぶボタンを出す | **自動で戻らない**（原因を残す） |
