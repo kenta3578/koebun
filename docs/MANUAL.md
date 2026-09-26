@@ -50,7 +50,16 @@
 
 ### 録音中の HUD
 
-画面下に波形のパネルが出ます。マイクが拾えているかを目で確認でき、ここから停止・キャンセルもできます。
+画面下に細いパネルが出ます。棒の動きと色で、いまの状態が分かります。
+
+| HUD | 状態 |
+|---|---|
+| <img class="shot light-only" src="./screens/hud-recording.png#gh-light-mode-only" width="280" alt="録音中の HUD。すみれ色の棒と経過時間"><img class="shot dark-only" src="./screens/hud-recording-dark.png#gh-dark-mode-only" width="280" alt="録音中の HUD。すみれ色の棒と経過時間"> | 録音中。棒が声の大きさで伸び縮みします（すみれ色） |
+| <img class="shot light-only" src="./screens/hud-recording-hover.png#gh-light-mode-only" width="280" alt="マウスを乗せた HUD。停止とキャンセルのボタンが出る"><img class="shot dark-only" src="./screens/hud-recording-hover-dark.png#gh-dark-mode-only" width="280" alt="マウスを乗せた HUD。停止とキャンセルのボタンが出る"> | マウスを乗せると、停止（■）とキャンセル（×）が出ます |
+| <img class="shot light-only" src="./screens/hud-processing.png#gh-light-mode-only" width="280" alt="文字起こし中の HUD。水色の波形で止まる"><img class="shot dark-only" src="./screens/hud-processing-dark.png#gh-dark-mode-only" width="280" alt="文字起こし中の HUD。水色の波形で止まる"> | 文字起こし中。棒が水色の波形の形で止まります |
+| <img class="shot light-only" src="./screens/hud-done.png#gh-light-mode-only" width="280" alt="挿入できた HUD。緑の点"><img class="shot dark-only" src="./screens/hud-done-dark.png#gh-dark-mode-only" width="280" alt="挿入できた HUD。緑の点"> | 挿入できた。棒が緑の点に畳まれて消えます |
+| <img class="shot light-only" src="./screens/hud-silent.png#gh-light-mode-only" width="280" alt="音を拾えていない HUD。オレンジのマイク斜線"><img class="shot dark-only" src="./screens/hud-silent-dark.png#gh-dark-mode-only" width="280" alt="音を拾えていない HUD。オレンジのマイク斜線"> | 録音を始めて 2 秒たっても一度も音を拾えていない。マイクの権限と入力デバイスを確かめます |
+
 30 秒を超えた録音をキャンセルするときは確認が入ります。
 
 ---
@@ -81,6 +90,13 @@
 
 ### 一般
 
+<details>
+<summary>一般タブの画面を見る</summary>
+
+<img class="shot window light-only" src="./screens/settings-general.png#gh-light-mode-only" width="520" alt="設定の一般タブ。サウンド・音声認識・録音HUD・挿入・ホットキー・履歴"><img class="shot window dark-only" src="./screens/settings-general-dark.png#gh-dark-mode-only" width="520" alt="設定の一般タブ。サウンド・音声認識・録音HUD・挿入・ホットキー・履歴">
+
+</details>
+
 **サウンド**
 
 | 項目 | 既定 | いつ変えるか |
@@ -105,8 +121,7 @@
 
 | 項目 | 既定 | いつ変えるか |
 |---|---|---|
-| 挿入を確認できなかったら結果をクリップボードに残す | ON | OFF にすると常に元のクリップボードへ戻す。文章は HUD と履歴にだけ残る |
-| 挿入できなかったとき結果を HUD に残す | ON | パネルからコピー／再挿入できる。OFF でも履歴には残る |
+| 挿入できなかった結果 | HUD に残す | 「HUD に残す」はパネルからコピー／再挿入できる。「クリップボードに残す」はそのまま ⌘V で貼れる（はっきり挿入できなかったときだけで、ターミナルのように確かめられないアプリでは元に戻す）。「履歴だけに残す」はどちらにも出さない。どれを選んでも履歴には残る |
 
 **ホットキー**
 
@@ -125,6 +140,8 @@
 
 文字起こしの直後に機械的に置換します。LLM を通さないので同じ入力から必ず同じ結果になります。大文字小文字は区別しません。
 
+<img class="shot window light-only" src="./screens/settings-replacements.png#gh-light-mode-only" width="520" alt="設定の辞書置換タブ。上にフィラー語、下に読みと置換後のルール一覧"><img class="shot window dark-only" src="./screens/settings-replacements-dark.png#gh-dark-mode-only" width="520" alt="設定の辞書置換タブ。上にフィラー語、下に読みと置換後のルール一覧">
+
 | 操作 | 内容 |
 |---|---|
 | ルールを追加 | 「読み（発話される語）」と「置換後」を登録 |
@@ -140,6 +157,8 @@ JSON が壊れた状態で保存しても、直前のルールのまま動き続
 ### 候補
 
 履歴の中で、よく出る語と音がほぼ同じなのに少ししか出てこない語を、聞き違いの候補として並べます（例: `HitHub`（1 回）→ `GitHub`（13 回）、`プランチ` → `ブランチ`）。
+
+<img class="shot window light-only" src="./screens/settings-suggestions.png#gh-light-mode-only" width="520" alt="設定の候補タブ。HitHub → GitHub、プランチ → ブランチ の候補に追加と無視のボタン"><img class="shot window dark-only" src="./screens/settings-suggestions-dark.png#gh-dark-mode-only" width="520" alt="設定の候補タブ。HitHub → GitHub、プランチ → ブランチ の候補に追加と無視のボタン">
 
 - 置換後を直して「追加」すると辞書に入る。行を選ぶと、辞書タブと同じく変わる文の例が出る
 - 別の語だったら「無視」。次から出ない（「無視した N 件を戻す」で戻せる）
@@ -167,6 +186,10 @@ JSON が壊れた状態で保存しても、直前のルールのまま動き続
 | 「Secure Keyboard Entry が有効なため…」と出る | どこかのアプリが Secure Keyboard Entry を掴んでいる（Terminal の「セキュリティ保護されたキー入力」など）。そのアプリでオフにする |
 | 起動後ずっと黄の砂時計 | WhisperKit モデルの DL 中。一般 › 音声認識 を Apple に戻せば即座に待機になる |
 | 挿入後に黄の「!」 | 録音中に入力デバイスが変わり、切り替え前までの音声で処理した。メニューを開くと理由が読める |
+
+挿入できなかったときは、HUD に文章が残ります。「コピー」でクリップボードに入れるか、入れたい場所をクリックしてから「もう一度挿入」を押します。
+
+<img class="shot light-only" src="./screens/hud-result.png#gh-light-mode-only" width="380" alt="挿入できなかった HUD。理由の見出しと文章、コピーともう一度挿入のボタン"><img class="shot dark-only" src="./screens/hud-result-dark.png#gh-dark-mode-only" width="380" alt="挿入できなかった HUD。理由の見出しと文章、コピーともう一度挿入のボタン">
 
 ---
 
