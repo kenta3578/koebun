@@ -1,5 +1,5 @@
 import Testing
-@testable import koemakase
+@testable import sarari
 
 /// 画面の縁の光が、どの状態で何を見せるか（Issue #48）。
 struct EdgeGlowPhaseTests {

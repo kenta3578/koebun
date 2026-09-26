@@ -1,14 +1,14 @@
 import { defineConfig } from 'vitepress'
 
-const repo = 'https://github.com/kenta3578/koemakase'
+const repo = 'https://github.com/kenta3578/sarari'
 
 // docs/ の Markdown をそのままサイトにする。ファイル名は GitHub 上のリンクと揃えたまま、
 // URL だけ小文字に写す（rewrites）。
 export default defineConfig({
   lang: 'ja',
-  title: 'koemakase',
+  title: 'sarari',
   description: '完全ローカルで動く、Mac 用の日本語音声入力アプリ',
-  base: '/koemakase/',
+  base: '/sarari/',
   cleanUrls: true,
   lastUpdated: true,
   // docs/README.md は GitHub でフォルダを開いた人向けの目次なのでサイトには出さない

@@ -1,4 +1,4 @@
-# koemakase
+# sarari
 
 自分専用・完全ローカルの音声入力（ディクテーション）アプリ。
 
@@ -64,7 +64,7 @@ Mac（Apple Silicon）で、音声 → 文字起こし → カーソルへ直挿
    - **使う人から見て何かが変わる PR は、同じ PR の中で `docs/MANUAL.md` の該当する節を直し、`docs/changelog.md` に1行足す**（判定はそれだけ。中の作りだけの変更は載せない）。develop に入るとサイト（GitHub Pages）に出る
 4. `ExitWorktree`（remove）→ `git pull --ff-only origin develop`
 5. **`./scripts/install-local.sh`** で実機へ入れて起動する（Release ビルド → `koebun-dev` 署名 → `/Applications` 置換 → 起動）
-6. 実機で確認する。`pgrep -x koemakase` で起動を確かめ、UI 変更はスクリーンショットで見る
+6. 実機で確認する。`pgrep -x sarari` で起動を確かめ、UI 変更はスクリーンショットで見る
 7. ユーザーの実機フィードバックは、その場で次の Issue にする（メモに溜めない）
 
 複数の小さな Issue は1つの worktree・1つの PR にまとめてよいが、**コミットは Issue 単位**に分ける。ドキュメントだけの変更は 5〜6 を省いてよい。
@@ -72,18 +72,18 @@ Mac（Apple Silicon）で、音声 → 文字起こし → カーソルへ直挿
 ## Commands
 
 ```bash
-xcodegen generate                                   # project.yml → koemakase.xcodeproj（worktree では必須）
-git diff --exit-code koemakase.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved \
+xcodegen generate                                   # project.yml → sarari.xcodeproj（worktree では必須）
+git diff --exit-code sarari.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved \
   || echo "依存の revision が動いた。意図した更新か確認する（Issue #106）"
-xcodebuild -project koemakase.xcodeproj -scheme koemakase -configuration Debug \
-  -derivedDataPath /tmp/koemakase-dd CODE_SIGNING_ALLOWED=NO build \
+xcodebuild -project sarari.xcodeproj -scheme sarari -configuration Debug \
+  -derivedDataPath /tmp/sarari-dd CODE_SIGNING_ALLOWED=NO build \
   2>&1 | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)"  # 型チェック（署名なし）。**警告も 0 を保つ**
-xcodebuild test -project koemakase.xcodeproj -scheme koemakase \
+xcodebuild test -project sarari.xcodeproj -scheme sarari \
   -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO \
   2>&1 | grep -E "✘|Test run|TEST (SUCCEEDED|FAILED)"     # 単体テスト（0.1秒未満。守備範囲は Tests/README.md）
 ./scripts/install-local.sh                          # 実機へインストールして起動（マージ後に必ず）
 pnpm install && pnpm docs:dev                       # 説明書サイトを手元で見る（docs/ を VitePress で出す。pnpm docs:build でリンク切れ検査）
-pgrep -x koemakase                                     # 起動確認
+pgrep -x sarari                                     # 起動確認
 ./scripts/kpi.sh [--target N]                       # 北極星の KPI（平日の挿入回数）を履歴から集計。目標値は引数で渡す
 ./scripts/model-manifest.sh                         # WhisperKit の重みのマニフェストを作り直す（Issue #106）
 tccutil reset Accessibility com.kenta3578.koebun    # 権限トグルが効かないときの一度きりのリセット

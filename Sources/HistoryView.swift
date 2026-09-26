@@ -418,7 +418,7 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = NSHostingView(rootView: HistoryView())
-        window.setFrameAutosaveName("koemakase.history")
+        window.setFrameAutosaveName("sarari.history")
         window.center()
         self.window = window
         return window
