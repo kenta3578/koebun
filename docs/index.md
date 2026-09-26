@@ -28,3 +28,26 @@ features:
     link: /manual#辞書置換
     linkText: 辞書置換を見る
 ---
+
+## 使い方は 3 つだけ
+
+<div class="flow">
+  <div class="flow-step">
+    <img class="light-only" src="./screens/hud-recording.png" alt="録音中の HUD。すみれ色の棒が声で伸び縮みする"><img class="dark-only" src="./screens/hud-recording-dark.png" alt="録音中の HUD。すみれ色の棒が声で伸び縮みする">
+    <span class="num">1</span>
+    <p>文字を入れたい場所にカーソルを置いて、<b>右 ⌥</b> を押して話す。画面下の棒が声に合わせて動きます</p>
+  </div>
+  <div class="flow-step">
+    <img class="light-only" src="./screens/hud-processing.png" alt="文字起こし中の HUD。水色の波形で止まる"><img class="dark-only" src="./screens/hud-processing-dark.png" alt="文字起こし中の HUD。水色の波形で止まる">
+    <span class="num">2</span>
+    <p>話し終えたら、もう一度 <b>右 ⌥</b>。棒が水色で止まり、文字起こしが始まります</p>
+  </div>
+  <div class="flow-step">
+    <img class="light-only" src="./screens/hud-done.png" alt="挿入できた HUD。緑の点"><img class="dark-only" src="./screens/hud-done-dark.png" alt="挿入できた HUD。緑の点">
+    <span class="num">3</span>
+    <p>緑になったら、カーソルの位置に文字が入っています。辞書置換とフィラー除去は済んだ状態です</p>
+  </div>
+</div>
+
+設定の画面や困ったときの見方は[説明書](/manual)にあります。
+
