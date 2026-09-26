@@ -34,6 +34,12 @@ AppKit の実画面・モデル・TCC に依存しない **純 Swift のロジ�
 | `HotKeyJudgeTests` | 修飾キーの左右区別・合成イベント・複数修飾キーの正規化 |
 | `LevelBarsTests` | 最小表示の棒（7 本）。黙ると点、声で高くなり、文字起こし中は波形の形で止まる。音節の切れ目で潰れない |
 
+## 普段は走らないもの
+
+| ファイル | 対象 |
+|---|---|
+| `DocScreenshotsTests` | 説明書サイトの画面画像を描き出す（Issue #56）。`scripts/docs-shots.sh` が書き出し先と仮のホームを渡したときだけ走り、ふだんの `xcodebuild test` では飛ばされる |
+
 ## 置かないもの
 
 - WhisperKit を読み込むもの（約 630MB の DL と数十秒のロード）。要るなら `.disabled` で常時実行から外す
