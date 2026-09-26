@@ -1,6 +1,6 @@
 # 完全ローカルであることの根拠
 
-koemakase は音声もテキストも端末の外に出しません。その根拠を、自分で確かめられる形で書いておきます。
+sarari は音声もテキストも端末の外に出しません。その根拠を、自分で確かめられる形で書いておきます。
 
 ## 通信
 
@@ -19,10 +19,10 @@ WhisperKit には revision を固定する口がなく、Hugging Face の `main`
 
 | 内容 | 場所 |
 |---|---|
-| 文字起こしの履歴（テキストのみ。保存期間は設定で 7 日〜無期限） | `~/koemakase/history/` |
-| 辞書置換ルール | `~/koemakase/replacements.json` |
-| フィラー語 | `~/koemakase/fillers.json` |
-| 取り込んだ開始音・停止音 | `~/koemakase/sounds/` |
+| 文字起こしの履歴（テキストのみ。保存期間は設定で 7 日〜無期限） | `~/sarari/history/` |
+| 辞書置換ルール | `~/sarari/replacements.json` |
+| フィラー語 | `~/sarari/fillers.json` |
+| 取り込んだ開始音・停止音 | `~/sarari/sounds/` |
 | 設定値 | `UserDefaults`（`com.kenta3578.koebun`） |
 | WhisperKit のモデル（選んだときだけ） | `~/Library/Application Support/com.kenta3578.koebun/huggingface/` |
 

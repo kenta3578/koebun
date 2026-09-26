@@ -2,8 +2,8 @@
 layout: home
 
 hero:
-  name: koemakase
-  text: 声まかせ
+  name: sarari
+  text: さらり
   tagline: 完全ローカルで動く、Mac 用の日本語音声入力アプリ。右 ⌥ を押して話し、もう一度押すと、カーソル位置に文字が入ります。
   actions:
     - theme: brand
@@ -14,7 +14,7 @@ hero:
       link: /changelog
     - theme: alt
       text: GitHub
-      link: https://github.com/kenta3578/koemakase
+      link: https://github.com/kenta3578/sarari
 
 features:
   - title: 端末の外に出さない
