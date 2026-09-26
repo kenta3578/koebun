@@ -130,7 +130,7 @@ struct GeneralSettingsView: View {
                 Text("選び直すと鳴ります。試聴ボタンでいまの音を聞き直せます。"
                      + "「sarari の音」はアプリに入っている音です。"
                      + "「音を追加…」で選んだ音声ファイル（aiff / wav / mp3 / m4a / caf）は "
-                     + "\(SoundPlayer.customDirectory.path) にコピーされ、「自分の音」に出ます。"
+                     + "\((SoundPlayer.customDirectory.path as NSString).abbreviatingWithTildeInPath) にコピーされ、「自分の音」に出ます。"
                      + "削除はゴミ箱に入れるだけなので戻せます。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -596,7 +596,9 @@ private struct EditableFileRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Button(url.path) { NSWorkspace.shared.open(url) }
+            // ホームは ~ で出す（短く読めるうえ、説明書の画像にユーザー名が写らない。Issue #56）。
+            // コピーするのは省略しないパス。
+            Button((url.path as NSString).abbreviatingWithTildeInPath) { NSWorkspace.shared.open(url) }
                 .buttonStyle(.link)
                 .font(.caption2)
                 .lineLimit(1)

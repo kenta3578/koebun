@@ -265,7 +265,7 @@ struct HistoryView: View {
 
     private func footer(_ entry: HistoryEntry) -> some View {
         HStack {
-            Text(HistoryFiles.directoryURL(for: entry.id).path)
+            Text((HistoryFiles.directoryURL(for: entry.id).path as NSString).abbreviatingWithTildeInPath)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .textSelection(.enabled)
